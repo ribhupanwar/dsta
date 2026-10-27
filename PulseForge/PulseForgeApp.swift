@@ -36,6 +36,7 @@ enum ForgeTab: String, CaseIterable {
 
 struct MainTabView: View {
     @State private var selected: ForgeTab = .today
+    @StateObject private var bluetooth = WhoopBluetoothManager()
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -50,6 +51,7 @@ struct MainTabView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environmentObject(bluetooth)
             ForgeTabBar(selected: $selected)
         }
         .ignoresSafeArea(.keyboard)
@@ -425,7 +427,7 @@ struct JournalEntrySheet: View {
 
 struct DeviceDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
-    @StateObject private var bluetooth = WhoopBluetoothManager()
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
 
     var body: some View {
         ScrollView {
