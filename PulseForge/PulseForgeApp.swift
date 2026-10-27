@@ -233,6 +233,8 @@ struct StrainDashboard: View {
 
 struct RunningDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
+    @AppStorage("pulseforge.running.maxHeartRate") private var maxHeartRate = 0
+    @State private var maxHeartRateDraft = ""
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -256,12 +258,38 @@ struct RunningDashboard: View {
                 SectionHeader(title: "HEART RATE")
                 WorkoutHeartRateChart(points: health.latestRunHeartRatePoints)
                 SectionHeader(title: "HEART RATE ZONES")
-                VStack(spacing: 13) {
-                    ZoneRow(name: "Zone 5 · Maximum", color: Color(red: 0.96, green: 0.31, blue: 0.27))
-                    ZoneRow(name: "Zone 4 · Threshold", color: Color(red: 1.0, green: 0.58, blue: 0.22))
-                    ZoneRow(name: "Zone 3 · Aerobic", color: Color(red: 0.96, green: 0.82, blue: 0.25))
-                    ZoneRow(name: "Zone 2 · Easy", color: ForgeColors.lime)
-                    ZoneRow(name: "Zone 1 · Recovery", color: Color(red: 0.32, green: 0.67, blue: 0.92))
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack {
+                        Text("MAX HEART RATE").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                        Spacer()
+                        Text(maxHeartRate > 0 ? "\\(maxHeartRate) BPM" : "NOT SET")
+                            .font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(ForgeColors.lime)
+                    }
+                    HStack(spacing: 10) {
+                        TextField("Enter measured max HR", text: $maxHeartRateDraft)
+                            .keyboardType(.numberPad)
+                            .font(.system(size: 13, design: .rounded))
+                            .padding(11).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 10))
+                        Button("SAVE") {
+                            if let value = Int(maxHeartRateDraft), (100...240).contains(value) {
+                                maxHeartRate = value
+                                maxHeartRateDraft = ""
+                            }
+                        }
+                        .font(.system(size: 10, weight: .bold)).foregroundStyle(.black)
+                        .padding(.horizontal, 15).padding(.vertical, 12)
+                        .background(ForgeColors.lime, in: Capsule())
+                    }
+                    Text("Use a measured maximum from a reliable test or clinician—not an age-based guess.")
+                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                    if maxHeartRate > 0 {
+                        ForEach(Array(heartRateZones(maxHR: maxHeartRate, points: health.latestRunHeartRatePoints).enumerated()), id: \\.offset) { index, zone in
+                            ZoneRow(name: zone.name, color: zone.color, minutes: zone.minutes)
+                        }
+                    } else {
+                        Text("Set your max HR to calculate time in each zone.")
+                            .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                    }
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
                 SectionHeader(title: "PACE & SPLITS")
@@ -299,12 +327,13 @@ struct RunningDashboard: View {
 struct ZoneRow: View {
     let name: String
     let color: Color
+    var minutes: Double? = nil
     var body: some View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 3).fill(color).frame(width: 4, height: 20)
             Text(name).font(.system(size: 11, weight: .medium))
             Spacer()
-            Text("—").font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(ForgeColors.muted)
+            Text(minutes.map { String(format: "%.1f min", $0) } ?? "—").font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(ForgeColors.muted)
         }
     }
 }
@@ -639,7 +668,8 @@ final class HealthDataStore: ObservableObject {
             let points = (samples as? [HKQuantitySample] ?? []).map { sample in
                 WorkoutHeartRatePoint(
                     elapsedMinutes: max(0, sample.startDate.timeIntervalSince(workout.startDate) / 60),
-                    beatsPerMinute: sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
+                    beatsPerMinute: sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute())),
+                    durationSeconds: max(0, sample.endDate.timeIntervalSince(sample.startDate))
                 )
             }
             Task { @MainActor in
@@ -693,6 +723,7 @@ final class HealthDataStore: ObservableObject {
 struct WorkoutHeartRatePoint: Identifiable {
     let elapsedMinutes: Double
     let beatsPerMinute: Double
+    let durationSeconds: Double
     var id: Double { elapsedMinutes }
 }
 
@@ -733,6 +764,42 @@ struct WorkoutHeartRateChart: View {
         }
         .padding(18)
         .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+struct HeartRateZoneSummary {
+    let name: String
+    let color: Color
+    let minutes: Double
+}
+
+func heartRateZones(maxHR: Int, points: [WorkoutHeartRatePoint]) -> [HeartRateZoneSummary] {
+    let definitions: [(String, Double, Double, Color)] = [
+        ("Zone 5 · Maximum", 0.90, 1.01, Color(red: 0.96, green: 0.31, blue: 0.27)),
+        ("Zone 4 · Threshold", 0.80, 0.90, Color(red: 1.0, green: 0.58, blue: 0.22)),
+        ("Zone 3 · Aerobic", 0.70, 0.80, Color(red: 0.96, green: 0.82, blue: 0.25)),
+        ("Zone 2 · Easy", 0.60, 0.70, ForgeColors.lime),
+        ("Zone 1 · Recovery", 0.50, 0.60, Color(red: 0.32, green: 0.67, blue: 0.92))
+    ]
+    var seconds = Array(repeating: 0.0, count: definitions.count)
+    for (index, point) in points.enumerated() {
+        let nextGap = index + 1 < points.count
+            ? max(0, (points[index + 1].elapsedMinutes - point.elapsedMinutes) * 60)
+            : 0
+        let sampleDuration = point.durationSeconds > 0 ? point.durationSeconds : min(nextGap, 30)
+        let duration = min(max(sampleDuration, 0), 30)
+        guard duration > 0 else { continue }
+        for (zoneIndex, definition) in definitions.enumerated() {
+            let lower = Double(maxHR) * definition.1
+            let upper = Double(maxHR) * definition.2
+            if point.beatsPerMinute >= lower && point.beatsPerMinute < upper {
+                seconds[zoneIndex] += duration
+                break
+            }
+        }
+    }
+    return definitions.enumerated().map { index, definition in
+        HeartRateZoneSummary(name: definition.0, color: definition.3, minutes: seconds[index] / 60)
     }
 }
 
