@@ -17,6 +17,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
 
     private var central: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
+    private var scanTimeoutWorkItem: DispatchWorkItem?
 
     // Candidate UUIDs observed in the WHOOP archive. They are scan hints only;
     // the archive string scan does not prove their exact GATT roles.
@@ -38,15 +39,29 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             statusText = "Turn on Bluetooth to scan"
             return
         }
+        scanTimeoutWorkItem?.cancel()
+        central.stopScan()
         devices.removeAll()
         discoveredProfile.removeAll()
         statusText = "Scanning nearby devices…"
         central.scanForPeripherals(withServices: nil, options: [
             CBCentralManagerScanOptionAllowDuplicatesKey: false
         ])
+
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.central.stopScan()
+            self.statusText = self.devices.isEmpty
+                ? "No WHOOP candidate found · try scanning again"
+                : "Scan complete · found \(self.devices.count) candidate device(s)"
+        }
+        scanTimeoutWorkItem = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: timeout)
     }
 
     func stopScan() {
+        scanTimeoutWorkItem?.cancel()
+        scanTimeoutWorkItem = nil
         central.stopScan()
         if connectedPeripheral == nil { statusText = "Scan stopped" }
     }
@@ -63,6 +78,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     }
 
     func connect(to device: DiscoveredWearable) {
+        scanTimeoutWorkItem?.cancel()
+        scanTimeoutWorkItem = nil
         central.stopScan()
         discoveredProfile.removeAll()
         connectedPeripheral = device.peripheral
