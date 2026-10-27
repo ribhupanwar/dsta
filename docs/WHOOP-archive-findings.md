@@ -145,6 +145,8 @@ These observations are **format fingerprints only**. They do not establish wheth
 
 The inventory's first Mach-O symbol-table pass found no matching protocol symbols in the extracted executable. The parser has now also been corrected to account for slice-relative symbol offsets in fat Mach-O files; the next run will show whether that correction changes the result. A zero result may still mean the executable is stripped or exports symbols through a different load-command mechanism.
 
+The follow-up inventory also inspected the Mach-O export trie exposed through `LC_DYLD_EXPORTS_TRIE` / `LC_DYLD_INFO_ONLY`. It found no matching exported BLE/protocol names, while the corrected `LC_SYMTAB` parser also returned zero matching symbols. This means the current executable metadata does not provide a usable symbol-to-UUID map; nearby printable-string correlations remain unverified. PulseForge's passive GATT profile now records each characteristic together with its parent service UUID, so a real WHOOP 5.0 discovery session can provide the next grounded mapping evidence without sending commands or enabling notifications.
+
 ### PulseForge next-step constraints
 
 1. Keep passive GATT discovery and property reporting; do not subscribe to every notify/indicate characteristic.
