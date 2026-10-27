@@ -168,10 +168,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "FD4B0005-CCE1-4033-93CE-002D5875F58A",
             "FD4B0007-CCE1-4033-93CE-002D5875F58A"
         ]
-        return ["180D / 2A37 standard HR: \\(standard)"] + uuids.map { uuid in
+        return ["180D / 2A37 standard HR: \(standard)"] + uuids.map { uuid in
             let state = vendorNotificationStates[uuid] ?? "not requested"
             let payload = vendorNotificationPayloads[uuid] ?? "no payload received"
-            return "\\(uuid): \\(state) · \\(payload)"
+            return "\(uuid): \(state) · \(payload)"
         }
     }
 
