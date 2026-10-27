@@ -18,6 +18,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ribhupanwar.pulseforge
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
         PRODUCT_NAME: PulseForge
         INFOPLIST_KEY_CFBundleDisplayName: PulseForge
         INFOPLIST_KEY_NSHealthShareUsageDescription: "PulseForge reads your health data to show recovery, sleep, heart rate and training trends."
