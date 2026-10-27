@@ -144,6 +144,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
     }
 
     private func clearConnectionState() {
+        connectionTimeoutWorkItem?.cancel()
+        connectionTimeoutWorkItem = nil
+        pendingCharacteristicServices.removeAll()
         connectedName = nil
         isConnecting = false
         connectedPeripheral?.delegate = nil
