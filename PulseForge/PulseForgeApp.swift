@@ -486,6 +486,15 @@ struct DeviceDashboard: View {
                             }
                         }
                     }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("LATEST BLE EVENT")
+                            .font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
+                        Text(bluetooth.lastBLEEvent)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     if !bluetooth.discoveredProfile.isEmpty {
                         VStack(alignment: .leading, spacing: 7) {
                             Text("DISCOVERED GATT PROFILE")
