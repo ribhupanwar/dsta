@@ -135,16 +135,19 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     var gattCapabilitySummary: String {
         let characteristics = discoveredProfile.filter { $0.hasPrefix("Characteristic ·") }
         let descriptors = discoveredProfile.filter { $0.hasPrefix("Descriptor ·") }
-        let notifyCount = characteristics.filter {
-            $0.localizedCaseInsensitiveContains("notify")
-        }.count
-        let indicateCount = characteristics.filter {
-            $0.localizedCaseInsensitiveContains("indicate")
-        }.count
+        func count(_ property: String) -> Int {
+            characteristics.filter { line in
+                guard let marker = line.range(of: " · ", options: .backwards) else { return false }
+                return line[marker.upperBound...]
+                    .split(separator: ",")
+                    .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+                    .contains(property)
+            }.count
+        }
         let cccdCount = descriptors.filter {
             $0.localizedCaseInsensitiveContains("00002902")
         }.count
-        return "\(characteristics.count) characteristics · \(notifyCount) notify · \(indicateCount) indicate · \(cccdCount) CCCD"
+        return "\(characteristics.count) characteristics · R:\(count("read")) W:\(count("write")) WNR:\(count("write-no-response")) N:\(count("notify")) I:\(count("indicate")) · CCCD:\(cccdCount)"
     }
 
     var diagnosticSnapshot: String {
@@ -155,7 +158,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         }
         let cccdDescriptors = descriptorLines.filter { $0.localizedCaseInsensitiveContains("00002902") }
         var lines = [
-            "GATT summary: \(characteristicLines.count) characteristics · \(notifyCharacteristics.count) notify/indicate-capable · \(descriptorLines.count) descriptors · \(cccdDescriptors.count) CCCD descriptors",
+            "GATT summary: \(gattCapabilitySummary)",
             "PulseForge BLE diagnostic snapshot",
             "Captured: \(ISO8601DateFormatter().string(from: Date()))",
             "Device: \(connectedName ?? "Not connected")",
