@@ -46,6 +46,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     }
 
     func startScan() {
+        guard connectedPeripheral == nil, !isConnecting else {
+            statusText = "Disconnect the current band before scanning"
+            return
+        }
         guard central.state == .poweredOn else {
             statusText = "Turn on Bluetooth to scan"
             return
@@ -176,7 +180,11 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         let advertisedName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
         let name = advertisedName ?? peripheral.name ?? "Unknown BLE device"
         let advertisedServices = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []
-        let hasCandidateService = advertisedServices.contains {
+        let serviceData = advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data] ?? [:]
+        let solicitedServices = advertisementData[CBAdvertisementDataSolicitedServiceUUIDsKey] as? [CBUUID] ?? []
+        let overflowServices = advertisementData[CBAdvertisementDataOverflowServiceUUIDsKey] as? [CBUUID] ?? []
+        let advertisedUUIDs = advertisedServices + Array(serviceData.keys) + solicitedServices + overflowServices
+        let hasCandidateService = advertisedUUIDs.contains {
             candidateUUIDs.contains($0.uuidString.uppercased())
         }
         guard name.localizedCaseInsensitiveContains("whoop") || hasCandidateService else { return }
@@ -188,12 +196,10 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
             name: name,
             rssi: RSSI.intValue,
             advertisedServices: advertisedServices.map { $0.uuidString.uppercased() }.sorted(),
-            serviceDataEntries: ((advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data]) ?? [:])
+            serviceDataEntries: serviceData
                 .map { "\($0.key.uuidString.uppercased()) (\($0.value.count) bytes)" }.sorted(),
-            solicitedServices: ((advertisementData[CBAdvertisementDataSolicitedServiceUUIDsKey] as? [CBUUID]) ?? [])
-                .map { $0.uuidString.uppercased() }.sorted(),
-            overflowServices: ((advertisementData[CBAdvertisementDataOverflowServiceUUIDsKey] as? [CBUUID]) ?? [])
-                .map { $0.uuidString.uppercased() }.sorted(),
+            solicitedServices: solicitedServices.map { $0.uuidString.uppercased() }.sorted(),
+            overflowServices: overflowServices.map { $0.uuidString.uppercased() }.sorted(),
             manufacturerDataByteCount: manufacturerData?.count,
             transmitPower: (advertisementData[CBAdvertisementDataTxPowerLevelKey] as? NSNumber)?.intValue,
             isConnectable: connectable?.boolValue
@@ -231,12 +237,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
-        connectionTimeoutWorkItem?.cancel()
-        connectionTimeoutWorkItem = nil
-        connectedName = nil
-        isConnecting = false
-        connectedPeripheral = nil
-        discoveredProfile.removeAll()
+        clearConnectionState()
         statusText = error.map { "Disconnected: \($0.localizedDescription)" } ?? "Disconnected"
     }
 }
@@ -248,10 +249,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         discoveredProfile.removeAll { line in
             invalidatedIDs.contains { line.contains($0) }
         }
-        pendingCharacteristicServices.subtract(invalidatedIDs)
-        statusText = "GATT services changed · refreshing profile"
         pendingCharacteristicServices.removeAll()
         discoveredProfile.removeAll()
+        statusText = "GATT services changed · refreshing profile"
         peripheral.discoverServices(nil)
     }
 
