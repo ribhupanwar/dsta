@@ -23,6 +23,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var isConnecting = false
     @Published private(set) var discoveredProfile: [String] = []
     @Published private(set) var lastBLEEvent = "No BLE data received yet"
+    @Published private(set) var liveHeartRateBPM: Int?
+    @Published private(set) var isStandardHeartRateNotifying = false
 
     private var central: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
@@ -172,6 +174,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "Connectable: \(connectedDeviceSnapshot?.isConnectable.map(String.init) ?? "Unavailable")",
             "Status: \(statusText)",
             "Latest BLE event: \(lastBLEEvent)",
+            "Standard Heart Rate Measurement: \(isStandardHeartRateNotifying ? "subscribed" : "not subscribed")",
+            "Latest WHOOP standard HR value: \(liveHeartRateBPM.map { "\($0) bpm" } ?? "None received")",
             "",
             "GATT profile:"
         ]
@@ -229,6 +233,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         pendingDescriptorCharacteristics.removeAll()
         connectedName = nil
         connectedDeviceSnapshot = nil
+        liveHeartRateBPM = nil
+        isStandardHeartRateNotifying = false
         isConnecting = false
         connectedPeripheral?.delegate = nil
         connectedPeripheral = nil
@@ -366,6 +372,19 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             : "Connected · GATT inspection finished · \(errorCount) discovery error(s) · no commands sent"
     }
 
+    private func parseStandardHeartRateMeasurement(_ data: Data) -> Int? {
+        guard data.count >= 2 else { return nil }
+        let flags = data[data.startIndex]
+        let isUInt16 = (flags & 0x01) != 0
+        if isUInt16 {
+            guard data.count >= 3 else { return nil }
+            let low = UInt16(data[data.startIndex + 1])
+            let high = UInt16(data[data.startIndex + 2]) << 8
+            return Int(low | high)
+        }
+        return Int(data[data.startIndex + 1])
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         if let error {
@@ -374,6 +393,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         } else {
             for characteristic in service.characteristics ?? [] {
                 discoveredProfile.append("Characteristic · service \(service.uuid.uuidString) → \(characteristic.uuid.uuidString) · \(propertyNames(characteristic.properties))")
+                if service.uuid == CBUUID(string: "180D"),
+                   characteristic.uuid == CBUUID(string: "2A37"),
+                   characteristic.properties.contains(.notify) {
+                    peripheral.setNotifyValue(true, for: characteristic)
+                    lastBLEEvent = "Subscribed to standard Bluetooth Heart Rate Measurement (180D/2A37)"
+                }
                 let key = ObjectIdentifier(characteristic)
                 pendingDescriptorCharacteristics.insert(key)
                 peripheral.discoverDescriptors(for: characteristic)
@@ -388,6 +413,42 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             statusText = "Inspecting characteristics · \(pendingCharacteristicServices.count) service(s) remaining"
         }
     }
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        guard connectedPeripheral?.identifier == peripheral.identifier,
+              characteristic.service?.uuid == CBUUID(string: "180D"),
+              characteristic.uuid == CBUUID(string: "2A37") else { return }
+        if let error {
+            isStandardHeartRateNotifying = false
+            lastBLEEvent = "Standard HR subscription failed · \(error.localizedDescription)"
+            return
+        }
+        isStandardHeartRateNotifying = characteristic.isNotifying
+        lastBLEEvent = characteristic.isNotifying
+            ? "Standard Heart Rate Measurement notifications enabled"
+            : "Standard Heart Rate Measurement notifications disabled"
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        guard characteristic.service?.uuid == CBUUID(string: "180D"),
+              characteristic.uuid == CBUUID(string: "2A37") else {
+            lastBLEEvent = "BLE value received · \(characteristic.uuid.uuidString) · vendor payload not parsed"
+            return
+        }
+        if let error {
+            lastBLEEvent = "Standard HR value error · \(error.localizedDescription)"
+            return
+        }
+        guard let data = characteristic.value,
+              let bpm = parseStandardHeartRateMeasurement(data),
+              (1...300).contains(bpm) else {
+            lastBLEEvent = "Standard HR notification received · payload could not be parsed"
+            return
+        }
+        liveHeartRateBPM = bpm
+        lastBLEEvent = "WHOOP standard BLE heart rate · \(bpm) bpm · \(ISO8601DateFormatter().string(from: Date()))"
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didDiscoverDescriptorsFor characteristic: CBCharacteristic, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         let serviceUUID = characteristic.service?.uuid.uuidString ?? "Unknown service"
