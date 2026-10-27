@@ -450,15 +450,20 @@ struct DeviceDashboard: View {
                                 .frame(maxWidth: .infinity).padding(14)
                                 .background(ForgeColors.track, in: Capsule()).foregroundStyle(.white)
                         }
+                    } else if bluetooth.isConnecting {
+                        Button { bluetooth.disconnect() } label: {
+                            Label("CANCEL CONNECTION", systemImage: "xmark.circle")
+                                .font(.system(size: 10, weight: .bold)).tracking(0.8)
+                                .frame(maxWidth: .infinity).padding(14)
+                                .background(ForgeColors.track, in: Capsule()).foregroundStyle(.white)
+                        }
                     } else {
                         Button { bluetooth.startScan() } label: {
-                            Label(bluetooth.isConnecting ? "CONNECTING…" : "SCAN FOR WHOOP BAND",
-                                  systemImage: bluetooth.isConnecting ? "hourglass" : "dot.radiowaves.left.and.right")
+                            Label("SCAN FOR WHOOP BAND", systemImage: "dot.radiowaves.left.and.right")
                                 .font(.system(size: 10, weight: .bold)).tracking(0.8)
                                 .frame(maxWidth: .infinity).padding(14)
                                 .background(ForgeColors.lime, in: Capsule()).foregroundStyle(.black)
                         }
-                        .disabled(bluetooth.isConnecting)
                     }
                     if !bluetooth.devices.isEmpty {
                         VStack(spacing: 8) {
