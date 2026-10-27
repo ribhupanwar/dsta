@@ -92,3 +92,50 @@ PulseForge should therefore implement and diagnose these as separate state machi
 3. Historical range request, start/metadata handling, packet-body receipt, ordering, parsing and completion.
 
 Do not send speculative commands or subscribe indiscriminately to every characteristic. The next protocol step is to map the exact characteristic roles and packet framing from call-site context, then validate the result on the WHOOP 5.0 hardware. These archive strings are diagnostic evidence, not a complete protocol specification.
+
+
+## Protocol symbol inventory expansion (2026-10-27)
+
+The expanded executable string inventory surfaced Swift symbol/type names that identify additional protocol layers. These names are useful architectural evidence, but they are not source implementations and do not reveal method bodies or wire formats.
+
+### Pairing and handshake indicators
+
+- `WhoopDeviceAPIs.HelloSending` and `WhoopAsyncDeviceAPIs.HelloSending`
+- `WhoopAsyncDeviceAPIs.StrapHelloCompleteProviding`
+- `WhoopStrapServices.HelloServicing` and `HelloRetryServicing`
+- `WhoopStrapServices.UnlockTokenServicing`
+- `WhoopStrapServices.ForgetBondServicing`
+- `WhoopPacket.HelloResponse`, `HelloInfo`, and `HelloInfoProviding`
+
+This establishes that WHOOP has a distinct hello/handshake and strap-unlock layer. It does not establish the required hello payload, sequence, key material, or pairing state transitions. PulseForge must not replay the bundled hello resources or invent an unlock exchange.
+
+### GATT transport and characteristic roles
+
+- `WhoopDeviceAPIs.SingleServiceCharacteristicMapping`
+- `WhoopDeviceAPIs.PeripheralToCommandCharacteristicReducing`
+- `WhoopCoreBluetoothAPIs.CharacteristicsSubscriberProtocol`
+- `WhoopCoreBluetoothAPIs.PacketSendingProtocol`
+- Lazy-storage symbols named `commandReadCharacteristic`, `commandWriteCharacteristic`, `dataReadCharacteristic`, and `eventReadCharacteristic`
+
+These names strongly suggest separate command-read, command-write, data-read, and event-read characteristic roles. The executable string inventory does not prove their UUID assignments. The observed `6108000x` family remains a candidate transport family only; do not hard-code a mapping from string adjacency.
+
+### Live-HR and historical-data layers
+
+- `WhoopPacket.RealtimeHRPacket`
+- `WhoopStrapServices.RealtimeHeartRateData`
+- `WhoopStrapServices.RealtimeHrStreamingServicing`
+- `WhoopStrapServices.HeartRateBroadcastServicing`
+- `WhoopLiveHeartRate.HRStrapInteracting`
+- `WhoopStrapServices.HistoricalPullServicing`
+- `WhoopStrapServices.HistoricalDataStoring`
+- `WhoopPacket.HistoryStartEvent` and `HistoricalSequenceable`
+
+This supports keeping live-HR packet handling and historical-pull sequencing as separate implementations. It still does not provide a safe parser or command payload.
+
+### PulseForge next-step constraints
+
+1. Keep passive GATT discovery and property reporting; do not subscribe to every notify/indicate characteristic.
+2. Correlate characteristic UUIDs with concrete type metadata and call-site evidence before assigning command/data/event roles.
+3. Treat hello/unlock as a separate pairing state machine; do not send guessed handshake packets.
+4. Implement live-HR and historical transfer only after packet framing, revision selection, validation and sequencing are independently understood.
+5. Hardware validation on WHOOP 5.0 remains mandatory before marking either stream functional.
