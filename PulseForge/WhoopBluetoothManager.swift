@@ -142,6 +142,11 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
 
 extension WhoopBluetoothManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        if central.state != .poweredOn {
+            scanTimeoutWorkItem?.cancel()
+            scanTimeoutWorkItem = nil
+            central.stopScan()
+        }
         switch central.state {
         case .poweredOn:
             statusText = connectedPeripheral == nil ? "Bluetooth ready" : "Bluetooth ready · restoring connection state"
