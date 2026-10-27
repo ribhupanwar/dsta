@@ -254,14 +254,17 @@ struct WorkoutRecordingCard: View {
 
     private var averageBPM: Int? {
         guard !bluetooth.workoutHeartRateSamples.isEmpty else { return nil }
-        let total = bluetooth.workoutHeartRateSamples.reduce(0) { $0 + $1.bpm }
-        return Int((Double(total) / Double(bluetooth.workoutHeartRateSamples.count)).rounded())
+        let values = bluetooth.workoutHeartRateSamples.map(\\.bpm)
+        return Int((Double(values.reduce(0, +)) / Double(values.count)).rounded())
     }
 
-    private var durationText: String {
+    private var minBPM: Int? { bluetooth.workoutHeartRateSamples.map(\\.bpm).min() }
+    private var maxBPM: Int? { bluetooth.workoutHeartRateSamples.map(\\.bpm).max() }
+
+    private func durationText(at date: Date) -> String {
         let seconds: TimeInterval
         if bluetooth.workoutIsRecording, let start = bluetooth.workoutStartedAt {
-            seconds = Date().timeIntervalSince(start)
+            seconds = date.timeIntervalSince(start)
         } else {
             seconds = bluetooth.lastWorkoutDurationSeconds ?? 0
         }
@@ -270,46 +273,76 @@ struct WorkoutRecordingCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("WORKOUT RECORDING").font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
-                Spacer()
-                Circle().fill(bluetooth.workoutIsRecording ? ForgeColors.lime : ForgeColors.muted).frame(width: 7, height: 7)
-                Text(bluetooth.workoutIsRecording ? "RECORDING" : "READY")
-                    .font(.system(size: 9, weight: .bold)).foregroundStyle(bluetooth.workoutIsRecording ? ForgeColors.lime : ForgeColors.muted)
-            }
-            HStack(alignment: .firstTextBaseline) {
-                Text(durationText).font(.system(size: 28, weight: .light, design: .rounded)).monospacedDigit()
-                Spacer()
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text("\(bluetooth.workoutHeartRateSamples.count) SAMPLES")
-                    Text(averageBPM.map { "AVG \( $0 ) BPM" } ?? "AVG — BPM")
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("WORKOUT RECORDING").font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
+                    Spacer()
+                    Circle().fill(bluetooth.workoutIsRecording ? ForgeColors.lime : ForgeColors.muted).frame(width: 7, height: 7)
+                    Text(bluetooth.workoutIsRecording ? "RECORDING" : "READY")
+                        .font(.system(size: 9, weight: .bold)).foregroundStyle(bluetooth.workoutIsRecording ? ForgeColors.lime : ForgeColors.muted)
                 }
-                .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
-            }
-            Button {
-                if bluetooth.workoutIsRecording {
-                    bluetooth.stopWorkoutRecording()
-                } else {
-                    bluetooth.startWorkoutRecording()
+                HStack(alignment: .firstTextBaseline) {
+                    Text(durationText(at: context.date)).font(.system(size: 28, weight: .light, design: .rounded)).monospacedDigit()
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text("\(bluetooth.workoutHeartRateSamples.count) SAMPLES")
+                        Text(averageBPM.map { "AVG \\($0) BPM" } ?? "AVG — BPM")
+                    }
+                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
                 }
-            } label: {
-                Label(bluetooth.workoutIsRecording ? "STOP & SAVE SESSION" : "START WORKOUT", systemImage: bluetooth.workoutIsRecording ? "stop.fill" : "play.fill")
-                    .font(.system(size: 10, weight: .bold)).tracking(0.8)
-                    .frame(maxWidth: .infinity).padding(14)
-                    .background(bluetooth.workoutIsRecording ? ForgeColors.track : ForgeColors.lime, in: Capsule())
-                    .foregroundStyle(bluetooth.workoutIsRecording ? .white : .black)
+                HStack(spacing: 8) {
+                    workoutStat("MIN", value: minBPM)
+                    workoutStat("MAX", value: maxBPM)
+                    workoutStat("LATEST", value: bluetooth.workoutHeartRateSamples.last?.bpm)
+                }
+                if bluetooth.workoutHeartRateSamples.count >= 2 {
+                    Chart(bluetooth.workoutHeartRateSamples) { sample in
+                        LineMark(x: .value("Time", sample.timestamp), y: .value("BPM", sample.bpm))
+                            .foregroundStyle(ForgeColors.lime)
+                            .interpolationMethod(.catmullRom)
+                        AreaMark(x: .value("Time", sample.timestamp), y: .value("BPM", sample.bpm))
+                            .foregroundStyle(ForgeColors.lime.opacity(0.10))
+                    }
+                    .chartXAxis(.hidden)
+                    .chartYAxis(.hidden)
+                    .frame(height: 72)
+                }
+                Button {
+                    if bluetooth.workoutIsRecording {
+                        bluetooth.stopWorkoutRecording()
+                    } else {
+                        bluetooth.startWorkoutRecording()
+                    }
+                } label: {
+                    Label(bluetooth.workoutIsRecording ? "STOP & SAVE SESSION" : "START WORKOUT", systemImage: bluetooth.workoutIsRecording ? "stop.fill" : "play.fill")
+                        .font(.system(size: 10, weight: .bold)).tracking(0.8)
+                        .frame(maxWidth: .infinity).padding(14)
+                        .background(bluetooth.workoutIsRecording ? ForgeColors.track : ForgeColors.lime, in: Capsule())
+                        .foregroundStyle(bluetooth.workoutIsRecording ? .white : .black)
+                }
+                .buttonStyle(.plain)
+                .disabled(!bluetooth.workoutIsRecording && bluetooth.connectedName == nil)
+                Text(bluetooth.workoutIsRecording
+                     ? "Recording WHOOP heart-rate samples locally on this iPhone."
+                     : "Start a session while connected. The latest saved session stays on this iPhone.")
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
             }
-            .buttonStyle(.plain)
-            .disabled(!bluetooth.workoutIsRecording && bluetooth.connectedName == nil)
-            Text(bluetooth.workoutIsRecording
-                 ? "HR samples are being recorded locally while the WHOOP stream is active."
-                 : "Start a session while connected. Samples remain available in this app session.")
-                .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+            .padding(16)
+            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
         }
-        .padding(16)
-        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
+    }
+
+    @ViewBuilder
+    private func workoutStat(_ title: String, value: Int?) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.system(size: 8, weight: .bold)).tracking(0.7).foregroundStyle(ForgeColors.muted)
+            Text(value.map(String.init) ?? "—").font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(9)
+        .background(ForgeColors.track.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
