@@ -619,9 +619,12 @@ struct DeviceDashboard: View {
                                 .font(.system(size: 28, weight: .semibold, design: .rounded))
                                 .monospacedDigit()
                             Text(bluetooth.freshHeartRateBPM == nil
-                                 ? (bluetooth.isStandardHeartRateNotifying ? "Waiting for a fresh HR sample" : "Connected · HR stream not confirmed")
-                                 : "LIVE · \(bluetooth.heartRateUpdateCount) update(s)")
+                                 ? "CONNECTED · WAITING FOR HR DATA"
+                                 : "LIVE · \(bluetooth.heartRateUpdateCount) UPDATE(S)")
                                 .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(ForgeColors.muted)
+                            Text(bluetooth.lastHeartRateAt.map { "LAST HR · \($0.formatted(date: .omitted, time: .standard))" } ?? "NO HR PACKET RECEIVED")
+                                .font(.system(size: 8, weight: .medium, design: .monospaced))
                                 .foregroundStyle(ForgeColors.muted)
                         }
                         Spacer()
