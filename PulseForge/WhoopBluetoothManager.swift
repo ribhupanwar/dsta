@@ -258,10 +258,6 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         if let error {
-            discoveredProfile.append("Service error · \(error.localizedDescription)")
-            return
-        }
-        if let error {
             discoveredProfile.append("Service error · \(service.uuid.uuidString) · \(error.localizedDescription)")
         } else {
             for characteristic in service.characteristics ?? [] {
