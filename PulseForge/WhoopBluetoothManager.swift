@@ -6,6 +6,9 @@ struct DiscoveredWearable: Identifiable {
     let peripheral: CBPeripheral
     let name: String
     let rssi: Int
+    let advertisedServices: [String]
+    let manufacturerDataByteCount: Int?
+    let isConnectable: Bool?
     var id: UUID { peripheral.identifier }
 }
 
@@ -164,7 +167,16 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         }
         guard name.localizedCaseInsensitiveContains("whoop") || hasCandidateService else { return }
 
-        let item = DiscoveredWearable(peripheral: peripheral, name: name, rssi: RSSI.intValue)
+        let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data
+        let connectable = advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber
+        let item = DiscoveredWearable(
+            peripheral: peripheral,
+            name: name,
+            rssi: RSSI.intValue,
+            advertisedServices: advertisedServices.map { $0.uuidString.uppercased() }.sorted(),
+            manufacturerDataByteCount: manufacturerData?.count,
+            isConnectable: connectable?.boolValue
+        )
         if let index = devices.firstIndex(where: { $0.id == item.id }) {
             devices[index] = item
         } else {
