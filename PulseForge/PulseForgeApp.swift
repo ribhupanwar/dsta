@@ -95,14 +95,14 @@ struct TodayDashboard: View {
                 LiveHeartRateCard(heartRate: health.heartRate)
                 SectionHeader(title: "YOUR HEALTH", action: "View trends")
                 HStack(spacing: 12) {
-                    CompactMetric(title: "HRV", value: "—", unit: "ms")
-                    CompactMetric(title: "RESTING HR", value: "—", unit: "bpm")
+                    CompactMetric(title: "HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
+                    CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
                     CompactMetric(title: "SLEEP DEBT", value: "—", unit: "min")
                 }
                 SectionHeader(title: "HEALTH MONITOR")
                 HStack(spacing: 12) {
-                    CompactMetric(title: "RESP. RATE", value: "—", unit: "br/min")
-                    CompactMetric(title: "BLOOD O₂", value: "—", unit: "%")
+                    CompactMetric(title: "RESP. RATE", value: health.respiratoryRate.map { String(format: "%.1f", $0) } ?? "—", unit: "br/min")
+                    CompactMetric(title: "BLOOD O₂", value: health.bloodOxygenPercent.map { String(format: "%.0f", $0) } ?? "—", unit: "%")
                     CompactMetric(title: "SKIN TEMP", value: "—", unit: "°")
                 }
                 ConnectPrompt()
@@ -186,7 +186,7 @@ struct SleepDashboard: View {
                 }
                 .frame(height: 8)
                 HStack(spacing: 12) {
-                    MetricTile(title: "SLEEP NEED", value: "—", unit: "hours", symbol: "bed.double.fill")
+                    MetricTile(title: "SLEEP HOURS", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours", symbol: "bed.double.fill")
                     MetricTile(title: "SLEEP DEBT", value: "—", unit: "minutes", symbol: "hourglass")
                 }
                 Text("Sleep stages and sleep need will populate from supported sensor data or Apple Health.")
@@ -241,12 +241,12 @@ struct RunningDashboard: View {
                 .padding(20).frame(maxWidth: .infinity, alignment: .leading)
                 .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 20))
                 HStack(spacing: 10) {
-                    MetricTile(title: "DISTANCE", value: "—", unit: "km", symbol: "point.topleft.down.to.point.bottomright.curvepath")
-                    MetricTile(title: "AVG PACE", value: "—", unit: "/km", symbol: "speedometer")
+                    MetricTile(title: "DISTANCE", value: health.latestRunDistanceKm.map { String(format: "%.2f", $0) } ?? "—", unit: "km", symbol: "point.topleft.down.to.point.bottomright.curvepath")
+                    MetricTile(title: "AVG PACE", value: health.latestRunPaceMinutesPerKm.map { String(format: "%.2f", $0) } ?? "—", unit: "/km", symbol: "speedometer")
                 }
                 HStack(spacing: 10) {
                     MetricTile(title: "AVG HEART RATE", value: "—", unit: "bpm", symbol: "heart.fill")
-                    MetricTile(title: "DURATION", value: "—", unit: "min", symbol: "timer")
+                    MetricTile(title: "DURATION", value: health.latestRunDurationMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min", symbol: "timer")
                 }
                 SectionHeader(title: "HEART RATE ZONES")
                 VStack(spacing: 13) {
@@ -359,6 +359,15 @@ struct DeviceDashboard: View {
 final class HealthDataStore: ObservableObject {
     @Published private(set) var isAuthorized = false
     @Published private(set) var heartRate: Int?
+    @Published private(set) var hrvMilliseconds: Double?
+    @Published private(set) var restingHeartRate: Int?
+    @Published private(set) var respiratoryRate: Double?
+    @Published private(set) var bloodOxygenPercent: Double?
+    @Published private(set) var sleepHours: Double?
+    @Published private(set) var latestRunDistanceKm: Double?
+    @Published private(set) var latestRunDurationMinutes: Double?
+    @Published private(set) var latestRunPaceMinutesPerKm: Double?
+    @Published private(set) var latestRunDate: Date?
     private let store = HKHealthStore()
 
     func requestAccess() async {
@@ -367,25 +376,76 @@ final class HealthDataStore: ObservableObject {
             HKObjectType.quantityType(forIdentifier: .heartRate)!,
             HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!,
             HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
+            HKObjectType.quantityType(forIdentifier: .respiratoryRate)!,
+            HKObjectType.quantityType(forIdentifier: .oxygenSaturation)!,
+            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
             HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
             HKObjectType.workoutType()
         ]
         do {
             try await store.requestAuthorization(toShare: [], read: readTypes)
             isAuthorized = true
-            await loadLatestHeartRate()
+            loadHealthMetrics()
+            loadSleepDuration()
+            loadLatestRun()
         } catch {
             isAuthorized = false
         }
     }
 
-    private func loadLatestHeartRate() async {
-        guard let type = HKObjectType.quantityType(forIdentifier: .heartRate) else { return }
+    private func loadHealthMetrics() {
+        let rateUnit = HKUnit.count().unitDivided(by: HKUnit.minute())
+        loadLatestQuantity(.heartRate, unit: rateUnit) { [weak self] value in self?.heartRate = value.map(Int.init) }
+        loadLatestQuantity(.heartRateVariabilitySDNN, unit: HKUnit.secondUnit(with: .milli)) { [weak self] value in self?.hrvMilliseconds = value }
+        loadLatestQuantity(.restingHeartRate, unit: rateUnit) { [weak self] value in self?.restingHeartRate = value.map(Int.init) }
+        loadLatestQuantity(.respiratoryRate, unit: rateUnit) { [weak self] value in self?.respiratoryRate = value }
+        loadLatestQuantity(.oxygenSaturation, unit: HKUnit.percent(), multiplier: 100) { [weak self] value in self?.bloodOxygenPercent = value }
+    }
+
+    private func loadLatestQuantity(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, multiplier: Double = 1, completion: @escaping (Double?) -> Void) {
+        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { completion(nil); return }
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
-        let query = HKSampleQuery(sampleType: type, predicate: nil, limit: 1, sortDescriptors: [sort]) { [weak self] _, samples, _ in
-            guard let sample = samples?.first as? HKQuantitySample else { return }
-            let bpm = Int(sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute())))
-            Task { @MainActor in self?.heartRate = bpm }
+        let query = HKSampleQuery(sampleType: type, predicate: nil, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
+            let sample = samples?.first as? HKQuantitySample
+            let value = sample.map { $0.quantity.doubleValue(for: unit) * multiplier }
+            Task { @MainActor in completion(value) }
+        }
+        store.execute(query)
+    }
+
+    private func loadSleepDuration() {
+        guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return }
+        let start = Calendar.current.date(byAdding: .hour, value: -36, to: Date()) ?? Date().addingTimeInterval(-129600)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: [])
+        let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1000, sortDescriptors: nil) { [weak self] _, samples, _ in
+            let asleepValues: Set<Int> = [
+                HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
+                HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+                HKCategoryValueSleepAnalysis.asleepREM.rawValue
+            ]
+            let seconds = (samples as? [HKCategorySample] ?? [])
+                .filter { asleepValues.contains($0.value) }
+                .reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+            Task { @MainActor in self?.sleepHours = seconds > 0 ? seconds / 3600 : nil }
+        }
+        store.execute(query)
+    }
+
+    private func loadLatestRun() {
+        let predicate = HKQuery.predicateForWorkouts(with: .running)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        let query = HKSampleQuery(sampleType: HKObjectType.workoutType(), predicate: predicate, limit: 1, sortDescriptors: [sort]) { [weak self] _, samples, _ in
+            guard let workout = samples?.first as? HKWorkout else { return }
+            let distance = workout.totalDistance?.doubleValue(for: HKUnit.meter()).map { $0 / 1000 }
+            let duration = workout.duration / 60
+            let pace = distance.flatMap { $0 > 0 ? duration / $0 : nil }
+            Task { @MainActor in
+                self?.latestRunDistanceKm = distance
+                self?.latestRunDurationMinutes = duration
+                self?.latestRunPaceMinutesPerKm = pace
+                self?.latestRunDate = workout.endDate
+            }
         }
         store.execute(query)
     }
