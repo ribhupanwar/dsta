@@ -479,8 +479,27 @@ struct DeviceDashboard: View {
                                                     .font(.system(size: 8, design: .monospaced))
                                                     .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
                                             }
+                                            if !device.serviceDataEntries.isEmpty {
+                                                Text("Service data: " + device.serviceDataEntries.joined(separator: ", "))
+                                                    .font(.system(size: 8, design: .monospaced))
+                                                    .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
+                                            }
+                                            if !device.solicitedServices.isEmpty {
+                                                Text("Solicited: " + device.solicitedServices.joined(separator: ", "))
+                                                    .font(.system(size: 8, design: .monospaced))
+                                                    .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
+                                            }
+                                            if !device.overflowServices.isEmpty {
+                                                Text("Overflow: " + device.overflowServices.joined(separator: ", "))
+                                                    .font(.system(size: 8, design: .monospaced))
+                                                    .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
+                                            }
                                             if let byteCount = device.manufacturerDataByteCount {
                                                 Text("Manufacturer data: \(byteCount) bytes")
+                                                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(ForgeColors.muted)
+                                            }
+                                            if let power = device.transmitPower {
+                                                Text("TX power: \(power) dBm")
                                                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(ForgeColors.muted)
                                             }
                                             if let connectable = device.isConnectable {
