@@ -383,9 +383,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         if characteristic.service?.uuid == CBUUID(string: "FD4B0001-CCE1-4033-93CE-002D5875F58A") {
             let uuid = characteristic.uuid.uuidString.uppercased()
             let data = characteristic.value ?? Data()
-            let preview = data.prefix(24).map { String(format: "%02X", $0) }.joined(separator: " ")
-            vendorNotificationPayloads[uuid] = "\(data.count) bytes · \(preview.isEmpty ? "empty" : preview)"
-            lastBLEEvent = "WHOOP vendor notification · \(uuid) · \(data.count) bytes · \(ISO8601DateFormatter().string(from: Date()))"
+            let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            vendorNotificationPayloads[uuid] = "\(data.count) bytes · \(hex.isEmpty ? "empty" : hex)"
+            lastBLEEvent = "WHOOP vendor notification · \(uuid) · \(data.count) bytes · \(timestamp)"
             return
         }
         guard characteristic.service?.uuid == CBUUID(string: "180D"),
