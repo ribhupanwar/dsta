@@ -439,7 +439,7 @@ struct DeviceDashboard: View {
                             .font(.system(size: 9, weight: .bold)).tracking(1)
                             .foregroundStyle(bluetooth.connectedName == nil ? ForgeColors.muted : ForgeColors.lime)
                     }
-                    Text(bluetooth.connectedName ?? "WHOOP-compatible band")
+                    Text(bluetooth.connectedName ?? (bluetooth.isConnecting ? "Connecting to band…" : "WHOOP-compatible band"))
                         .font(.system(size: 19, weight: .semibold))
                     Text(bluetooth.statusText)
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
@@ -452,11 +452,13 @@ struct DeviceDashboard: View {
                         }
                     } else {
                         Button { bluetooth.startScan() } label: {
-                            Label("SCAN FOR WHOOP BAND", systemImage: "dot.radiowaves.left.and.right")
+                            Label(bluetooth.isConnecting ? "CONNECTING…" : "SCAN FOR WHOOP BAND",
+                                  systemImage: bluetooth.isConnecting ? "hourglass" : "dot.radiowaves.left.and.right")
                                 .font(.system(size: 10, weight: .bold)).tracking(0.8)
                                 .frame(maxWidth: .infinity).padding(14)
                                 .background(ForgeColors.lime, in: Capsule()).foregroundStyle(.black)
                         }
+                        .disabled(bluetooth.isConnecting)
                     }
                     if !bluetooth.devices.isEmpty {
                         VStack(spacing: 8) {
@@ -475,6 +477,7 @@ struct DeviceDashboard: View {
                                     .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                                 }
                                 .buttonStyle(.plain)
+                                .disabled(bluetooth.isConnecting)
                             }
                         }
                     }
