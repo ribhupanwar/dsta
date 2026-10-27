@@ -16,7 +16,7 @@ struct DiscoveredWearable: Identifiable {
     var id: UUID { peripheral.identifier }
 }
 
-struct LiveHeartRateSample: Identifiable {
+struct LiveHeartRateSample: Identifiable, Codable {
     let timestamp: Date
     let bpm: Int
     var id: TimeInterval { timestamp.timeIntervalSince1970 }
@@ -65,7 +65,17 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         }
         workoutIsRecording = false
         workoutStartedAt = nil
-        statusText = "Workout saved in this app session · \\(workoutHeartRateSamples.count) HR samples"
+        persistWorkoutSession()
+        statusText = "Workout saved on this iPhone · \\(workoutHeartRateSamples.count) HR samples"
+    }
+
+    private func persistWorkoutSession() {
+        if let data = try? JSONEncoder().encode(workoutHeartRateSamples) {
+            UserDefaults.standard.set(data, forKey: "pulseforge.whoop.lastWorkoutSamples")
+        }
+        if let duration = lastWorkoutDurationSeconds {
+            UserDefaults.standard.set(duration, forKey: "pulseforge.whoop.lastWorkoutDuration")
+        }
     }
 
     private var vendorNotificationStates: [String: String] = [:]
@@ -101,6 +111,11 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        if let data = UserDefaults.standard.data(forKey: "pulseforge.whoop.lastWorkoutSamples"),
+           let savedSamples = try? JSONDecoder().decode([LiveHeartRateSample].self, from: data) {
+            workoutHeartRateSamples = savedSamples
+        }
+        lastWorkoutDurationSeconds = UserDefaults.standard.object(forKey: "pulseforge.whoop.lastWorkoutDuration") as? Double
         central = CBCentralManager(delegate: self, queue: .main)
     }
 
@@ -320,6 +335,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         connectedDeviceSnapshot = nil
         if workoutIsRecording, let workoutStartedAt {
             lastWorkoutDurationSeconds = Date().timeIntervalSince(workoutStartedAt)
+            persistWorkoutSession()
         }
         workoutIsRecording = false
         workoutStartedAt = nil
