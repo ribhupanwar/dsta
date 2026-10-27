@@ -24,7 +24,7 @@ jobs:
           unzip -tq Whoop.zip >/dev/null
           mkdir -p inventory
           python3 - <<'PY'
-          import plistlib, json, zipfile, hashlib
+          import plistlib, json, zipfile, hashlib, re
           from pathlib import Path
           zpath = Path("Whoop.zip")
           with zipfile.ZipFile(zpath) as z:
@@ -49,16 +49,22 @@ jobs:
               for group, terms in groups.items():
                   inventory[group] = [n for n in names if any(t.lower() in n.lower() for t in terms)][:300]
               binary_strings = []
+              candidate_ble_uuids = []
               try:
                   raw = z.read("Whoop")
                   for token in [
                       b"shouldDispatchNotificationSideEffects", b"GET_DATA_RANGE",
                       b"SEND_HISTORICAL_DATA", b"historical_metadata", b"CBPeripheral",
-                      b"CBCharacteristic", b"didUpdateValueFor", b"HelloPacketRev3",
-                      b"HelloPacketRev4", b"hrBroadcastBeat"
+                      b"CBCharacteristic", b"CBUUID", b"CBService", b"didUpdateValueFor",
+                      b"didDiscoverServices", b"didDiscoverCharacteristicsFor",
+                      b"setNotifyValue", b"writeValue", b"scanForPeripherals",
+                      b"connectPeripheral", b"HelloPacketRev3", b"HelloPacketRev4",
+                      b"hrBroadcastBeat"
                   ]:
                       if token in raw:
                           binary_strings.append(token.decode("ascii"))
+                  uuid_pattern = rb"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                  candidate_ble_uuids = sorted(set(x.decode("ascii").lower() for x in re.findall(uuid_pattern, raw)))
               except KeyError:
                   pass
               resource_meta = {}
@@ -71,6 +77,7 @@ jobs:
                   "app_metadata": metadata,
                   "resource_inventory": inventory,
                   "binary_marker_presence": binary_strings,
+                  "candidate_ble_uuids_from_binary": candidate_ble_uuids,
                   "protocol_resource_fingerprints": resource_meta
               }
               Path("inventory/whoop-archive-inventory.json").write_text(json.dumps(report, indent=2))
@@ -81,6 +88,8 @@ jobs:
                   lines.append(f"- **{k}:** {v}")
               lines += ["", "## Binary marker presence", ""]
               lines += [f"- {x}" for x in binary_strings] or ["- No selected markers found"]
+              lines += ["", "## Candidate BLE UUID strings (unverified)", ""]
+              lines += [f"- `{x}`" for x in candidate_ble_uuids] or ["- No UUID strings found"]
               lines += ["", "## Protocol resource fingerprints", ""]
               for k, v in resource_meta.items():
                   lines.append(f"- **{k}:** {v['bytes']} bytes · SHA-256 `{v['sha256']}`")
