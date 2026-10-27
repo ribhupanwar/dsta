@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import HealthKit
+import Charts
 
 @main
 struct PulseForgeApp: App {
@@ -252,6 +253,8 @@ struct RunningDashboard: View {
                     MetricTile(title: "AVG HEART RATE", value: health.latestRunAverageHeartRate.map(String.init) ?? "—", unit: "bpm", symbol: "heart.fill")
                     MetricTile(title: "DURATION", value: health.latestRunDurationMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min", symbol: "timer")
                 }
+                SectionHeader(title: "HEART RATE")
+                WorkoutHeartRateChart(points: health.latestRunHeartRatePoints)
                 SectionHeader(title: "HEART RATE ZONES")
                 VStack(spacing: 13) {
                     ZoneRow(name: "Zone 5 · Maximum", color: Color(red: 0.96, green: 0.31, blue: 0.27))
@@ -497,6 +500,7 @@ final class HealthDataStore: ObservableObject {
     @Published private(set) var latestRunPaceMinutesPerKm: Double?
     @Published private(set) var latestRunAverageHeartRate: Int?
     @Published private(set) var latestRunHeartRateSampleCount = 0
+    @Published private(set) var latestRunHeartRatePoints: [WorkoutHeartRatePoint] = []
     @Published private(set) var latestRunSplits: [RunSplit] = []
     @Published private(set) var latestRunDate: Date?
     @Published private(set) var lastRefreshDate: Date?
@@ -632,9 +636,16 @@ final class HealthDataStore: ObservableObject {
                 $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
             }
             let average = values.isEmpty ? nil : Int((values.reduce(0, +) / Double(values.count)).rounded())
+            let points = (samples as? [HKQuantitySample] ?? []).map { sample in
+                WorkoutHeartRatePoint(
+                    elapsedMinutes: max(0, sample.startDate.timeIntervalSince(workout.startDate) / 60),
+                    beatsPerMinute: sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
+                )
+            }
             Task { @MainActor in
                 self?.latestRunAverageHeartRate = average
                 self?.latestRunHeartRateSampleCount = values.count
+                self?.latestRunHeartRatePoints = points
             }
         }
         store.execute(query)
@@ -676,6 +687,52 @@ final class HealthDataStore: ObservableObject {
             Task { @MainActor in self?.latestRunSplits = rows }
         }
         store.execute(query)
+    }
+}
+
+struct WorkoutHeartRatePoint: Identifiable {
+    let elapsedMinutes: Double
+    let beatsPerMinute: Double
+    var id: Double { elapsedMinutes }
+}
+
+struct WorkoutHeartRateChart: View {
+    let points: [WorkoutHeartRatePoint]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("BPM").font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
+                Spacer()
+                Text(points.isEmpty ? "NO WORKOUT SAMPLES" : "\(points.count) SAMPLES")
+                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
+            }
+            if points.count >= 2 {
+                Chart(points) { point in
+                    LineMark(
+                        x: .value("Elapsed time", point.elapsedMinutes),
+                        y: .value("Heart rate", point.beatsPerMinute)
+                    )
+                    .foregroundStyle(ForgeColors.lime)
+                    .interpolationMethod(.catmullRom)
+                    AreaMark(
+                        x: .value("Elapsed time", point.elapsedMinutes),
+                        y: .value("Heart rate", point.beatsPerMinute)
+                    )
+                    .foregroundStyle(ForgeColors.lime.opacity(0.12))
+                    .interpolationMethod(.catmullRom)
+                }
+                .chartXAxisLabel("Minutes")
+                .chartYAxisLabel("BPM")
+                .frame(height: 170)
+            } else {
+                Text(points.isEmpty ? "Heart-rate samples for this run will appear here after Apple Health sync." : "At least two heart-rate samples are needed to draw the chart.")
+                    .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                    .frame(maxWidth: .infinity, minHeight: 120, alignment: .center)
+            }
+        }
+        .padding(18)
+        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
     }
 }
 
