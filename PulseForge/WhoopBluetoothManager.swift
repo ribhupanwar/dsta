@@ -40,6 +40,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5CommandCharacteristic: CBCharacteristic?
     private var whoop5HelloSent = false
     private var whoop5HelloWritePending = false
+    private var whoop5HRStreamEnableSent = false
+    private var whoop5HRStreamConfirmed = false
+    private var whoop5PendingWrites: [String] = []
+    private var whoop5NextCommandSequence: UInt8 = 2
 
     private var central: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
@@ -210,6 +214,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "HR updates this connection: \(heartRateUpdateCount)",
             "WHOOP 5.0 CLIENT_HELLO sent: \(whoop5HelloSent ? "yes" : "no")",
             "WHOOP 5.0 CLIENT_HELLO write pending: \(whoop5HelloWritePending ? "yes" : "no")",
+            "WHOOP realtime HR enable command sent: \(whoop5HRStreamEnableSent ? "yes" : "no")",
+            "WHOOP realtime HR ON event confirmed: \(whoop5HRStreamConfirmed ? "yes" : "no")",
             "WHOOP protocol diagnosis: \\(whoopProtocolDiagnostics)",
             "WHOOP packet counts · realtime: \\(whoopRealtimePacketCount) · command responses: \\(whoopCommandResponseCount)",
             "WHOOP last packet type: \\(whoopLastPacketType)",
@@ -224,7 +230,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         lines.append(contentsOf: vendorNotificationHistory.isEmpty ? ["  No vendor payload events captured"] : vendorNotificationHistory)
         lines.append(contentsOf: discoveredProfile.isEmpty ? ["No GATT profile captured"] : discoveredProfile)
         lines.append("")
-        lines.append("Note: FD4B notify channels are passively observed. Full payload hex is kept in memory for the latest 40 events. No proprietary command writes are sent and payloads are not interpreted as HR without a verified format.")
+        lines.append("Note: WHOOP 5.0 frames are checked with header CRC16-Modbus and payload CRC32. HR stream activation is tracked separately from notification subscription.")
         return lines.joined(separator: "\n")
     }
 
@@ -286,6 +292,10 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5CommandCharacteristic = nil
         whoop5HelloSent = false
         whoop5HelloWritePending = false
+        whoop5HRStreamEnableSent = false
+        whoop5HRStreamConfirmed = false
+        whoop5PendingWrites.removeAll()
+        whoop5NextCommandSequence = 2
         isConnecting = false
         connectedPeripheral?.delegate = nil
         connectedPeripheral = nil
@@ -413,7 +423,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let data = characteristic.value ?? Data()
             let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
             let timestamp = ISO8601DateFormatter().string(from: Date())
-            whoopProtocolDiagnostics = diagnoseWhoop5Frame(data)
+            whoopProtocolDiagnostics = diagnoseWhoop5Frame(data, peripheral: peripheral)
             vendorNotificationPayloads[uuid] = "\(data.count) bytes · \(hex.isEmpty ? "empty" : hex)"
             vendorNotificationHistory.append("\(timestamp) · \(uuid) · \(data.count) bytes · HEX: \(hex.isEmpty ? "empty" : hex)")
             if vendorNotificationHistory.count > 40 {
@@ -455,42 +465,150 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             : "Connected · HR notification not enabled yet · \(inspection)"
     }
 
-    /// WHOOP 5.0 framing diagnosis. Length is checked; CRC is explicitly not claimed validated.
-    private func diagnoseWhoop5Frame(_ data: Data) -> String {
+    /// WHOOP 5.0 frame validation and packet routing.
+    /// The frame header uses CRC16-Modbus; the padded inner payload uses CRC32.
+    private func diagnoseWhoop5Frame(_ data: Data, peripheral: CBPeripheral) -> String {
         let b = [UInt8](data)
         guard b.count >= 13 else { return "Fragment/short frame · \(b.count) bytes" }
-        guard b[0] == 0xAA else { return "Unknown frame prefix · \(String(format: "%02X", b[0]))" }
+        guard b[0] == 0xAA, b[1] == 0x01 else {
+            return "Unknown WHOOP5 frame prefix/revision · \(String(format: "%02X", b[0]))"
+        }
         let declared = Int(b[2]) | (Int(b[3]) << 8)
         let expected = 8 + declared
         guard expected == b.count else {
-            return "WHOOP5 length mismatch · expected \(expected), received \(b.count) · not decoded"
+            return "WHOOP5 length mismatch · expected \(expected), received \(b.count) · awaiting complete frame"
         }
+        guard isValidWhoop5Frame(b) else {
+            return "WHOOP5 frame rejected · CRC16 header or CRC32 payload invalid"
+        }
+
         let type = Int(b[8])
         whoopLastPacketType = "\(type)"
         switch type {
-        case 36:
+        case 36: // COMMAND_RESPONSE
             whoopCommandResponseCount += 1
             let command = Int(b[10])
             guard b.count > 12 else { return "COMMAND_RESPONSE · cmd \(command) · truncated" }
+            let echoedSequence = Int(b[11])
             let result = Int(b[12])
             let resultName = [0: "FAILURE", 1: "SUCCESS", 2: "PENDING", 3: "UNSUPPORTED"][result] ?? "UNKNOWN(\(result))"
-            return command == 145
-                ? "COMMAND_RESPONSE · GET_HELLO(145) · result \(resultName) · length OK · CRC pending"
-                : "COMMAND_RESPONSE · command \(command) · result \(resultName) · length OK · CRC pending"
-        case 40:
+            if command == 145 {
+                guard result == 1, echoedSequence == 1 else {
+                    return "COMMAND_RESPONSE · GET_HELLO · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
+                }
+                // Gen5 HELLO revision-1 semantic body spans 104 bytes.
+                guard b.count >= 121 else {
+                    return "COMMAND_RESPONSE · GET_HELLO success but body too short (\(b.count) bytes)"
+                }
+                sendRealtimeHrEnable(to: peripheral)
+                return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR enable requested"
+            }
+            return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
+
+        case 40: // REALTIME_DATA; protocol inner[8] == complete-frame byte[16]
             whoopRealtimePacketCount += 1
-            guard b.count > 17 else { return "REALTIME_DATA · too short for HR byte at offset 16" }
+            guard b.count > 16 else { return "REALTIME_DATA · too short for HR field · CRC valid" }
             let bpm = Int(b[16])
-            guard (1...240).contains(bpm) else { return "REALTIME_DATA · HR byte \(bpm) outside plausible range · rejected" }
+            guard (1...250).contains(bpm) else {
+                return "REALTIME_DATA · HR byte \(bpm) outside plausible range · rejected · CRC valid"
+            }
             liveHeartRateBPM = bpm
             lastHeartRateAt = Date()
             heartRateUpdateCount += 1
             lastBLEEvent = "WHOOP5 REALTIME_DATA · \(bpm) bpm · sample #\(heartRateUpdateCount)"
             statusText = "Live HR · \(bpm) bpm · \(heartRateUpdateCount) update(s)"
-            return "REALTIME_DATA · HR \(bpm) bpm decoded at offset 16 · length OK · CRC pending"
+            return "REALTIME_DATA · HR \(bpm) bpm decoded at frame offset 16 · CRC valid"
+
+        case 48: // EVENT
+            guard b.count >= 20 else { return "EVENT · truncated · CRC valid" }
+            let eventID = Int(b[10]) | (Int(b[11]) << 8)
+            if eventID == 33 {
+                whoop5HRStreamConfirmed = true
+                lastBLEEvent = "WHOOP event 33 · BLE_REALTIME_HR_ON · stream activation confirmed"
+                statusText = "Connected · WHOOP realtime HR stream confirmed · waiting for sample"
+                return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid"
+            }
+            if eventID == 34 {
+                whoop5HRStreamConfirmed = false
+                lastBLEEvent = "WHOOP event 34 · BLE_REALTIME_HR_OFF"
+                return "EVENT · BLE_REALTIME_HR_OFF(34) · CRC valid"
+            }
+            if eventID == 3, b.count > 22 {
+                let socRaw = Int(b[21]) | (Int(b[22]) << 8)
+                return "EVENT · BATTERY_LEVEL(3) · \(Double(socRaw) / 10.0)% · CRC valid"
+            }
+            return "EVENT · id \(eventID) · CRC valid · not a realtime HR sample"
+
         default:
-            return "WHOOP5 packet type \(type) · \(b.count) bytes · length OK · no HR decoded"
+            return "WHOOP5 packet type \(type) · \(b.count) bytes · CRC valid · no HR decoded"
         }
+    }
+
+    private func isValidWhoop5Frame(_ b: [UInt8]) -> Bool {
+        guard b.count >= 12, b[0] == 0xAA, b[1] == 0x01 else { return false }
+        let declared = Int(b[2]) | (Int(b[3]) << 8)
+        guard declared >= 4, 8 + declared == b.count else { return false }
+        let storedHeaderCRC = UInt16(b[6]) | (UInt16(b[7]) << 8)
+        guard crc16Modbus(Array(b[0..<6])) == storedHeaderCRC else { return false }
+        let payloadEnd = b.count - 4
+        let paddedInner = Array(b[8..<payloadEnd])
+        let storedPayloadCRC = UInt32(b[payloadEnd])
+            | (UInt32(b[payloadEnd + 1]) << 8)
+            | (UInt32(b[payloadEnd + 2]) << 16)
+            | (UInt32(b[payloadEnd + 3]) << 24)
+        return crc32(paddedInner) == storedPayloadCRC
+    }
+
+    private func crc16Modbus(_ bytes: [UInt8]) -> UInt16 {
+        var crc: UInt16 = 0xFFFF
+        for byte in bytes {
+            crc ^= UInt16(byte)
+            for _ in 0..<8 {
+                crc = (crc & 1) == 1 ? (crc >> 1) ^ 0xA001 : (crc >> 1)
+            }
+        }
+        return crc
+    }
+
+    private func crc32(_ bytes: [UInt8]) -> UInt32 {
+        var crc: UInt32 = 0xFFFFFFFF
+        for byte in bytes {
+            crc ^= UInt32(byte)
+            for _ in 0..<8 {
+                crc = (crc & 1) == 1 ? (crc >> 1) ^ 0xEDB88320 : (crc >> 1)
+            }
+        }
+        return crc ^ 0xFFFFFFFF
+    }
+
+    /// Enable WHOOP 5.0 live HR (opcode 0x03, body [0x01]).
+    /// This is separate from subscribing to 180D/2A37 and FD4B notify CCCDs.
+    private func sendRealtimeHrEnable(to peripheral: CBPeripheral) {
+        guard !whoop5HRStreamEnableSent,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x03, payload: [0x01])
+        whoop5HRStreamEnableSent = true
+        whoop5PendingWrites.append("REALTIME_HR_ON")
+        lastBLEEvent = "WHOOP realtime HR ON command requested · opcode 03 · sequence \(sequence)"
+        statusText = "Connected · requesting WHOOP live HR stream"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    /// Gen5 outbound command envelope: CRC16-Modbus header + CRC32 padded inner.
+    private func buildWhoop5CommandFrame(sequence: UInt8, opcode: UInt8, payload: [UInt8]) -> Data {
+        var inner: [UInt8] = [0x23, sequence, opcode] + payload
+        while inner.count % 4 != 0 { inner.append(0) }
+        let declared = UInt16(inner.count + 4)
+        var header: [UInt8] = [0xAA, 0x01, UInt8(declared & 0xFF), UInt8((declared >> 8) & 0xFF), 0x00, 0x01]
+        let headerCRC = crc16Modbus(header)
+        header.append(UInt8(headerCRC & 0xFF))
+        header.append(UInt8((headerCRC >> 8) & 0xFF))
+        let payloadCRC = crc32(inner)
+        let tail: [UInt8] = [UInt8(payloadCRC & 0xFF), UInt8((payloadCRC >> 8) & 0xFF), UInt8((payloadCRC >> 16) & 0xFF), UInt8((payloadCRC >> 24) & 0xFF)]
+        return Data(header + inner + tail)
     }
 
     private func parseStandardHeartRateMeasurement(_ data: Data) -> Int? {
@@ -554,6 +672,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 ]
                 whoop5HelloSent = true
                 whoop5HelloWritePending = true
+                whoop5PendingWrites.append("CLIENT_HELLO")
                 lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write requested · FD4B0002 · 16 bytes · with response"
                 statusText = "Connected · starting WHOOP 5.0 secure session"
                 peripheral.writeValue(Data(hello), for: command, type: .withResponse)
@@ -573,7 +692,25 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     }
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier,
-              characteristic.uuid == whoop5CommandUUID else { return }
+              characteristic.uuid == whoop5CommandUUID,
+              !whoop5PendingWrites.isEmpty else { return }
+        let kind = whoop5PendingWrites.removeFirst()
+
+        if kind == "REALTIME_HR_ON" {
+            if let error {
+                whoop5HRStreamEnableSent = false
+                lastBLEEvent = "WHOOP realtime HR ON write failed · \(error.localizedDescription)"
+                statusText = "Connected · live HR command failed"
+                return
+            }
+            lastBLEEvent = "WHOOP realtime HR ON write acknowledged by CoreBluetooth · opcode 03"
+            statusText = whoop5HRStreamConfirmed
+                ? "Connected · WHOOP realtime HR stream confirmed"
+                : "Connected · HR stream requested · awaiting WHOOP confirmation/data"
+            return
+        }
+
+        guard kind == "CLIENT_HELLO" else { return }
         whoop5HelloWritePending = false
         if let error {
             lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write failed · \(error.localizedDescription)"
@@ -581,9 +718,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return
         }
         lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write acknowledged by CoreBluetooth · FD4B0002"
-        statusText = "Connected · WHOOP 5.0 hello write acknowledged · awaiting data"
+        statusText = "Connected · WHOOP 5.0 hello write acknowledged · awaiting response"
         // Re-arm vendor notifications after the command write callback, matching
-        // NOOP's post-hello sequence. This callback confirms the write operation,
+        // the NOOP post-hello sequence. The callback confirms the write operation,
         // not independently that the strap accepted or encrypted the session.
         guard let service = characteristic.service else { return }
         for item in service.characteristics ?? [] {
