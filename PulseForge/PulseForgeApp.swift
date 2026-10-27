@@ -99,6 +99,12 @@ struct TodayDashboard: View {
                     CompactMetric(title: "RESTING HR", value: "—", unit: "bpm")
                     CompactMetric(title: "SLEEP DEBT", value: "—", unit: "min")
                 }
+                SectionHeader(title: "HEALTH MONITOR")
+                HStack(spacing: 12) {
+                    CompactMetric(title: "RESP. RATE", value: "—", unit: "br/min")
+                    CompactMetric(title: "BLOOD O₂", value: "—", unit: "%")
+                    CompactMetric(title: "SKIN TEMP", value: "—", unit: "°")
+                }
                 ConnectPrompt()
                 JournalPrompt()
                 Text("Metrics appear after you connect a supported wearable or allow Apple Health access.")
@@ -123,9 +129,7 @@ struct RecoveryHero: View {
             }
             HStack(spacing: 20) {
                 ZStack {
-                    Circle().stroke(ForgeColors.track, lineWidth: 10)
-                    Circle().trim(from: 0, to: 0.72).stroke(ForgeColors.lime, style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                        .rotationEffect(.degrees(-90)).opacity(0.25)
+                    Circle().stroke(ForgeColors.track, style: StrokeStyle(lineWidth: 10, lineCap: .round, dash: [3, 5]))
                     Text("—").font(.system(size: 42, weight: .light, design: .rounded)).foregroundStyle(.white)
                 }
                 .frame(width: 116, height: 116)
@@ -154,7 +158,7 @@ struct LiveHeartRateCard: View {
                 Image(systemName: "heart.fill").foregroundStyle(ForgeColors.lime)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text("LIVE HEART RATE").font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundStyle(ForgeColors.muted)
+                Text("LATEST HEART RATE · APPLE HEALTH").font(.system(size: 9, weight: .bold)).tracking(0.9).foregroundStyle(ForgeColors.muted)
                 Text(heartRate.map { "\($0) BPM" } ?? "Waiting for sensor")
                     .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
             }
