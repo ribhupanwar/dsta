@@ -86,7 +86,7 @@ struct TodayDashboard: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 22) {
-                HeaderView(eyebrow: "TUESDAY, 27 OCTOBER", title: "Your day")
+                HeaderView(eyebrow: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)).uppercased(), title: "Your day")
                 RecoveryHero()
                 HStack(spacing: 12) {
                     MetricTile(title: "SLEEP", value: "—", unit: "performance", symbol: "moon.zzz.fill")
@@ -107,6 +107,13 @@ struct TodayDashboard: View {
                 }
                 ConnectPrompt()
                 JournalPrompt()
+                HStack {
+                    Text(health.lastRefreshDate.map { "HEALTH DATA CHECKED · \($0.formatted(date: .omitted, time: .shortened))" } ?? "PULL DOWN TO REFRESH HEALTH DATA")
+                        .font(.system(size: 9, weight: .semibold)).tracking(0.6)
+                        .foregroundStyle(ForgeColors.muted)
+                    Spacer()
+                    if health.isRefreshing { ProgressView().tint(ForgeColors.lime).scaleEffect(0.8) }
+                }
                 Text("Metrics appear after you connect a supported wearable or allow Apple Health access.")
                     .font(.system(size: 11))
                     .foregroundStyle(ForgeColors.muted)
@@ -115,6 +122,7 @@ struct TodayDashboard: View {
             .padding(.horizontal, 20)
             .padding(.top, 18)
         }
+        .refreshable { health.refresh() }
     }
 }
 
@@ -230,7 +238,7 @@ struct RunningDashboard: View {
                 HeaderView(eyebrow: "ENDURANCE", title: "Running")
                 VStack(alignment: .leading, spacing: 8) {
                     Text("LAST RUN").font(.system(size: 10, weight: .bold)).tracking(1.5).foregroundStyle(ForgeColors.muted)
-                    Text("No activity synced").font(.system(size: 20, weight: .semibold))
+                    Text(health.latestRunDate.map { "Run · \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "No activity synced").font(.system(size: 20, weight: .semibold))
                     Text("Your distance, pace, heart-rate zones and splits will appear here after a workout sync.")
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                 }
@@ -268,6 +276,7 @@ struct RunningDashboard: View {
             }
             .padding(20).padding(.top, 18)
         }
+        .refreshable { health.refresh() }
     }
 }
 
@@ -474,7 +483,22 @@ final class HealthDataStore: ObservableObject {
     @Published private(set) var latestRunDurationMinutes: Double?
     @Published private(set) var latestRunPaceMinutesPerKm: Double?
     @Published private(set) var latestRunDate: Date?
+    @Published private(set) var lastRefreshDate: Date?
+    @Published private(set) var isRefreshing = false
     private let store = HKHealthStore()
+
+    func refresh() {
+        guard isAuthorized else { return }
+        isRefreshing = true
+        lastRefreshDate = Date()
+        loadHealthMetrics()
+        loadSleepDuration()
+        loadLatestRun()
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            self.isRefreshing = false
+        }
+    }
 
     func requestAccess() async {
         guard HKHealthStore.isHealthDataAvailable() else { return }
@@ -491,9 +515,7 @@ final class HealthDataStore: ObservableObject {
         do {
             try await store.requestAuthorization(toShare: [], read: readTypes)
             isAuthorized = true
-            loadHealthMetrics()
-            loadSleepDuration()
-            loadLatestRun()
+            refresh()
         } catch {
             isAuthorized = false
         }
