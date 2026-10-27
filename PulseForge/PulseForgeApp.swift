@@ -189,7 +189,7 @@ struct LiveHeartRateChartCard: View {
     let title: String
 
     private var yDomain: ClosedRange<Int> {
-        guard let low = samples.map(\\.bpm).min(), let high = samples.map(\\.bpm).max() else {
+        guard let low = samples.map(\.bpm).min(), let high = samples.map(\.bpm).max() else {
             return 40...180
         }
         let lower = max(30, low - 8)
@@ -202,7 +202,7 @@ struct LiveHeartRateChartCard: View {
             HStack {
                 Text(title).font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
                 Spacer()
-                Text(samples.isEmpty ? "NO LIVE SAMPLES" : "\\(samples.count) POINTS")
+                Text(samples.isEmpty ? "NO LIVE SAMPLES" : "\(samples.count) POINTS")
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.lime)
             }
             if samples.count >= 2 {
@@ -234,7 +234,7 @@ struct LiveHeartRateChartCard: View {
                 Text("60 SEC WINDOW")
                 Spacer()
                 if let latest = samples.last {
-                    Text("LATEST \\(latest.bpm) BPM")
+                    Text("LATEST \(latest.bpm) BPM")
                 }
             }
             .font(.system(size: 8, weight: .semibold)).tracking(0.7).foregroundStyle(ForgeColors.muted)
@@ -278,8 +278,8 @@ struct WorkoutRecordingCard: View {
                 Text(durationText).font(.system(size: 28, weight: .light, design: .rounded)).monospacedDigit()
                 Spacer()
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text("\\(bluetooth.workoutHeartRateSamples.count) SAMPLES")
-                    Text(averageBPM.map { "AVG \\( $0 ) BPM" } ?? "AVG — BPM")
+                    Text("\(bluetooth.workoutHeartRateSamples.count) SAMPLES")
+                    Text(averageBPM.map { "AVG \( $0 ) BPM" } ?? "AVG — BPM")
                 }
                 .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
             }
