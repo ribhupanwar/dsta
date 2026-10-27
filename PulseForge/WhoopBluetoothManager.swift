@@ -81,6 +81,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var vendorNotificationStates: [String: String] = [:]
     private var vendorNotificationPayloads: [String: String] = [:]
     private var vendorNotificationHistory: [String] = []
+    private var candidateNotificationStates: [String: String] = [:]
+    private var candidateNotificationHistory: [String] = []
+    private let motionProbeUUIDPrefixes = ["8A58", "5983", "6108", "1150"]
     private let whoop5ServiceUUID = CBUUID(string: "FD4B0001-CCE1-4033-93CE-002D5875F58A")
     private let whoop5CommandUUID = CBUUID(string: "FD4B0002-CCE1-4033-93CE-002D5875F58A")
     private var whoop5CommandCharacteristic: CBCharacteristic?
@@ -299,6 +302,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         lines.append("")
         lines.append("WHOOP vendor notification history (latest 40 events):")
         lines.append(contentsOf: vendorNotificationHistory.isEmpty ? ["  No vendor payload events captured"] : vendorNotificationHistory)
+        lines.append("")
+        lines.append("WHOOP archive candidate-channel probe (passive notifications only):")
+        lines.append(contentsOf: candidateNotificationStates.keys.sorted().map { "  \\($0): \\(candidateNotificationStates[$0] ?? \"unknown\")" })
+        lines.append(contentsOf: candidateNotificationHistory.isEmpty ? ["  No candidate-channel payloads captured"] : candidateNotificationHistory)
         lines.append(contentsOf: discoveredProfile.isEmpty ? ["No GATT profile captured"] : discoveredProfile)
         lines.append("")
         lines.append("Note: WHOOP 5.0 frames are checked with header CRC16-Modbus and payload CRC32. HR stream activation is tracked separately from notification subscription.")
@@ -422,6 +429,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         vendorNotificationStates.removeAll()
         vendorNotificationPayloads.removeAll()
         vendorNotificationHistory.removeAll()
+        candidateNotificationStates.removeAll()
+        candidateNotificationHistory.removeAll()
         whoop5CommandCharacteristic = nil
         whoop5HelloSent = false
         whoop5HelloWritePending = false
@@ -621,6 +630,16 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 vendorNotificationHistory.removeFirst(vendorNotificationHistory.count - 40)
             }
             lastBLEEvent = "WHOOP vendor notification · \(uuid) · \(data.count) bytes · \(timestamp)"
+            return
+        }
+        let incomingUUID = characteristic.uuid.uuidString.uppercased()
+        if motionProbeUUIDPrefixes.contains(where: { incomingUUID.hasPrefix($0) }) {
+            let data = characteristic.value ?? Data()
+            let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            candidateNotificationHistory.append("\(timestamp) · \(incomingUUID) · \(data.count) bytes · HEX: \(hex)")
+            if candidateNotificationHistory.count > 80 { candidateNotificationHistory.removeFirst(candidateNotificationHistory.count - 80) }
+            lastBLEEvent = "WHOOP archive candidate notification · \(incomingUUID) · \(data.count) bytes"
             return
         }
         guard characteristic.service?.uuid == CBUUID(string: "180D"),
@@ -858,6 +877,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     "FD4B0007-CCE1-4033-93CE-002D5875F58A"
                 ]
                 let characteristicUUID = characteristic.uuid.uuidString.uppercased()
+                if motionProbeUUIDPrefixes.contains(where: { characteristicUUID.hasPrefix($0) }), (characteristic.properties.contains(.notify) || characteristic.properties.contains(.indicate)) {
+                    candidateNotificationStates[characteristicUUID] = "passive subscription requested"
+                    peripheral.setNotifyValue(true, for: characteristic)
+                }
                 if service.uuid == whoop5ServiceUUID && characteristic.uuid == whoop5CommandUUID {
                     whoop5CommandCharacteristic = characteristic
                 }
