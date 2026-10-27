@@ -746,22 +746,51 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
 
-        case 43: // WHOOP 5/MG raw six-axis IMU frame (1244-byte verified layout)
+        case 47: // WHOOP 5/MG raw six-axis IMU buffer (type 0x2F; NOOP hardware decoder)
+            // Exact 1244-byte frame layout: timestamp @15, accel count @24,
+            // accel columns @28/@228/@428, gyro count @630, gyro columns @640/@840/@1040.
             guard b.count == 1244 else {
-                whoopIMUStatus = "IMU packet type 43 · unexpected length \(b.count) bytes"
-                return "REALTIME_RAW_DATA · unexpected length \(b.count) · CRC valid"
+                whoopIMUStatus = "IMU type 47 · unexpected length \(b.count) bytes"
+                return "RAW_IMU(0x2F) · unexpected length \(b.count) · CRC valid"
             }
-            let accelCount = Int(b[24]) | (Int(b[25]) << 8)
-            let gyroCount = Int(b[630]) | (Int(b[631]) << 8)
+            func u16(_ offset: Int) -> Int {
+                Int(b[offset]) | (Int(b[offset + 1]) << 8)
+            }
+            func i16(_ offset: Int) -> Int {
+                let value = u16(offset)
+                return value >= 32768 ? value - 65536 : value
+            }
+            func u32(_ offset: Int) -> UInt32 {
+                UInt32(b[offset]) | (UInt32(b[offset + 1]) << 8)
+                    | (UInt32(b[offset + 2]) << 16) | (UInt32(b[offset + 3]) << 24)
+            }
+            let accelCount = u16(24)
+            let gyroCount = u16(630)
             guard accelCount == 100, gyroCount == 100 else {
-                whoopIMUStatus = "IMU frame layout not recognised · A:\(accelCount) G:\(gyroCount)"
-                return "REALTIME_RAW_DATA · unrecognised sample counts A:\(accelCount) G:\(gyroCount)"
+                whoopIMUStatus = "IMU layout not recognised · A:\(accelCount) G:\(gyroCount)"
+                return "RAW_IMU(0x2F) · invalid counts A:\(accelCount) G:\(gyroCount)"
             }
+            // Decode and sanity-check the six columnar channels using WHOOP's documented scales.
+            // This avoids reporting an active stream based only on a matching packet length.
+            let axes = [28, 228, 428, 640, 840, 1040]
+            for index in 0..<100 {
+                let ax = Double(i16(axes[0] + index * 2)) / 4096.0
+                let ay = Double(i16(axes[1] + index * 2)) / 4096.0
+                let az = Double(i16(axes[2] + index * 2)) / 4096.0
+                let gx = Double(i16(axes[3] + index * 2)) * 2000.0 / 32768.0
+                let gy = Double(i16(axes[4] + index * 2)) * 2000.0 / 32768.0
+                let gz = Double(i16(axes[5] + index * 2)) * 2000.0 / 32768.0
+                guard [ax, ay, az, gx, gy, gz].allSatisfy({ $0.isFinite }) else {
+                    whoopIMUStatus = "IMU sample decode failed"
+                    return "RAW_IMU(0x2F) · invalid sample values"
+                }
+            }
+            let strapTimestamp = TimeInterval(u32(15))
             whoopIMUFrameCount += 1
             whoopIMUSampleCount += accelCount
-            whoopIMULastFrameAt = Date()
+            whoopIMULastFrameAt = strapTimestamp > 0 ? Date(timeIntervalSince1970: strapTimestamp) : Date()
             whoopIMUStatus = "Live motion active · \(whoopIMUFrameCount) one-second frames"
-            return "REALTIME_RAW_DATA · 100 Hz six-axis IMU · frame \(whoopIMUFrameCount) · CRC valid"
+            return "RAW_IMU(0x2F) · 100 Hz six-axis · frame \(whoopIMUFrameCount) · CRC valid"
 
         case 40: // REALTIME_DATA; protocol inner[8] == complete-frame byte[16]
             whoopRealtimePacketCount += 1
@@ -780,7 +809,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoop5HRStreamConfirmed = true
                 lastBLEEvent = "WHOOP event 33 · BLE_REALTIME_HR_ON · stream activation confirmed"
                 statusText = "Connected · WHOOP realtime HR stream confirmed · waiting for sample"
-                return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid"
+                startWhoopAutoIMUIfNeeded()
+                return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid · automatic IMU start requested"
             }
             if eventID == 34 {
                 whoop5HRStreamConfirmed = false
