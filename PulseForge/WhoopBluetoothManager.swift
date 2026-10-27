@@ -51,6 +51,17 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         if connectedPeripheral == nil { statusText = "Scan stopped" }
     }
 
+    func disconnect() {
+        central.stopScan()
+        if let peripheral = connectedPeripheral {
+            central.cancelPeripheralConnection(peripheral)
+        } else {
+            connectedName = nil
+            discoveredProfile.removeAll()
+            statusText = "Disconnected"
+        }
+    }
+
     func connect(to device: DiscoveredWearable) {
         central.stopScan()
         discoveredProfile.removeAll()
@@ -117,8 +128,10 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         connectedName = nil
         connectedPeripheral = nil
+        discoveredProfile.removeAll()
         statusText = error.map { "Disconnected: \($0.localizedDescription)" } ?? "Disconnected"
     }
 }
