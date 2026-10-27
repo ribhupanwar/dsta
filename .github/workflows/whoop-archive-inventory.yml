@@ -184,7 +184,18 @@ jobs:
               for name in ["HelloPacketRev3", "HelloPacketRev4", "hrBroadcastBeat"]:
                   if name in names:
                       data = z.read(name)
-                      resource_meta[name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+                      resource_meta[name] = {
+                          "bytes": len(data),
+                          "sha256": hashlib.sha256(data).hexdigest(),
+                          "hex": data.hex()
+                      }
+              macho_diagnostics = {
+                  "binary_bytes": len(binary) if "binary" in locals() else 0,
+                  "magic_hex": binary[:16].hex() if "binary" in locals() else None,
+                  "magic_ascii": repr(binary[:4]) if "binary" in locals() else None,
+                  "parsed_symbol_count": len(macho_symbol_strings),
+                  "extraction_status": macho_symbol_strings[0] if len(macho_symbol_strings) == 1 and macho_symbol_strings[0].startswith("Symbol extraction unavailable:") else ("symbols_found" if macho_symbol_strings else "no_matching_symbols")
+              }
               def shape(value, depth=0):
                   if depth >= 3:
                       return type(value).__name__
@@ -217,6 +228,7 @@ jobs:
                   "protocol_symbol_strings": protocol_symbol_strings,
                   "macho_symbol_strings": macho_symbol_strings,
                   "protocol_resource_fingerprints": resource_meta,
+                  "macho_diagnostics": macho_diagnostics,
                   "json_resource_files": json_resources,
                   "dto_data_shapes": dto_schemas
               }
