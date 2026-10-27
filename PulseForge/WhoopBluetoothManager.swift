@@ -357,9 +357,21 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             lastBLEEvent = "Read/notification error · \(characteristic.uuid.uuidString) · \(error.localizedDescription)"
             return
         }
-        let byteCount = characteristic.value?.count ?? 0
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        lastBLEEvent = "BLE value received · \(characteristic.uuid.uuidString) · \(byteCount) bytes · \(timestamp)"
+        guard characteristic.service?.uuid == CBUUID(string: "180D"),
+              characteristic.uuid == CBUUID(string: "2A37") else {
+            let byteCount = characteristic.value?.count ?? 0
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            lastBLEEvent = "BLE value received · \(characteristic.uuid.uuidString) · \(byteCount) bytes · vendor payload not parsed · \(timestamp)"
+            return
+        }
+        guard let data = characteristic.value,
+              let bpm = parseStandardHeartRateMeasurement(data),
+              (1...300).contains(bpm) else {
+            lastBLEEvent = "Standard HR notification received · payload could not be parsed"
+            return
+        }
+        liveHeartRateBPM = bpm
+        lastBLEEvent = "WHOOP standard BLE heart rate · \(bpm) bpm · \(ISO8601DateFormatter().string(from: Date()))"
     }
 
     private func updateGattDiscoveryCompletionStatus() {
@@ -426,27 +438,6 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         lastBLEEvent = characteristic.isNotifying
             ? "Standard Heart Rate Measurement notifications enabled"
             : "Standard Heart Rate Measurement notifications disabled"
-    }
-
-    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
-        guard characteristic.service?.uuid == CBUUID(string: "180D"),
-              characteristic.uuid == CBUUID(string: "2A37") else {
-            lastBLEEvent = "BLE value received · \(characteristic.uuid.uuidString) · vendor payload not parsed"
-            return
-        }
-        if let error {
-            lastBLEEvent = "Standard HR value error · \(error.localizedDescription)"
-            return
-        }
-        guard let data = characteristic.value,
-              let bpm = parseStandardHeartRateMeasurement(data),
-              (1...300).contains(bpm) else {
-            lastBLEEvent = "Standard HR notification received · payload could not be parsed"
-            return
-        }
-        liveHeartRateBPM = bpm
-        lastBLEEvent = "WHOOP standard BLE heart rate · \(bpm) bpm · \(ISO8601DateFormatter().string(from: Date()))"
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverDescriptorsFor characteristic: CBCharacteristic, error: Error?) {
