@@ -72,13 +72,36 @@ jobs:
                   if name in names:
                       data = z.read(name)
                       resource_meta[name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+              def shape(value, depth=0):
+                  if depth >= 3:
+                      return type(value).__name__
+                  if isinstance(value, dict):
+                      return {str(k): shape(v, depth + 1) for k, v in list(value.items())[:60]}
+                  if isinstance(value, list):
+                      return [shape(value[0], depth + 1)] if value else []
+                  return type(value).__name__
+              dto_schemas = {}
+              json_resources = []
+              for name in names:
+                  if not name.lower().endswith(".json"):
+                      continue
+                  json_resources.append(name)
+                  low = name.lower()
+                  if not any(t in low for t in ["dto", "recovery", "sleep", "strain", "activity", "journal", "behavior"]):
+                      continue
+                  try:
+                      dto_schemas[name] = shape(json.loads(z.read(name)))
+                  except Exception:
+                      pass
               report = {
                   "archive": {"name": zpath.name, "bytes": zpath.stat().st_size, "valid_zip": True},
                   "app_metadata": metadata,
                   "resource_inventory": inventory,
                   "binary_marker_presence": binary_strings,
                   "candidate_ble_uuids_from_binary": candidate_ble_uuids,
-                  "protocol_resource_fingerprints": resource_meta
+                  "protocol_resource_fingerprints": resource_meta,
+                  "json_resource_files": json_resources,
+                  "dto_data_shapes": dto_schemas
               }
               Path("inventory/whoop-archive-inventory.json").write_text(json.dumps(report, indent=2))
               lines = ["# WHOOP archive technical inventory", "",
@@ -93,6 +116,11 @@ jobs:
               lines += ["", "## Protocol resource fingerprints", ""]
               for k, v in resource_meta.items():
                   lines.append(f"- **{k}:** {v['bytes']} bytes · SHA-256 `{v['sha256']}`")
+              lines += ["", "## DTO and data resource schema (field names and value types only)", ""]
+              for name, schema in dto_schemas.items():
+                  lines += [f"### `{name}`", "", "```json", json.dumps(schema, indent=2), "```", ""]
+              lines += ["", f"## JSON resources ({len(json_resources)})", ""]
+              lines += [f"- `{x}`" for x in json_resources]
               for group, items in inventory.items():
                   lines += ["", f"## {group.replace('_', ' ').title()} ({len(items)} listed)", ""]
                   lines += [f"- `{x}`" for x in items] or ["- None found"]
