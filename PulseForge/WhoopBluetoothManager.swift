@@ -13,6 +13,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var devices: [DiscoveredWearable] = []
     @Published private(set) var statusText = "Bluetooth is starting"
     @Published private(set) var connectedName: String?
+    @Published private(set) var isConnecting = false
     @Published private(set) var discoveredProfile: [String] = []
 
     private var central: CBCentralManager!
@@ -89,6 +90,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         discoveredProfile.removeAll()
         connectedPeripheral = device.peripheral
         connectedPeripheral?.delegate = self
+        isConnecting = true
         statusText = "Connecting to \(device.name)…"
         central.connect(device.peripheral, options: nil)
         let timeout = DispatchWorkItem { [weak self, weak peripheral = device.peripheral] in
@@ -141,6 +143,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
 
     private func clearConnectionState() {
         connectedName = nil
+        isConnecting = false
         connectedPeripheral?.delegate = nil
         connectedPeripheral = nil
         discoveredProfile.removeAll()
@@ -173,6 +176,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         }
         connectionTimeoutWorkItem?.cancel()
         connectionTimeoutWorkItem = nil
+        isConnecting = false
         peripheral.delegate = self
         connectedName = peripheral.name ?? "WHOOP candidate"
         statusText = "Connected · discovering GATT profile"
@@ -192,6 +196,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         connectionTimeoutWorkItem?.cancel()
         connectionTimeoutWorkItem = nil
         connectedName = nil
+        isConnecting = false
         connectedPeripheral = nil
         discoveredProfile.removeAll()
         statusText = error.map { "Disconnected: \($0.localizedDescription)" } ?? "Disconnected"
