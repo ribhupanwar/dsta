@@ -619,23 +619,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             lastBLEEvent = "Standard HR notification received · payload could not be parsed"
             return
         }
-        liveHeartRateBPM = bpm
-        lastHeartRateAt = Date()
-        let sample = LiveHeartRateSample(timestamp: lastHeartRateAt!, bpm: bpm)
-        liveHeartRateSamples.append(sample)
-        liveHeartRateSamples.removeAll { Date().timeIntervalSince($0.timestamp) > 60 }
-        if liveHeartRateSamples.count > 120 {
-            liveHeartRateSamples.removeFirst(liveHeartRateSamples.count - 120)
-        }
-        if workoutIsRecording {
-            workoutHeartRateSamples.append(sample)
-            if workoutHeartRateSamples.count > 14_400 {
-                workoutHeartRateSamples.removeFirst(workoutHeartRateSamples.count - 14_400)
-            }
-        }
-        heartRateUpdateCount += 1
-        lastBLEEvent = "WHOOP standard BLE heart rate · \(bpm) bpm · \(ISO8601DateFormatter().string(from: lastHeartRateAt!)) · sample #\(heartRateUpdateCount)"
-        statusText = "Live HR · \(bpm) bpm · \(heartRateUpdateCount) update(s)"
+        recordHeartRateSample(bpm, source: "WHOOP standard BLE HR")
     }
 
     private func updateGattDiscoveryCompletionStatus() {
@@ -698,11 +682,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             guard (1...250).contains(bpm) else {
                 return "REALTIME_DATA · HR byte \(bpm) outside plausible range · rejected · CRC valid"
             }
-            liveHeartRateBPM = bpm
-            lastHeartRateAt = Date()
-            heartRateUpdateCount += 1
-            lastBLEEvent = "WHOOP5 REALTIME_DATA · \(bpm) bpm · sample #\(heartRateUpdateCount)"
-            statusText = "Live HR · \(bpm) bpm · \(heartRateUpdateCount) update(s)"
+            recordHeartRateSample(bpm, source: "WHOOP5 REALTIME_DATA")
             return "REALTIME_DATA · HR \(bpm) bpm decoded at frame offset 16 · CRC valid"
 
         case 48: // EVENT
@@ -795,6 +775,28 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         let payloadCRC = crc32(inner)
         let tail: [UInt8] = [UInt8(payloadCRC & 0xFF), UInt8((payloadCRC >> 8) & 0xFF), UInt8((payloadCRC >> 16) & 0xFF), UInt8((payloadCRC >> 24) & 0xFF)]
         return Data(header + inner + tail)
+    }
+
+    /// Route every validated HR source through the same live UI, chart and workout pipeline.
+    private func recordHeartRateSample(_ bpm: Int, source: String) {
+        let timestamp = Date()
+        liveHeartRateBPM = bpm
+        lastHeartRateAt = timestamp
+        let sample = LiveHeartRateSample(timestamp: timestamp, bpm: bpm)
+        liveHeartRateSamples.append(sample)
+        liveHeartRateSamples.removeAll { timestamp.timeIntervalSince($0.timestamp) > 60 }
+        if liveHeartRateSamples.count > 120 {
+            liveHeartRateSamples.removeFirst(liveHeartRateSamples.count - 120)
+        }
+        if workoutIsRecording {
+            workoutHeartRateSamples.append(sample)
+            if workoutHeartRateSamples.count > 14_400 {
+                workoutHeartRateSamples.removeFirst(workoutHeartRateSamples.count - 14_400)
+            }
+        }
+        heartRateUpdateCount += 1
+        lastBLEEvent = "\(source) · \(bpm) bpm · \(ISO8601DateFormatter().string(from: timestamp)) · sample #\(heartRateUpdateCount)"
+        statusText = "Live HR · \(bpm) bpm · \(heartRateUpdateCount) update(s)"
     }
 
     private func parseStandardHeartRateMeasurement(_ data: Data) -> Int? {
