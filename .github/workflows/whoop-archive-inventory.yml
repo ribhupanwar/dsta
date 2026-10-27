@@ -1,0 +1,98 @@
+name: WHOOP archive technical inventory
+
+on:
+  push:
+    branches: [whoop-native]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout archive with Git LFS
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Create technical inventory (metadata only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s Whoop.zip
+          unzip -tq Whoop.zip >/dev/null
+          mkdir -p inventory
+          python3 - <<'PY'
+          import plistlib, json, zipfile, hashlib
+          from pathlib import Path
+          zpath = Path("Whoop.zip")
+          with zipfile.ZipFile(zpath) as z:
+              names = z.namelist()
+              info = plistlib.loads(z.read("Info.plist"))
+              keys = [
+                  "CFBundleIdentifier", "CFBundleDisplayName", "CFBundleShortVersionString",
+                  "CFBundleVersion", "MinimumOSVersion", "UIBackgroundModes",
+                  "UISupportedExternalAccessoryProtocols", "NSBluetoothAlwaysUsageDescription",
+                  "NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription",
+                  "UIRequiredDeviceCapabilities"
+              ]
+              metadata = {k: info.get(k) for k in keys if k in info}
+              groups = {
+                  "bluetooth_device": ["Bluetooth", "HelloPacket", "hrBroadcast", "Harvard", "DeviceStatus"],
+                  "health_sleep_recovery": ["HealthKit", "Sleep", "Recovery", "HRV", "RestingHeartRate"],
+                  "activity_training": ["Activity", "Workout", "Strain", "Run", "Exercise"],
+                  "journal_behavior": ["Journal", "Behavior", "Habit"],
+                  "ui_resources": [".nib", ".storyboardc", ".gif", ".png", ".car"]
+              }
+              inventory = {}
+              for group, terms in groups.items():
+                  inventory[group] = [n for n in names if any(t.lower() in n.lower() for t in terms)][:300]
+              binary_strings = []
+              try:
+                  raw = z.read("Whoop")
+                  for token in [
+                      b"shouldDispatchNotificationSideEffects", b"GET_DATA_RANGE",
+                      b"SEND_HISTORICAL_DATA", b"historical_metadata", b"CBPeripheral",
+                      b"CBCharacteristic", b"didUpdateValueFor", b"HelloPacketRev3",
+                      b"HelloPacketRev4", b"hrBroadcastBeat"
+                  ]:
+                      if token in raw:
+                          binary_strings.append(token.decode("ascii"))
+              except KeyError:
+                  pass
+              resource_meta = {}
+              for name in ["HelloPacketRev3", "HelloPacketRev4", "hrBroadcastBeat"]:
+                  if name in names:
+                      data = z.read(name)
+                      resource_meta[name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+              report = {
+                  "archive": {"name": zpath.name, "bytes": zpath.stat().st_size, "valid_zip": True},
+                  "app_metadata": metadata,
+                  "resource_inventory": inventory,
+                  "binary_marker_presence": binary_strings,
+                  "protocol_resource_fingerprints": resource_meta
+              }
+              Path("inventory/whoop-archive-inventory.json").write_text(json.dumps(report, indent=2))
+              lines = ["# WHOOP archive technical inventory", "",
+                       "This report contains metadata, resource names and marker presence only. It does not redistribute the app executable or proprietary assets.", "",
+                       "## App metadata", ""]
+              for k, v in metadata.items():
+                  lines.append(f"- **{k}:** {v}")
+              lines += ["", "## Binary marker presence", ""]
+              lines += [f"- {x}" for x in binary_strings] or ["- No selected markers found"]
+              lines += ["", "## Protocol resource fingerprints", ""]
+              for k, v in resource_meta.items():
+                  lines.append(f"- **{k}:** {v['bytes']} bytes · SHA-256 `{v['sha256']}`")
+              for group, items in inventory.items():
+                  lines += ["", f"## {group.replace('_', ' ').title()} ({len(items)} listed)", ""]
+                  lines += [f"- `{x}`" for x in items] or ["- None found"]
+              Path("inventory/WHOOP-archive-inventory.md").write_text("\n".join(lines) + "\n")
+          PY
+      - name: Upload technical inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: WHOOP-archive-technical-inventory
+          path: inventory/
+          if-no-files-found: error
+          retention-days: 14
