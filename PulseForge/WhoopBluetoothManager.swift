@@ -7,7 +7,11 @@ struct DiscoveredWearable: Identifiable {
     let name: String
     let rssi: Int
     let advertisedServices: [String]
+    let serviceDataEntries: [String]
+    let solicitedServices: [String]
+    let overflowServices: [String]
     let manufacturerDataByteCount: Int?
+    let transmitPower: Int?
     let isConnectable: Bool?
     var id: UUID { peripheral.identifier }
 }
@@ -174,7 +178,14 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
             name: name,
             rssi: RSSI.intValue,
             advertisedServices: advertisedServices.map { $0.uuidString.uppercased() }.sorted(),
+            serviceDataEntries: ((advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data]) ?? [:])
+                .map { "\($0.key.uuidString.uppercased()) (\($0.value.count) bytes)" }.sorted(),
+            solicitedServices: ((advertisementData[CBAdvertisementDataSolicitedServiceUUIDsKey] as? [CBUUID]) ?? [])
+                .map { $0.uuidString.uppercased() }.sorted(),
+            overflowServices: ((advertisementData[CBAdvertisementDataOverflowServiceUUIDsKey] as? [CBUUID]) ?? [])
+                .map { $0.uuidString.uppercased() }.sorted(),
             manufacturerDataByteCount: manufacturerData?.count,
+            transmitPower: (advertisementData[CBAdvertisementDataTxPowerLevelKey] as? NSNumber)?.intValue,
             isConnectable: connectable?.boolValue
         )
         if let index = devices.firstIndex(where: { $0.id == item.id }) {
