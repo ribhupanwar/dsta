@@ -128,6 +128,22 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: timeout)
     }
 
+    var diagnosticSnapshot: String {
+        var lines = [
+            "PulseForge BLE diagnostic snapshot",
+            "Captured: \(ISO8601DateFormatter().string(from: Date()))",
+            "Device: \(connectedName ?? "Not connected")",
+            "Status: \(statusText)",
+            "Latest BLE event: \(lastBLEEvent)",
+            "",
+            "GATT profile:"
+        ]
+        lines.append(contentsOf: discoveredProfile.isEmpty ? ["No GATT profile captured"] : discoveredProfile)
+        lines.append("")
+        lines.append("Note: passive discovery only; no command writes or notification subscriptions.")
+        return lines.joined(separator: "\n")
+    }
+
     private func propertyNames(_ properties: CBCharacteristicProperties) -> String {
         var values: [String] = []
         if properties.contains(.read) { values.append("read") }
