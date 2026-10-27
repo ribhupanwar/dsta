@@ -85,6 +85,7 @@ struct ForgeTabBar: View {
 
 struct TodayDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -95,7 +96,8 @@ struct TodayDashboard: View {
                     MetricTile(title: "SLEEP", value: "—", unit: "performance", symbol: "moon.zzz.fill")
                     MetricTile(title: "STRAIN", value: "—", unit: "daily load", symbol: "flame.fill")
                 }
-                LiveHeartRateCard(heartRate: health.heartRate)
+                LiveHeartRateCard(heartRate: bluetooth.freshHeartRateBPM)
+                LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE · LAST 60 SECONDS")
                 SectionHeader(title: "YOUR HEALTH", action: "View trends")
                 HStack(spacing: 12) {
                     CompactMetric(title: "HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
@@ -169,12 +171,137 @@ struct LiveHeartRateCard: View {
                 Image(systemName: "heart.fill").foregroundStyle(ForgeColors.lime)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text("LATEST HEART RATE · APPLE HEALTH").font(.system(size: 9, weight: .bold)).tracking(0.9).foregroundStyle(ForgeColors.muted)
+                Text("WHOOP · LIVE HEART RATE").font(.system(size: 9, weight: .bold)).tracking(0.9).foregroundStyle(ForgeColors.muted)
                 Text(heartRate.map { "\($0) BPM" } ?? "Waiting for sensor")
                     .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
             }
             Spacer()
             Circle().fill(ForgeColors.lime.opacity(heartRate == nil ? 0.3 : 1)).frame(width: 7, height: 7)
+        }
+        .padding(16)
+        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
+    }
+}
+
+struct LiveHeartRateChartCard: View {
+    let samples: [LiveHeartRateSample]
+    let title: String
+
+    private var yDomain: ClosedRange<Int> {
+        guard let low = samples.map(\\.bpm).min(), let high = samples.map(\\.bpm).max() else {
+            return 40...180
+        }
+        let lower = max(30, low - 8)
+        let upper = min(220, max(lower + 20, high + 8))
+        return lower...upper
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title).font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
+                Spacer()
+                Text(samples.isEmpty ? "NO LIVE SAMPLES" : "\\(samples.count) POINTS")
+                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.lime)
+            }
+            if samples.count >= 2 {
+                Chart(samples) { sample in
+                    AreaMark(
+                        x: .value("Time", sample.timestamp),
+                        y: .value("BPM", sample.bpm)
+                    )
+                    .foregroundStyle(ForgeColors.lime.opacity(0.12))
+                    LineMark(
+                        x: .value("Time", sample.timestamp),
+                        y: .value("BPM", sample.bpm)
+                    )
+                    .foregroundStyle(ForgeColors.lime)
+                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
+                }
+                .chartYScale(domain: yDomain)
+                .chartXAxis(.hidden)
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: 3))
+                }
+                .frame(height: 125)
+            } else {
+                Text(samples.isEmpty ? "Live WHOOP heart-rate samples will draw here." : "Collecting live samples…")
+                    .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                    .frame(maxWidth: .infinity, minHeight: 100)
+            }
+            HStack {
+                Text("60 SEC WINDOW")
+                Spacer()
+                if let latest = samples.last {
+                    Text("LATEST \\(latest.bpm) BPM")
+                }
+            }
+            .font(.system(size: 8, weight: .semibold)).tracking(0.7).foregroundStyle(ForgeColors.muted)
+        }
+        .padding(16)
+        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
+    }
+}
+
+struct WorkoutRecordingCard: View {
+    @ObservedObject var bluetooth: WhoopBluetoothManager
+
+    private var averageBPM: Int? {
+        guard !bluetooth.workoutHeartRateSamples.isEmpty else { return nil }
+        let total = bluetooth.workoutHeartRateSamples.reduce(0) { $0 + $1.bpm }
+        return Int((Double(total) / Double(bluetooth.workoutHeartRateSamples.count)).rounded())
+    }
+
+    private var durationText: String {
+        let seconds: TimeInterval
+        if bluetooth.workoutIsRecording, let start = bluetooth.workoutStartedAt {
+            seconds = Date().timeIntervalSince(start)
+        } else {
+            seconds = bluetooth.lastWorkoutDurationSeconds ?? 0
+        }
+        let total = max(0, Int(seconds))
+        return String(format: "%02d:%02d:%02d", total / 3600, (total / 60) % 60, total % 60)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("WORKOUT RECORDING").font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
+                Spacer()
+                Circle().fill(bluetooth.workoutIsRecording ? ForgeColors.lime : ForgeColors.muted).frame(width: 7, height: 7)
+                Text(bluetooth.workoutIsRecording ? "RECORDING" : "READY")
+                    .font(.system(size: 9, weight: .bold)).foregroundStyle(bluetooth.workoutIsRecording ? ForgeColors.lime : ForgeColors.muted)
+            }
+            HStack(alignment: .firstTextBaseline) {
+                Text(durationText).font(.system(size: 28, weight: .light, design: .rounded)).monospacedDigit()
+                Spacer()
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("\\(bluetooth.workoutHeartRateSamples.count) SAMPLES")
+                    Text(averageBPM.map { "AVG \\( $0 ) BPM" } ?? "AVG — BPM")
+                }
+                .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
+            }
+            Button {
+                if bluetooth.workoutIsRecording {
+                    bluetooth.stopWorkoutRecording()
+                } else {
+                    bluetooth.startWorkoutRecording()
+                }
+            } label: {
+                Label(bluetooth.workoutIsRecording ? "STOP & SAVE SESSION" : "START WORKOUT", systemImage: bluetooth.workoutIsRecording ? "stop.fill" : "play.fill")
+                    .font(.system(size: 10, weight: .bold)).tracking(0.8)
+                    .frame(maxWidth: .infinity).padding(14)
+                    .background(bluetooth.workoutIsRecording ? ForgeColors.track : ForgeColors.lime, in: Capsule())
+                    .foregroundStyle(bluetooth.workoutIsRecording ? .white : .black)
+            }
+            .buttonStyle(.plain)
+            .disabled(!bluetooth.workoutIsRecording && bluetooth.connectedName == nil)
+            Text(bluetooth.workoutIsRecording
+                 ? "HR samples are being recorded locally while the WHOOP stream is active."
+                 : "Start a session while connected. Samples remain available in this app session.")
+                .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
         }
         .padding(16)
         .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
@@ -448,9 +575,9 @@ struct DeviceDashboard: View {
                     HStack(alignment: .center, spacing: 12) {
                         Image(systemName: "heart.fill")
                             .font(.system(size: 18))
-                            .foregroundStyle(bluetooth.liveHeartRateBPM == nil ? ForgeColors.muted : ForgeColors.lime)
+                            .foregroundStyle(bluetooth.freshHeartRateBPM == nil ? ForgeColors.muted : ForgeColors.lime)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(bluetooth.liveHeartRateBPM.map(String.init) ?? "—")
+                            Text(bluetooth.freshHeartRateBPM.map(String.init) ?? "—")
                                 .font(.system(size: 28, weight: .semibold, design: .rounded))
                                 .monospacedDigit()
                             Text(bluetooth.liveHeartRateBPM == nil
@@ -467,6 +594,8 @@ struct DeviceDashboard: View {
                     .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
+                    LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE · LAST 60 SECONDS")
+                    WorkoutRecordingCard(bluetooth: bluetooth)
                     if bluetooth.connectedName != nil {
                         Button { bluetooth.disconnect() } label: {
                             Label("DISCONNECT BAND", systemImage: "xmark.circle")
