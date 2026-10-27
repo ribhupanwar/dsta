@@ -26,6 +26,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
 
     private var central: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
+    private var connectedDeviceSnapshot: DiscoveredWearable?
     private var scanTimeoutWorkItem: DispatchWorkItem?
     private var connectionTimeoutWorkItem: DispatchWorkItem?
     private var pendingCharacteristicServices = Set<String>()
@@ -111,6 +112,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         scanTimeoutWorkItem = nil
         central.stopScan()
         discoveredProfile.removeAll()
+        connectedDeviceSnapshot = device
         connectedPeripheral = device.peripheral
         connectedPeripheral?.delegate = self
         isConnecting = true
@@ -133,6 +135,15 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "PulseForge BLE diagnostic snapshot",
             "Captured: \(ISO8601DateFormatter().string(from: Date()))",
             "Device: \(connectedName ?? "Not connected")",
+            "Peripheral ID: \(connectedDeviceSnapshot?.id.uuidString ?? "Unavailable")",
+            "RSSI at discovery: \(connectedDeviceSnapshot.map { "\($0.rssi) dBm" } ?? "Unavailable")",
+            "Advertised services: \(connectedDeviceSnapshot?.advertisedServices.joined(separator: ", ") ?? "None")",
+            "Service data: \(connectedDeviceSnapshot?.serviceDataEntries.joined(separator: ", ") ?? "None")",
+            "Solicited services: \(connectedDeviceSnapshot?.solicitedServices.joined(separator: ", ") ?? "None")",
+            "Overflow services: \(connectedDeviceSnapshot?.overflowServices.joined(separator: ", ") ?? "None")",
+            "Manufacturer data length: \(connectedDeviceSnapshot?.manufacturerDataByteCount.map(String.init) ?? "Unavailable")",
+            "Transmit power: \(connectedDeviceSnapshot?.transmitPower.map { "\($0) dBm" } ?? "Unavailable")",
+            "Connectable: \(connectedDeviceSnapshot?.isConnectable.map(String.init) ?? "Unavailable")",
             "Status: \(statusText)",
             "Latest BLE event: \(lastBLEEvent)",
             "",
@@ -190,6 +201,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         connectionTimeoutWorkItem = nil
         pendingCharacteristicServices.removeAll()
         connectedName = nil
+        connectedDeviceSnapshot = nil
         isConnecting = false
         connectedPeripheral?.delegate = nil
         connectedPeripheral = nil
