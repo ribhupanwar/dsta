@@ -378,7 +378,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     }
     func peripheral(_ peripheral: CBPeripheral, didDiscoverDescriptorsFor characteristic: CBCharacteristic, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
-        let displayKey = "\(characteristic.service?.uuid.uuidString ?? "Unknown service")|\(characteristic.uuid.uuidString)"
+        let serviceUUID = characteristic.service?.uuid.uuidString ?? "Unknown service"
+        let displayKey = "\(serviceUUID)|\(characteristic.uuid.uuidString)"
         let key = ObjectIdentifier(characteristic)
         if let error {
             discoveredProfile.append("Descriptor error · \(displayKey) · \(error.localizedDescription)")
@@ -388,7 +389,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 discoveredProfile.append("Descriptors · \(displayKey) · none exposed")
             } else {
                 for descriptor in descriptors {
-                    discoveredProfile.append("Descriptor · characteristic \(characteristic.uuid.uuidString) → \(descriptor.uuid.uuidString)")
+                    discoveredProfile.append("Descriptor · service \(serviceUUID) → characteristic \(characteristic.uuid.uuidString) → \(descriptor.uuid.uuidString)")
                 }
             }
         }
