@@ -26,6 +26,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var liveHeartRateBPM: Int?
     @Published private(set) var isStandardHeartRateNotifying = false
 
+    private var vendorNotificationStates: [String: String] = [:]
+    private var vendorNotificationPayloads: [String: String] = [:]
+
     private var central: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
     private var connectedDeviceSnapshot: DiscoveredWearable?
@@ -176,12 +179,15 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "Latest BLE event: \(lastBLEEvent)",
             "Standard Heart Rate Measurement: \(isStandardHeartRateNotifying ? "subscribed" : "not subscribed")",
             "Latest WHOOP standard HR value: \(liveHeartRateBPM.map { "\($0) bpm" } ?? "None received")",
+            "WHOOP FD4B vendor notification subscriptions:",
             "",
             "GATT profile:"
         ]
+        lines.append(contentsOf: vendorNotificationStates.keys.sorted().map { "  \($0): \(vendorNotificationStates[$0] ?? "unknown")" })
+        lines.append(contentsOf: vendorNotificationPayloads.keys.sorted().map { "  Latest payload \($0): \(vendorNotificationPayloads[$0] ?? "none")" })
         lines.append(contentsOf: discoveredProfile.isEmpty ? ["No GATT profile captured"] : discoveredProfile)
         lines.append("")
-        lines.append("Note: descriptor UUIDs and characteristic properties are metadata only; no descriptor values, sensor payloads, command writes or notification subscriptions are collected.")
+        lines.append("Note: FD4B notify channels are subscribed only for passive observation; payload previews are limited to the first 24 bytes. No proprietary command writes are sent and payloads are not interpreted as HR without a verified format.")
         return lines.joined(separator: "\n")
     }
 
@@ -235,6 +241,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         connectedDeviceSnapshot = nil
         liveHeartRateBPM = nil
         isStandardHeartRateNotifying = false
+        vendorNotificationStates.removeAll()
+        vendorNotificationPayloads.removeAll()
         isConnecting = false
         connectedPeripheral?.delegate = nil
         connectedPeripheral = nil
@@ -357,11 +365,19 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             lastBLEEvent = "Read/notification error · \(characteristic.uuid.uuidString) · \(error.localizedDescription)"
             return
         }
+        if characteristic.service?.uuid == CBUUID(string: "FD4B0001-CCE1-4033-93CE-002D5875F58A") {
+            let uuid = characteristic.uuid.uuidString.uppercased()
+            let data = characteristic.value ?? Data()
+            let preview = data.prefix(24).map { String(format: "%02X", $0) }.joined(separator: " ")
+            vendorNotificationPayloads[uuid] = "\(data.count) bytes · \(preview.isEmpty ? "empty" : preview)"
+            lastBLEEvent = "WHOOP vendor notification · \(uuid) · \(data.count) bytes · \(ISO8601DateFormatter().string(from: Date()))"
+            return
+        }
         guard characteristic.service?.uuid == CBUUID(string: "180D"),
               characteristic.uuid == CBUUID(string: "2A37") else {
             let byteCount = characteristic.value?.count ?? 0
             let timestamp = ISO8601DateFormatter().string(from: Date())
-            lastBLEEvent = "BLE value received · \(characteristic.uuid.uuidString) · \(byteCount) bytes · vendor payload not parsed · \(timestamp)"
+            lastBLEEvent = "BLE value received · \(characteristic.uuid.uuidString) · \(byteCount) bytes · unclassified payload · \(timestamp)"
             return
         }
         guard let data = characteristic.value,
@@ -411,6 +427,20 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     peripheral.setNotifyValue(true, for: characteristic)
                     lastBLEEvent = "Subscribed to standard Bluetooth Heart Rate Measurement (180D/2A37)"
                 }
+                let fd4bService = CBUUID(string: "FD4B0001-CCE1-4033-93CE-002D5875F58A")
+                let fd4bNotifyUUIDs: Set<String> = [
+                    "FD4B0003-CCE1-4033-93CE-002D5875F58A",
+                    "FD4B0004-CCE1-4033-93CE-002D5875F58A",
+                    "FD4B0005-CCE1-4033-93CE-002D5875F58A",
+                    "FD4B0007-CCE1-4033-93CE-002D5875F58A"
+                ]
+                let characteristicUUID = characteristic.uuid.uuidString.uppercased()
+                if service.uuid == fd4bService,
+                   fd4bNotifyUUIDs.contains(characteristicUUID),
+                   characteristic.properties.contains(.notify) {
+                    vendorNotificationStates[characteristicUUID] = "subscription requested"
+                    peripheral.setNotifyValue(true, for: characteristic)
+                }
                 let key = ObjectIdentifier(characteristic)
                 pendingDescriptorCharacteristics.insert(key)
                 peripheral.discoverDescriptors(for: characteristic)
@@ -426,8 +456,15 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         }
     }
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
-        guard connectedPeripheral?.identifier == peripheral.identifier,
-              characteristic.service?.uuid == CBUUID(string: "180D"),
+        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        if characteristic.service?.uuid == CBUUID(string: "FD4B0001-CCE1-4033-93CE-002D5875F58A") {
+            let uuid = characteristic.uuid.uuidString.uppercased()
+            vendorNotificationStates[uuid] = error.map { "failed · \($0.localizedDescription)" }
+                ?? (characteristic.isNotifying ? "enabled" : "disabled")
+            lastBLEEvent = "WHOOP vendor notification \(vendorNotificationStates[uuid] ?? "updated") · \(uuid)"
+            return
+        }
+        guard characteristic.service?.uuid == CBUUID(string: "180D"),
               characteristic.uuid == CBUUID(string: "2A37") else { return }
         if let error {
             isStandardHeartRateNotifying = false
