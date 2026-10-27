@@ -538,6 +538,8 @@ struct DeviceDashboard: View {
                         }
                         .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     }
+                    Text("WHOOP candidate detection is heuristic (device name and archive-derived UUID hints); it does not confirm device identity or service roles.")
+                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                     Text("This first pass only scans, connects and lists GATT services/characteristics. It does not send commands or guess the live-HR packet format.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
