@@ -205,6 +205,19 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
 }
 
 extension WhoopBluetoothManager: CBPeripheralDelegate {
+    func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
+        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        let invalidatedIDs = Set(invalidatedServices.map { $0.uuid.uuidString })
+        discoveredProfile.removeAll { line in
+            invalidatedIDs.contains { line.contains($0) }
+        }
+        pendingCharacteristicServices.subtract(invalidatedIDs)
+        statusText = "GATT services changed · refreshing profile"
+        pendingCharacteristicServices.removeAll()
+        discoveredProfile.removeAll()
+        peripheral.discoverServices(nil)
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         if let error {
