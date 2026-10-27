@@ -133,6 +133,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     }
 
     var gattCapabilitySummary: String {
+        let services = discoveredProfile.filter { $0.hasPrefix("Service ·") }
+        let primaryServices = services.filter { $0.localizedCaseInsensitiveContains(" · primary") }.count
+        let secondaryServices = services.filter { $0.localizedCaseInsensitiveContains(" · secondary") }.count
         let characteristics = discoveredProfile.filter { $0.hasPrefix("Characteristic ·") }
         let descriptors = discoveredProfile.filter { $0.hasPrefix("Descriptor ·") }
         func count(_ property: String) -> Int {
@@ -147,7 +150,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         let cccdCount = descriptors.filter {
             $0.localizedCaseInsensitiveContains("00002902")
         }.count
-        return "\(characteristics.count) characteristics · R:\(count("read")) W:\(count("write")) WNR:\(count("write-no-response")) N:\(count("notify")) I:\(count("indicate")) · CCCD:\(cccdCount)"
+        return "\(services.count) services (P:\(primaryServices) S:\(secondaryServices)) · \(characteristics.count) characteristics · R:\(count("read")) W:\(count("write")) WNR:\(count("write-no-response")) N:\(count("notify")) I:\(count("indicate")) · CCCD:\(cccdCount)"
     }
 
     var diagnosticSnapshot: String {
@@ -331,7 +334,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return
         }
         for service in services {
-            discoveredProfile.append("Service · \(service.uuid.uuidString)")
+            discoveredProfile.append("Service · \(service.uuid.uuidString) · \(service.isPrimary ? "primary" : "secondary")")
             peripheral.discoverCharacteristics(nil, for: service)
         }
         statusText = "Found \(services.count) service(s) · inspecting characteristics"
