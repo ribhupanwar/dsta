@@ -307,6 +307,7 @@ struct JournalPrompt: View {
 
 struct DeviceDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
+    @StateObject private var bluetooth = WhoopBluetoothManager()
 
     var body: some View {
         ScrollView {
@@ -316,19 +317,53 @@ struct DeviceDashboard: View {
                     HStack {
                         Image(systemName: "waveform.path.ecg").font(.system(size: 24)).foregroundStyle(ForgeColors.lime)
                         Spacer()
-                        Text("NOT CONNECTED").font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
+                        Text(bluetooth.connectedName == nil ? "NOT CONNECTED" : "CONNECTED")
+                            .font(.system(size: 9, weight: .bold)).tracking(1)
+                            .foregroundStyle(bluetooth.connectedName == nil ? ForgeColors.muted : ForgeColors.lime)
                     }
-                    Text("WHOOP-compatible band").font(.system(size: 19, weight: .semibold))
-                    Text("Bluetooth pairing will be enabled after the device profile and packet format are verified from the archive and hardware tests.")
+                    Text(bluetooth.connectedName ?? "WHOOP-compatible band")
+                        .font(.system(size: 19, weight: .semibold))
+                    Text(bluetooth.statusText)
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
-                    Button {} label: {
-                        Text("DEVICE SUPPORT IN PROGRESS")
-                            .font(.system(size: 10, weight: .bold)).tracking(1)
+                    Button { bluetooth.startScan() } label: {
+                        Label("SCAN FOR WHOOP BAND", systemImage: "dot.radiowaves.left.and.right")
+                            .font(.system(size: 10, weight: .bold)).tracking(0.8)
                             .frame(maxWidth: .infinity).padding(14)
-                            .background(ForgeColors.track, in: Capsule())
-                            .foregroundStyle(ForgeColors.muted)
+                            .background(ForgeColors.lime, in: Capsule()).foregroundStyle(.black)
                     }
-                    .disabled(true)
+                    if !bluetooth.devices.isEmpty {
+                        VStack(spacing: 8) {
+                            ForEach(bluetooth.devices) { device in
+                                Button { bluetooth.connect(to: device) } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(device.name).font(.system(size: 13, weight: .semibold))
+                                            Text(device.id.uuidString.prefix(8))
+                                                .font(.system(size: 9, design: .monospaced)).foregroundStyle(ForgeColors.muted)
+                                        }
+                                        Spacer()
+                                        Text("\(device.rssi) dBm").font(.system(size: 10, design: .monospaced)).foregroundStyle(ForgeColors.muted)
+                                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
+                                    }
+                                    .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    if !bluetooth.discoveredProfile.isEmpty {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("DISCOVERED GATT PROFILE")
+                                .font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
+                            ForEach(Array(bluetooth.discoveredProfile.enumerated()), id: \.offset) { _, line in
+                                Text(line).font(.system(size: 9, design: .monospaced))
+                                    .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
+                            }
+                        }
+                        .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    Text("This first pass only scans, connects and lists GATT services/characteristics. It does not send commands or guess the live-HR packet format.")
+                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(20).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 SectionHeader(title: "APPLE HEALTH")
@@ -339,7 +374,7 @@ struct DeviceDashboard: View {
                         Text(health.isAuthorized ? "REQUESTED" : "NOT SET UP")
                             .font(.system(size: 9, weight: .bold)).foregroundStyle(health.isAuthorized ? ForgeColors.lime : ForgeColors.muted)
                     }
-                    Text("Allow access to heart rate, HRV, resting heart rate, sleep and workouts.")
+                    Text("Allow access to heart rate, HRV, resting heart rate, respiratory rate, blood oxygen, sleep and workouts.")
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                     Button { Task { await health.requestAccess() } } label: {
                         Text(health.isAuthorized ? "ACCESS REQUESTED" : "CONNECT APPLE HEALTH")
@@ -354,6 +389,7 @@ struct DeviceDashboard: View {
             }
             .padding(20).padding(.top, 18)
         }
+        .onDisappear { bluetooth.stopScan() }
     }
 }
 
