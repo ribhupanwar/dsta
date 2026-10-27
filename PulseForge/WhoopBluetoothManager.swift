@@ -304,7 +304,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         lines.append(contentsOf: vendorNotificationHistory.isEmpty ? ["  No vendor payload events captured"] : vendorNotificationHistory)
         lines.append("")
         lines.append("WHOOP archive candidate-channel probe (passive notifications only):")
-        lines.append(contentsOf: candidateNotificationStates.keys.sorted().map { "  \\($0): \\(candidateNotificationStates[$0] ?? \"unknown\")" })
+        lines.append(contentsOf: candidateNotificationStates.keys.sorted().map { "  \($0): \(candidateNotificationStates[$0] ?? "unknown")" })
         lines.append(contentsOf: candidateNotificationHistory.isEmpty ? ["  No candidate-channel payloads captured"] : candidateNotificationHistory)
         lines.append(contentsOf: discoveredProfile.isEmpty ? ["No GATT profile captured"] : discoveredProfile)
         lines.append("")
