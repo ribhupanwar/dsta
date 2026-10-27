@@ -31,6 +31,11 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var vendorNotificationStates: [String: String] = [:]
     private var vendorNotificationPayloads: [String: String] = [:]
     private var vendorNotificationHistory: [String] = []
+    private let whoop5ServiceUUID = CBUUID(string: "FD4B0001-CCE1-4033-93CE-002D5875F58A")
+    private let whoop5CommandUUID = CBUUID(string: "FD4B0002-CCE1-4033-93CE-002D5875F58A")
+    private var whoop5CommandCharacteristic: CBCharacteristic?
+    private var whoop5HelloSent = false
+    private var whoop5HelloWritePending = false
 
     private var central: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
@@ -199,6 +204,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "Latest WHOOP standard HR value: \(liveHeartRateBPM.map { "\($0) bpm" } ?? "None received")",
             "Latest HR timestamp: \(lastHeartRateAt.map { ISO8601DateFormatter().string(from: $0) } ?? "None")",
             "HR updates this connection: \(heartRateUpdateCount)",
+            "WHOOP 5.0 CLIENT_HELLO sent: \(whoop5HelloSent ? "yes" : "no")",
+            "WHOOP 5.0 CLIENT_HELLO write pending: \(whoop5HelloWritePending ? "yes" : "no")",
             "WHOOP FD4B vendor notification subscriptions:",
             "",
             "GATT profile:"
@@ -269,6 +276,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         vendorNotificationStates.removeAll()
         vendorNotificationPayloads.removeAll()
         vendorNotificationHistory.removeAll()
+        whoop5CommandCharacteristic = nil
+        whoop5HelloSent = false
+        whoop5HelloWritePending = false
         isConnecting = false
         connectedPeripheral?.delegate = nil
         connectedPeripheral = nil
@@ -464,7 +474,6 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     peripheral.setNotifyValue(true, for: characteristic)
                     lastBLEEvent = "Subscribed to standard Bluetooth Heart Rate Measurement (180D/2A37)"
                 }
-                let fd4bService = CBUUID(string: "FD4B0001-CCE1-4033-93CE-002D5875F58A")
                 let fd4bNotifyUUIDs: Set<String> = [
                     "FD4B0003-CCE1-4033-93CE-002D5875F58A",
                     "FD4B0004-CCE1-4033-93CE-002D5875F58A",
@@ -472,7 +481,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     "FD4B0007-CCE1-4033-93CE-002D5875F58A"
                 ]
                 let characteristicUUID = characteristic.uuid.uuidString.uppercased()
-                if service.uuid == fd4bService,
+                if service.uuid == whoop5ServiceUUID && characteristic.uuid == whoop5CommandUUID {
+                    whoop5CommandCharacteristic = characteristic
+                }
+                if service.uuid == whoop5ServiceUUID,
                    fd4bNotifyUUIDs.contains(characteristicUUID),
                    characteristic.properties.contains(.notify) {
                     vendorNotificationStates[characteristicUUID] = "subscription requested"
@@ -481,6 +493,27 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 let key = ObjectIdentifier(characteristic)
                 pendingDescriptorCharacteristics.insert(key)
                 peripheral.discoverDescriptors(for: characteristic)
+            }
+            // WHOOP 5.0/MG requires its session hello on FD4B0002. The frame is
+            // transcribed in NOOP's DeviceFamily.whoop5ClientHello constant.
+            // Send once per connection, with response, after all characteristics
+            // (including notify channels) have been discovered/requested.
+            if service.uuid == whoop5ServiceUUID,
+               !whoop5HelloSent,
+               let command = whoop5CommandCharacteristic,
+               command.properties.contains(.write) {
+                let hello: [UInt8] = [
+                    0xAA, 0x01, 0x08, 0x00, 0x00, 0x01, 0xE6, 0x71,
+                    0x23, 0x01, 0x91, 0x01, 0x36, 0x3E, 0x5C, 0x8D
+                ]
+                whoop5HelloSent = true
+                whoop5HelloWritePending = true
+                lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write requested · FD4B0002 · 16 bytes · with response"
+                statusText = "Connected · starting WHOOP 5.0 secure session"
+                peripheral.writeValue(Data(hello), for: command, type: .withResponse)
+            } else if service.uuid == whoop5ServiceUUID,
+                      whoop5CommandCharacteristic == nil {
+                lastBLEEvent = "WHOOP 5.0 command characteristic FD4B0002 not found"
             }
         }
         pendingCharacteristicServices.remove(ObjectIdentifier(service))
@@ -492,6 +525,34 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             statusText = "Inspecting characteristics · \(pendingCharacteristicServices.count) service(s) remaining"
         }
     }
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard connectedPeripheral?.identifier == peripheral.identifier,
+              characteristic.uuid == whoop5CommandUUID else { return }
+        whoop5HelloWritePending = false
+        if let error {
+            lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write failed · \(error.localizedDescription)"
+            statusText = "Connected · WHOOP session handshake failed"
+            return
+        }
+        lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write acknowledged by CoreBluetooth · FD4B0002"
+        statusText = "Connected · WHOOP 5.0 hello write acknowledged · awaiting data"
+        // Re-arm vendor notifications after the command write callback, matching
+        // NOOP's post-hello sequence. This callback confirms the write operation,
+        // not independently that the strap accepted or encrypted the session.
+        guard let service = characteristic.service else { return }
+        for item in service.characteristics ?? [] {
+            let uuid = item.uuid.uuidString.uppercased()
+            if ["FD4B0003-CCE1-4033-93CE-002D5875F58A",
+                "FD4B0004-CCE1-4033-93CE-002D5875F58A",
+                "FD4B0005-CCE1-4033-93CE-002D5875F58A",
+                "FD4B0007-CCE1-4033-93CE-002D5875F58A"].contains(uuid),
+               item.properties.contains(.notify) {
+                vendorNotificationStates[uuid] = "post-hello subscription requested"
+                peripheral.setNotifyValue(true, for: item)
+            }
+        }
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         if characteristic.service?.uuid == CBUUID(string: "FD4B0001-CCE1-4033-93CE-002D5875F58A") {
