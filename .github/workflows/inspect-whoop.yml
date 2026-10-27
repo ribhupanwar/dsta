@@ -26,5 +26,15 @@ jobs:
           unzip -Z1 Whoop.zip | awk -F/ 'NF>0 {print $1}' | sort -u | head -80
           echo "=== Relevant metadata/resource paths ==="
           unzip -Z1 Whoop.zip | grep -Ei '(^|/)(Info\.plist|PrivacyInfo\.xcprivacy|.*(HelloPacket|hrBroadcastBeat|DeviceStatus|Bluetooth|HealthKit|WHOOP.*\.framework)(/|$))' | head -250 || true
+          echo "=== BLE / historical-sync symbol scan (filtered) ==="
+          unzip -p Whoop.zip Whoop 2>/dev/null | strings -a | grep -Ei 'shouldDispatchNotificationSideEffects|GET_DATA_RANGE|SEND_HISTORICAL_DATA|historical_metadata|BluetoothGatt|CBPeripheral|CBCharacteristic|didUpdateValueFor|notification.*side.effect|dispatch.*notification' | sort -u | head -200 || true
+          echo "=== Hello packet resource metadata ==="
+          for f in HelloPacketRev3 HelloPacketRev4 hrBroadcastBeat; do
+            if unzip -Z1 Whoop.zip | grep -Fxq "$f"; then
+              echo "--- $f ---"
+              unzip -p Whoop.zip "$f" | file -
+              unzip -p Whoop.zip "$f" | strings -a | head -40
+            fi
+          done
           echo "=== Archive integrity ==="
           unzip -tq Whoop.zip | tail -2
