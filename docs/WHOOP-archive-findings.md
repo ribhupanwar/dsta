@@ -132,6 +132,19 @@ These names strongly suggest separate command-read, command-write, data-read, an
 
 This supports keeping live-HR packet handling and historical-pull sequencing as separate implementations. It still does not provide a safe parser or command payload.
 
+### Hello resource byte-layout observations (inventory run 2026-10-27)
+
+The latest inventory now records the 144-byte Rev3 and Rev4 hello-resource bytes for offline structural comparison. A byte-level comparison shows:
+
+- Both resources have the same total length (144 bytes) and share the same broad field layout.
+- The revision marker at byte offset 0x0A changes from 0x03 (Rev3) to 0x04 (Rev4).
+- A short ASCII identifier and a 64-character hexadecimal-looking field occur in the early payload; their meaning is not established. The latter is intentionally not reproduced in this document or used as an authentication value.
+- The remaining tail contains repeated little-endian integer-like fields and a common four-byte trailer. Their semantics and checksum coverage are unknown.
+
+These observations are **format fingerprints only**. They do not establish whether the resources are transmitted verbatim, how a revision is selected, whether any field is device-specific, or how hello response/unlock is authenticated. Do not replay either resource or synthesize a hello packet from these offsets.
+
+The inventory's first Mach-O symbol-table pass found no matching protocol symbols in the extracted executable. The parser has now also been corrected to account for slice-relative symbol offsets in fat Mach-O files; the next run will show whether that correction changes the result. A zero result may still mean the executable is stripped or exports symbols through a different load-command mechanism.
+
 ### PulseForge next-step constraints
 
 1. Keep passive GATT discovery and property reporting; do not subscribe to every notify/indicate characteristic.
