@@ -15,6 +15,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var connectedName: String?
     @Published private(set) var isConnecting = false
     @Published private(set) var discoveredProfile: [String] = []
+    @Published private(set) var lastBLEEvent = "No BLE data received yet"
 
     private var central: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
@@ -221,10 +222,16 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         if let error {
+            pendingCharacteristicServices.removeAll()
             statusText = "Service discovery failed: \(error.localizedDescription)"
+            lastBLEEvent = "Service discovery error · \(error.localizedDescription)"
             return
         }
-        guard let services = peripheral.services else { return }
+        guard let services = peripheral.services else {
+            pendingCharacteristicServices.removeAll()
+            statusText = "Connected · service list unavailable"
+            return
+        }
         pendingCharacteristicServices = Set(services.map { $0.uuid.uuidString })
         guard !services.isEmpty else {
             statusText = "Connected · no GATT services exposed"
@@ -235,6 +242,17 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             peripheral.discoverCharacteristics(nil, for: service)
         }
         statusText = "Found \(services.count) service(s) · inspecting characteristics"
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        if let error {
+            lastBLEEvent = "Read/notification error · \(characteristic.uuid.uuidString) · \(error.localizedDescription)"
+            return
+        }
+        let byteCount = characteristic.value?.count ?? 0
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        lastBLEEvent = "BLE value received · \(characteristic.uuid.uuidString) · \(byteCount) bytes · \(timestamp)"
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
