@@ -124,6 +124,11 @@ jobs:
                       symoff, nsyms, stroff, strsize = symtab
                       if nsyms > 3000000 or stroff + strsize > len(data):
                           return []
+                      # LC_SYMTAB offsets are relative to the thin Mach-O slice.
+                      symoff += base
+                      stroff += base
+                      if symoff + nsyms * 16 > len(data):
+                          return []
                       strings = data[stroff:stroff+strsize]
                       found = []
                       for idx in range(nsyms):
