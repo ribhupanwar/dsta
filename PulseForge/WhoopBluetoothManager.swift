@@ -28,6 +28,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
 
     private var vendorNotificationStates: [String: String] = [:]
     private var vendorNotificationPayloads: [String: String] = [:]
+    private var vendorNotificationHistory: [String] = []
 
     private var central: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
@@ -199,10 +200,13 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "GATT profile:"
         ]
         lines.append(contentsOf: vendorNotificationStates.keys.sorted().map { "  \($0): \(vendorNotificationStates[$0] ?? "unknown")" })
-        lines.append(contentsOf: vendorNotificationPayloads.keys.sorted().map { "  Latest payload \($0): \(vendorNotificationPayloads[$0] ?? "none")" })
+        lines.append(contentsOf: vendorNotificationPayloads.keys.sorted().map { "  Latest full payload \($0): \(vendorNotificationPayloads[$0] ?? "none")" })
+        lines.append("")
+        lines.append("WHOOP vendor notification history (latest 40 events):")
+        lines.append(contentsOf: vendorNotificationHistory.isEmpty ? ["  No vendor payload events captured"] : vendorNotificationHistory)
         lines.append(contentsOf: discoveredProfile.isEmpty ? ["No GATT profile captured"] : discoveredProfile)
         lines.append("")
-        lines.append("Note: FD4B notify channels are subscribed only for passive observation; payload previews are limited to the first 24 bytes. No proprietary command writes are sent and payloads are not interpreted as HR without a verified format.")
+        lines.append("Note: FD4B notify channels are passively observed. Full payload hex is kept in memory for the latest 40 events. No proprietary command writes are sent and payloads are not interpreted as HR without a verified format.")
         return lines.joined(separator: "\n")
     }
 
@@ -258,6 +262,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         isStandardHeartRateNotifying = false
         vendorNotificationStates.removeAll()
         vendorNotificationPayloads.removeAll()
+        vendorNotificationHistory.removeAll()
         isConnecting = false
         connectedPeripheral?.delegate = nil
         connectedPeripheral = nil
@@ -386,6 +391,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
             let timestamp = ISO8601DateFormatter().string(from: Date())
             vendorNotificationPayloads[uuid] = "\(data.count) bytes · \(hex.isEmpty ? "empty" : hex)"
+            vendorNotificationHistory.append("\(timestamp) · \(uuid) · \(data.count) bytes · HEX: \(hex.isEmpty ? "empty" : hex)")
+            if vendorNotificationHistory.count > 40 {
+                vendorNotificationHistory.removeFirst(vendorNotificationHistory.count - 40)
+            }
             lastBLEEvent = "WHOOP vendor notification · \(uuid) · \(data.count) bytes · \(timestamp)"
             return
         }
