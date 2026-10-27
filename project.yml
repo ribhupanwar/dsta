@@ -1,0 +1,30 @@
+name: PulseForge
+options:
+  bundleIdPrefix: com.ribhupanwar
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    CODE_SIGNING_ALLOWED: "NO"
+targets:
+  PulseForge:
+    type: application
+    platform: iOS
+    sources:
+      - path: PulseForge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ribhupanwar.pulseforge
+        PRODUCT_NAME: PulseForge
+        INFOPLIST_KEY_CFBundleDisplayName: PulseForge
+        INFOPLIST_KEY_NSHealthShareUsageDescription: "PulseForge reads your health data to show recovery, sleep, heart rate and training trends."
+        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "PulseForge can save supported workout data to Apple Health when you choose."
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "PulseForge uses Bluetooth to connect to your WHOOP-compatible wearable."
+        INFOPLIST_KEY_UIUserInterfaceStyle: Dark
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.healthcare-fitness
+    entitlements:
+      path: PulseForge/PulseForge.entitlements
+      properties:
+        com.apple.developer.healthkit: true
