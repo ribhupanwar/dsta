@@ -132,6 +132,21 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: timeout)
     }
 
+    var gattCapabilitySummary: String {
+        let characteristics = discoveredProfile.filter { $0.hasPrefix("Characteristic ·") }
+        let descriptors = discoveredProfile.filter { $0.hasPrefix("Descriptor ·") }
+        let notifyCount = characteristics.filter {
+            $0.localizedCaseInsensitiveContains("notify")
+        }.count
+        let indicateCount = characteristics.filter {
+            $0.localizedCaseInsensitiveContains("indicate")
+        }.count
+        let cccdCount = descriptors.filter {
+            $0.localizedCaseInsensitiveContains("00002902")
+        }.count
+        return "\(characteristics.count) characteristics · \(notifyCount) notify · \(indicateCount) indicate · \(cccdCount) CCCD"
+    }
+
     var diagnosticSnapshot: String {
         let characteristicLines = discoveredProfile.filter { $0.hasPrefix("Characteristic ·") }
         let descriptorLines = discoveredProfile.filter { $0.hasPrefix("Descriptor ·") }
