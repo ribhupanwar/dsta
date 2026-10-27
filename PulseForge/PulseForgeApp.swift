@@ -254,12 +254,12 @@ struct WorkoutRecordingCard: View {
 
     private var averageBPM: Int? {
         guard !bluetooth.workoutHeartRateSamples.isEmpty else { return nil }
-        let values = bluetooth.workoutHeartRateSamples.map(\\.bpm)
+        let values = bluetooth.workoutHeartRateSamples.map(\.bpm)
         return Int((Double(values.reduce(0, +)) / Double(values.count)).rounded())
     }
 
-    private var minBPM: Int? { bluetooth.workoutHeartRateSamples.map(\\.bpm).min() }
-    private var maxBPM: Int? { bluetooth.workoutHeartRateSamples.map(\\.bpm).max() }
+    private var minBPM: Int? { bluetooth.workoutHeartRateSamples.map(\.bpm).min() }
+    private var maxBPM: Int? { bluetooth.workoutHeartRateSamples.map(\.bpm).max() }
 
     private func durationText(at date: Date) -> String {
         let seconds: TimeInterval
@@ -287,7 +287,7 @@ struct WorkoutRecordingCard: View {
                     Spacer()
                     VStack(alignment: .trailing, spacing: 3) {
                         Text("\(bluetooth.workoutHeartRateSamples.count) SAMPLES")
-                        Text(averageBPM.map { "AVG \\($0) BPM" } ?? "AVG — BPM")
+                        Text(averageBPM.map { "AVG \($0) BPM" } ?? "AVG — BPM")
                     }
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
                 }
