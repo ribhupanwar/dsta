@@ -30,6 +30,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var scanTimeoutWorkItem: DispatchWorkItem?
     private var connectionTimeoutWorkItem: DispatchWorkItem?
     private var pendingCharacteristicServices = Set<String>()
+    private var pendingDescriptorCharacteristics = Set<String>()
 
     // Candidate UUIDs observed in the WHOOP archive. They are scan hints only;
     // the archive string scan does not prove their exact GATT roles.
@@ -201,6 +202,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         connectionTimeoutWorkItem?.cancel()
         connectionTimeoutWorkItem = nil
         pendingCharacteristicServices.removeAll()
+        pendingDescriptorCharacteristics.removeAll()
         connectedName = nil
         connectedDeviceSnapshot = nil
         isConnecting = false
@@ -285,6 +287,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             invalidatedIDs.contains { line.contains($0) }
         }
         pendingCharacteristicServices.removeAll()
+        pendingDescriptorCharacteristics.removeAll()
         discoveredProfile.removeAll()
         statusText = "GATT services changed · refreshing profile"
         peripheral.discoverServices(nil)
@@ -333,13 +336,43 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         } else {
             for characteristic in service.characteristics ?? [] {
                 discoveredProfile.append("Characteristic · service \(service.uuid.uuidString) → \(characteristic.uuid.uuidString) · \(propertyNames(characteristic.properties))")
+                let key = "\(service.uuid.uuidString)|\(characteristic.uuid.uuidString)"
+                pendingDescriptorCharacteristics.insert(key)
+                peripheral.discoverDescriptors(for: characteristic)
             }
         }
         pendingCharacteristicServices.remove(service.uuid.uuidString)
         if pendingCharacteristicServices.isEmpty {
-            statusText = "GATT profile inspected · no commands sent"
+            if pendingDescriptorCharacteristics.isEmpty {
+                statusText = "GATT profile inspected · no commands sent"
+            } else {
+                statusText = "Inspecting GATT descriptors · \(pendingDescriptorCharacteristics.count) remaining"
+            }
         } else {
             statusText = "Inspecting characteristics · \(pendingCharacteristicServices.count) service(s) remaining"
         }
     }
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverDescriptorsFor characteristic: CBCharacteristic, error: Error?) {
+        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        let key = "\(characteristic.service?.uuid.uuidString ?? "Unknown service")|\(characteristic.uuid.uuidString)"
+        if let error {
+            discoveredProfile.append("Descriptor error · \(key) · \(error.localizedDescription)")
+        } else {
+            let descriptors = characteristic.descriptors ?? []
+            if descriptors.isEmpty {
+                discoveredProfile.append("Descriptors · \(key) · none exposed")
+            } else {
+                for descriptor in descriptors {
+                    discoveredProfile.append("Descriptor · characteristic \(characteristic.uuid.uuidString) → \(descriptor.uuid.uuidString)")
+                }
+            }
+        }
+        pendingDescriptorCharacteristics.remove(key)
+        if pendingCharacteristicServices.isEmpty && pendingDescriptorCharacteristics.isEmpty {
+            statusText = "GATT profile and descriptors inspected · no commands sent"
+        } else if pendingCharacteristicServices.isEmpty {
+            statusText = "Inspecting GATT descriptors · \(pendingDescriptorCharacteristics.count) remaining"
+        }
+    }
+
 }
