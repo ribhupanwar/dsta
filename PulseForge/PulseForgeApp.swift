@@ -179,13 +179,7 @@ struct SleepDashboard: View {
                 HeaderView(eyebrow: "SLEEP", title: "Recharge")
                 BigPlaceholderCard(title: "SLEEP PERFORMANCE", subtitle: "Connect a data source to see your sleep performance.", icon: "moon.stars.fill")
                 SectionHeader(title: "SLEEP BREAKDOWN")
-                HStack(spacing: 8) {
-                    SleepStage(name: "Deep", color: Color(red: 0.38, green: 0.34, blue: 0.9))
-                    SleepStage(name: "REM", color: Color(red: 0.42, green: 0.64, blue: 0.95))
-                    SleepStage(name: "Light", color: ForgeColors.lime)
-                    SleepStage(name: "Awake", color: ForgeColors.muted)
-                }
-                .frame(height: 8)
+                SleepStageBreakdown(deep: health.deepSleepMinutes, rem: health.remSleepMinutes, core: health.coreSleepMinutes, awake: health.awakeMinutes)
                 HStack(spacing: 12) {
                     MetricTile(title: "SLEEP HOURS", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours", symbol: "bed.double.fill")
                     MetricTile(title: "SLEEP DEBT", value: "—", unit: "minutes", symbol: "hourglass")
@@ -472,6 +466,10 @@ final class HealthDataStore: ObservableObject {
     @Published private(set) var respiratoryRate: Double?
     @Published private(set) var bloodOxygenPercent: Double?
     @Published private(set) var sleepHours: Double?
+    @Published private(set) var deepSleepMinutes: Double?
+    @Published private(set) var remSleepMinutes: Double?
+    @Published private(set) var coreSleepMinutes: Double?
+    @Published private(set) var awakeMinutes: Double?
     @Published private(set) var latestRunDistanceKm: Double?
     @Published private(set) var latestRunDurationMinutes: Double?
     @Published private(set) var latestRunPaceMinutesPerKm: Double?
@@ -526,16 +524,38 @@ final class HealthDataStore: ObservableObject {
         let start = Calendar.current.date(byAdding: .hour, value: -36, to: Date()) ?? Date().addingTimeInterval(-129600)
         let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: [])
         let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1000, sortDescriptors: nil) { [weak self] _, samples, _ in
-            let asleepValues: Set<Int> = [
-                HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
-                HKCategoryValueSleepAnalysis.asleepCore.rawValue,
-                HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
-                HKCategoryValueSleepAnalysis.asleepREM.rawValue
-            ]
-            let seconds = (samples as? [HKCategorySample] ?? [])
-                .filter { asleepValues.contains($0.value) }
-                .reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
-            Task { @MainActor in self?.sleepHours = seconds > 0 ? seconds / 3600 : nil }
+            let entries = samples as? [HKCategorySample] ?? []
+            func mergedMinutes(for values: Set<Int>) -> Double {
+                let intervals = entries
+                    .filter { values.contains($0.value) }
+                    .map { (start: $0.startDate, end: $0.endDate) }
+                    .sorted { $0.start < $1.start }
+                guard var current = intervals.first else { return 0 }
+                var seconds = 0.0
+                for interval in intervals.dropFirst() {
+                    if interval.start <= current.end {
+                        current.end = max(current.end, interval.end)
+                    } else {
+                        seconds += current.end.timeIntervalSince(current.start)
+                        current = interval
+                    }
+                }
+                seconds += current.end.timeIntervalSince(current.start)
+                return seconds / 60
+            }
+            let deep = mergedMinutes(for: [HKCategoryValueSleepAnalysis.asleepDeep.rawValue])
+            let rem = mergedMinutes(for: [HKCategoryValueSleepAnalysis.asleepREM.rawValue])
+            let core = mergedMinutes(for: [HKCategoryValueSleepAnalysis.asleepCore.rawValue])
+            let unspecified = mergedMinutes(for: [HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue])
+            let awake = mergedMinutes(for: [HKCategoryValueSleepAnalysis.awake.rawValue])
+            let asleep = deep + rem + core + unspecified
+            Task { @MainActor in
+                self?.deepSleepMinutes = deep > 0 ? deep : nil
+                self?.remSleepMinutes = rem > 0 ? rem : nil
+                self?.coreSleepMinutes = (core + unspecified) > 0 ? core + unspecified : nil
+                self?.awakeMinutes = awake > 0 ? awake : nil
+                self?.sleepHours = asleep > 0 ? asleep / 60 : nil
+            }
         }
         store.execute(query)
     }
@@ -646,13 +666,47 @@ struct BigPlaceholderCard: View {
     }
 }
 
-struct SleepStage: View {
-    let name: String
-    let color: Color
+struct SleepStageBreakdown: View {
+    let deep: Double?
+    let rem: Double?
+    let core: Double?
+    let awake: Double?
+
+    private var stages: [(String, Double?, Color)] {
+        [
+            ("Deep", deep, Color(red: 0.38, green: 0.34, blue: 0.9)),
+            ("REM", rem, Color(red: 0.42, green: 0.64, blue: 0.95)),
+            ("Light", core, ForgeColors.lime),
+            ("Awake", awake, ForgeColors.muted)
+        ]
+    }
+    private var total: Double { stages.reduce(0) { $0 + ($1.1 ?? 0) } }
+
     var body: some View {
-        RoundedRectangle(cornerRadius: 4).fill(color).overlay(alignment: .bottom) {
-            Text(name).font(.system(size: 9, weight: .medium)).foregroundStyle(ForgeColors.muted).offset(y: 20)
+        VStack(alignment: .leading, spacing: 12) {
+            GeometryReader { proxy in
+                HStack(spacing: 3) {
+                    ForEach(stages, id: \.0) { stage in
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(stage.2.opacity(stage.1 == nil ? 0.18 : 1))
+                            .frame(width: total > 0 ? max(3, proxy.size.width * (stage.1 ?? 0) / total) : proxy.size.width / 4)
+                    }
+                }
+            }
+            .frame(height: 9)
+            ForEach(stages, id: \.0) { stage in
+                HStack(spacing: 8) {
+                    Circle().fill(stage.2).frame(width: 7, height: 7)
+                    Text(stage.0).font(.system(size: 11, weight: .medium))
+                    Spacer()
+                    Text(stage.1.map { "\(Int($0.rounded())) min" } ?? "—")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(stage.1 == nil ? ForgeColors.muted : .white)
+                }
+            }
         }
+        .padding(16)
+        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
     }
 }
 
