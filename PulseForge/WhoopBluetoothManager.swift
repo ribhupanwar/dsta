@@ -85,6 +85,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var vendorNotificationStates: [String: String] = [:]
     private var vendorNotificationPayloads: [String: String] = [:]
     private var vendorNotificationHistory: [String] = []
+    // Reassemble WHOOP frames independently for each FD4B notification channel.
+    private var whoop5FragmentBuffers: [String: Data] = [:]
+    private var whoop5ExpectedFrameLengths: [String: Int] = [:]
     private var candidateNotificationStates: [String: String] = [:]
     private var candidateNotificationHistory: [String] = []
     private let motionProbeUUIDPrefixes = ["8A58", "5983", "6108", "1150"]
@@ -645,9 +648,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let data = characteristic.value ?? Data()
             let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
             let timestamp = ISO8601DateFormatter().string(from: Date())
-            whoopProtocolDiagnostics = diagnoseWhoop5Frame(data, peripheral: peripheral)
+            whoopProtocolDiagnostics = ingestWhoop5Notification(data, channel: uuid, peripheral: peripheral)
             vendorNotificationPayloads[uuid] = "\(data.count) bytes · \(hex.isEmpty ? "empty" : hex)"
-            vendorNotificationHistory.append("\(timestamp) · \(uuid) · \(data.count) bytes · HEX: \(hex.isEmpty ? "empty" : hex)")
+            vendorNotificationHistory.append("\(timestamp) · \(uuid) · \(data.count) bytes · HEX: \(hex.isEmpty ? "empty" : hex) · \(whoopProtocolDiagnostics)")
             if vendorNotificationHistory.count > 40 {
                 vendorNotificationHistory.removeFirst(vendorNotificationHistory.count - 40)
             }
@@ -691,6 +694,48 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         statusText = isStandardHeartRateNotifying
             ? "Connected · HR notifications enabled · waiting for first sample · \(inspection)"
             : "Connected · HR notification not enabled yet · \(inspection)"
+    }
+
+    /// Stitch WHOOP protocol frames split across BLE notification values.
+    /// Buffers are isolated by characteristic; unframed payloads remain diagnostic-only.
+    private func ingestWhoop5Notification(_ chunk: Data, channel: String, peripheral: CBPeripheral) -> String {
+        let bytes = [UInt8](chunk)
+        var buffer = whoop5FragmentBuffers[channel] ?? Data()
+        var expected = whoop5ExpectedFrameLengths[channel]
+
+        if bytes.count >= 4, bytes[0] == 0xAA, bytes[1] == 0x01 {
+            // A fresh header supersedes an incomplete frame on this channel.
+            buffer = chunk
+            let declared = Int(bytes[2]) | (Int(bytes[3]) << 8)
+            expected = 8 + declared
+            guard expected >= 12, expected <= 8192 else {
+                whoop5FragmentBuffers.removeValue(forKey: channel)
+                whoop5ExpectedFrameLengths.removeValue(forKey: channel)
+                return "WHOOP5 invalid declared frame length · \\(expected)"
+            }
+        } else if !buffer.isEmpty {
+            buffer.append(chunk)
+        } else {
+            return diagnoseWhoop5Frame(chunk, peripheral: peripheral)
+        }
+
+        guard let frameLength = expected else {
+            whoop5FragmentBuffers.removeValue(forKey: channel)
+            whoop5ExpectedFrameLengths.removeValue(forKey: channel)
+            return "WHOOP5 fragment without valid frame header · \\(buffer.count) bytes"
+        }
+        guard buffer.count >= frameLength else {
+            whoop5FragmentBuffers[channel] = buffer
+            whoop5ExpectedFrameLengths[channel] = frameLength
+            return "WHOOP5 frame fragment · \\(buffer.count)/\\(frameLength) bytes"
+        }
+
+        let completeFrame = Data(buffer.prefix(frameLength))
+        let trailing = Data(buffer.dropFirst(frameLength))
+        whoop5FragmentBuffers.removeValue(forKey: channel)
+        whoop5ExpectedFrameLengths.removeValue(forKey: channel)
+        let result = diagnoseWhoop5Frame(completeFrame, peripheral: peripheral)
+        return trailing.isEmpty ? result : result + " · trailing \\(trailing.count) bytes"
     }
 
     /// WHOOP 5.0 frame validation and packet routing.
