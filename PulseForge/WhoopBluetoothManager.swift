@@ -93,6 +93,16 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     }
 
     func connect(to device: DiscoveredWearable) {
+        guard central.state == .poweredOn else {
+            statusText = "Bluetooth is not ready"
+            return
+        }
+        guard !isConnecting, connectedPeripheral == nil else {
+            statusText = connectedPeripheral == nil
+                ? "A connection is already in progress"
+                : "Disconnect the current band before connecting another"
+            return
+        }
         scanTimeoutWorkItem?.cancel()
         scanTimeoutWorkItem = nil
         central.stopScan()
