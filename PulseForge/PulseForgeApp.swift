@@ -262,7 +262,7 @@ struct RunningDashboard: View {
                     HStack {
                         Text("MAX HEART RATE").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
                         Spacer()
-                        Text(maxHeartRate > 0 ? "\\(maxHeartRate) BPM" : "NOT SET")
+                        Text(maxHeartRate > 0 ? "\(maxHeartRate) BPM" : "NOT SET")
                             .font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(ForgeColors.lime)
                     }
                     HStack(spacing: 10) {
@@ -283,7 +283,7 @@ struct RunningDashboard: View {
                     Text("Use a measured maximum from a reliable test or clinician—not an age-based guess.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                     if maxHeartRate > 0 {
-                        ForEach(Array(heartRateZones(maxHR: maxHeartRate, points: health.latestRunHeartRatePoints).enumerated()), id: \\.offset) { index, zone in
+                        ForEach(Array(heartRateZones(maxHR: maxHeartRate, points: health.latestRunHeartRatePoints).enumerated()), id: \.offset) { index, zone in
                             ZoneRow(name: zone.name, color: zone.color, minutes: zone.minutes)
                         }
                     } else {
