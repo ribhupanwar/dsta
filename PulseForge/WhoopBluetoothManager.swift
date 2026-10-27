@@ -16,6 +16,12 @@ struct DiscoveredWearable: Identifiable {
     var id: UUID { peripheral.identifier }
 }
 
+struct LiveHeartRateSample: Identifiable {
+    let timestamp: Date
+    let bpm: Int
+    var id: TimeInterval { timestamp.timeIntervalSince1970 }
+}
+
 final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var devices: [DiscoveredWearable] = []
     @Published private(set) var statusText = "Bluetooth is starting"
@@ -31,6 +37,36 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopCommandResponseCount = 0
     @Published private(set) var whoopLastPacketType = "None"
     @Published private(set) var heartRateUpdateCount = 0
+    @Published private(set) var liveHeartRateSamples: [LiveHeartRateSample] = []
+    @Published private(set) var workoutHeartRateSamples: [LiveHeartRateSample] = []
+    @Published private(set) var workoutStartedAt: Date?
+    @Published private(set) var workoutIsRecording = false
+    @Published private(set) var lastWorkoutDurationSeconds: TimeInterval?
+
+    var freshHeartRateBPM: Int? {
+        guard connectedName != nil, let lastHeartRateAt,
+              Date().timeIntervalSince(lastHeartRateAt) <= 8 else { return nil }
+        return liveHeartRateBPM
+    }
+
+    func startWorkoutRecording() {
+        guard connectedName != nil, !workoutIsRecording else { return }
+        workoutHeartRateSamples.removeAll()
+        workoutStartedAt = Date()
+        lastWorkoutDurationSeconds = nil
+        workoutIsRecording = true
+        statusText = "Workout recording · waiting for HR samples"
+    }
+
+    func stopWorkoutRecording() {
+        guard workoutIsRecording else { return }
+        if let workoutStartedAt {
+            lastWorkoutDurationSeconds = Date().timeIntervalSince(workoutStartedAt)
+        }
+        workoutIsRecording = false
+        workoutStartedAt = nil
+        statusText = "Workout saved in this app session · \\(workoutHeartRateSamples.count) HR samples"
+    }
 
     private var vendorNotificationStates: [String: String] = [:]
     private var vendorNotificationPayloads: [String: String] = [:]
@@ -282,7 +318,13 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         pendingDescriptorCharacteristics.removeAll()
         connectedName = nil
         connectedDeviceSnapshot = nil
+        if workoutIsRecording, let workoutStartedAt {
+            lastWorkoutDurationSeconds = Date().timeIntervalSince(workoutStartedAt)
+        }
+        workoutIsRecording = false
+        workoutStartedAt = nil
         liveHeartRateBPM = nil
+        liveHeartRateSamples.removeAll()
         isStandardHeartRateNotifying = false
         lastHeartRateAt = nil
         heartRateUpdateCount = 0
@@ -447,6 +489,18 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         }
         liveHeartRateBPM = bpm
         lastHeartRateAt = Date()
+        let sample = LiveHeartRateSample(timestamp: lastHeartRateAt!, bpm: bpm)
+        liveHeartRateSamples.append(sample)
+        liveHeartRateSamples.removeAll { Date().timeIntervalSince($0.timestamp) > 60 }
+        if liveHeartRateSamples.count > 120 {
+            liveHeartRateSamples.removeFirst(liveHeartRateSamples.count - 120)
+        }
+        if workoutIsRecording {
+            workoutHeartRateSamples.append(sample)
+            if workoutHeartRateSamples.count > 14_400 {
+                workoutHeartRateSamples.removeFirst(workoutHeartRateSamples.count - 14_400)
+            }
+        }
         heartRateUpdateCount += 1
         lastBLEEvent = "WHOOP standard BLE heart rate · \(bpm) bpm · \(ISO8601DateFormatter().string(from: lastHeartRateAt!)) · sample #\(heartRateUpdateCount)"
         statusText = "Live HR · \(bpm) bpm · \(heartRateUpdateCount) update(s)"
