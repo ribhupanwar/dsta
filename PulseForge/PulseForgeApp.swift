@@ -297,7 +297,7 @@ final class HealthDataStore: ObservableObject {
     private func loadLatestHeartRate() async {
         guard let type = HKObjectType.quantityType(forIdentifier: .heartRate) else { return }
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
-        let query = HKSampleQuery(sampleType: type, predicate: nil, limit: 1, sortDescriptors: [sort]) { [weak self] samples, _ in
+        let query = HKSampleQuery(sampleType: type, predicate: nil, limit: 1, sortDescriptors: [sort]) { [weak self] _, samples, _ in
             guard let sample = samples?.first as? HKQuantitySample else { return }
             let bpm = Int(sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute())))
             Task { @MainActor in self?.heartRate = bpm }
