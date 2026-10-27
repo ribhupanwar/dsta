@@ -90,6 +90,96 @@ jobs:
                           uuid_contexts.append({"match": value[:140], "nearby_strings": safe_nearby})
               except KeyError:
                   pass
+              macho_symbol_strings = []
+              try:
+                  import struct, subprocess, shutil
+                  binary = z.read("Whoop")
+
+                  def thin_macho_symbols(data, base):
+                      if base + 32 > len(data):
+                          return []
+                      magic = data[base:base+4]
+                      if magic == b"\\xcf\\xfa\\xed\\xfe":
+                          endian = "<"
+                      elif magic == b"\\xfe\\xed\\xfa\\xcf":
+                          endian = ">"
+                      else:
+                          return []
+                      header = struct.unpack_from(endian + "IiiIIIII", data, base)
+                      ncmds = header[4]
+                      cursor = base + 32
+                      symtab = None
+                      for _ in range(min(ncmds, 20000)):
+                          if cursor + 8 > len(data):
+                              break
+                          cmd, cmdsize = struct.unpack_from(endian + "II", data, cursor)
+                          if cmdsize < 8 or cursor + cmdsize > len(data):
+                              break
+                          if cmd == 0x2 and cmdsize >= 24:
+                              symtab = struct.unpack_from(endian + "IIII", data, cursor + 8)
+                              break
+                          cursor += cmdsize
+                      if not symtab:
+                          return []
+                      symoff, nsyms, stroff, strsize = symtab
+                      if nsyms > 3000000 or stroff + strsize > len(data):
+                          return []
+                      strings = data[stroff:stroff+strsize]
+                      found = []
+                      for idx in range(nsyms):
+                          pos = symoff + idx * 16
+                          if pos + 16 > len(data):
+                              break
+                          strx = struct.unpack_from(endian + "I", data, pos)[0]
+                          if 0 < strx < len(strings):
+                              end = strings.find(b"\\0", strx)
+                              if end < 0:
+                                  end = len(strings)
+                              name = strings[strx:end].decode("utf-8", "ignore")
+                              low = name.lower()
+                              if any(term in low for term in (
+                                  "whoop", "realtimehr", "historicalpull", "helloresponse",
+                                  "characteristic", "packet", "heart rate", "heart_rate",
+                                  "unlocktoken", "commandread", "commandwrite", "dataread", "eventread"
+                              )):
+                                  found.append(name)
+                      return found
+
+                  slices = [0]
+                  magic = binary[:4]
+                  if magic in (b"\\xca\\xfe\\xba\\xbe", b"\\xbe\\xba\\xfe\\xca"):
+                      endian = ">" if magic == b"\\xca\\xfe\\xba\\xbe" else "<"
+                      count = struct.unpack_from(endian + "I", binary, 4)[0]
+                      slices = []
+                      for idx in range(min(count, 64)):
+                          off = 8 + idx * 20
+                          if off + 20 <= len(binary):
+                              slices.append(struct.unpack_from(endian + "IIIII", binary, off)[2])
+                  elif magic in (b"\\xca\\xfe\\xba\\xbf", b"\\xbf\\xba\\xfe\\xca"):
+                      endian = ">" if magic == b"\\xca\\xfe\\xba\\xbf" else "<"
+                      count = struct.unpack_from(endian + "I", binary, 4)[0]
+                      slices = []
+                      for idx in range(min(count, 64)):
+                          off = 8 + idx * 32
+                          if off + 32 <= len(binary):
+                              slices.append(struct.unpack_from(endian + "IIQQII", binary, off)[2])
+                  for base in slices:
+                      macho_symbol_strings.extend(thin_macho_symbols(binary, base))
+                  macho_symbol_strings = sorted(set(macho_symbol_strings))[:5000]
+                  demangler = shutil.which("swift-demangle")
+                  if demangler and macho_symbol_strings:
+                      decoded = []
+                      for start in range(0, len(macho_symbol_strings), 100):
+                          chunk = macho_symbol_strings[start:start+100]
+                          result = subprocess.run([demangler, "--compact"], input="\\n".join(chunk),
+                                                  text=True, capture_output=True, timeout=30)
+                          if result.returncode == 0:
+                              decoded.extend(x for x in result.stdout.splitlines() if x.strip())
+                      if decoded:
+                          macho_symbol_strings = sorted(set(decoded))[:5000]
+              except Exception as exc:
+                  macho_symbol_strings = ["Symbol extraction unavailable: " + type(exc).__name__]
+
               resource_meta = {}
               for name in ["HelloPacketRev3", "HelloPacketRev4", "hrBroadcastBeat"]:
                   if name in names:
@@ -125,6 +215,7 @@ jobs:
                   "uuid_string_contexts": uuid_contexts,
                   "ble_related_strings": ble_related_strings,
                   "protocol_symbol_strings": protocol_symbol_strings,
+                  "macho_symbol_strings": macho_symbol_strings,
                   "protocol_resource_fingerprints": resource_meta,
                   "json_resource_files": json_resources,
                   "dto_data_shapes": dto_schemas
@@ -143,6 +234,8 @@ jobs:
               lines += [f"- `{x}`" for x in ble_related_strings] or ["- No matching strings found"]
               lines += ["", "## Protocol symbols and type names (extracted from executable)", ""]
               lines += [f"- `{x}`" for x in protocol_symbol_strings] or ["- No matching symbols found"]
+              lines += ["", "## Mach-O symbol table (filtered BLE/protocol names)", ""]
+              lines += [f"- `{x}`" for x in macho_symbol_strings] or ["- No matching Mach-O symbols found"]
               lines += ["", "## Nearby strings for UUID matches (unverified)", ""]
               for item in uuid_contexts:
                   lines += [f"- Match: `{item['match']}`", f"  - Context: {' | '.join(item['nearby_strings'])}"]
