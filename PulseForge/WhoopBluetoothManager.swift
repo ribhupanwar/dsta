@@ -321,17 +321,21 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         if let error {
             pendingCharacteristicServices.removeAll()
+            pendingDescriptorCharacteristics.removeAll()
             statusText = "Service discovery failed: \(error.localizedDescription)"
             lastBLEEvent = "Service discovery error · \(error.localizedDescription)"
             return
         }
         guard let services = peripheral.services else {
             pendingCharacteristicServices.removeAll()
+            pendingDescriptorCharacteristics.removeAll()
             statusText = "Connected · service list unavailable"
             return
         }
         pendingCharacteristicServices = Set(services.map { ObjectIdentifier($0) })
         guard !services.isEmpty else {
+            pendingCharacteristicServices.removeAll()
+            pendingDescriptorCharacteristics.removeAll()
             statusText = "Connected · no GATT services exposed"
             return
         }
