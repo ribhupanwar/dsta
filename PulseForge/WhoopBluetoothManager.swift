@@ -133,7 +133,14 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     }
 
     var diagnosticSnapshot: String {
+        let characteristicLines = discoveredProfile.filter { $0.hasPrefix("Characteristic ·") }
+        let descriptorLines = discoveredProfile.filter { $0.hasPrefix("Descriptor ·") }
+        let notifyCharacteristics = characteristicLines.filter {
+            $0.localizedCaseInsensitiveContains("notify") || $0.localizedCaseInsensitiveContains("indicate")
+        }
+        let cccdDescriptors = descriptorLines.filter { $0.localizedCaseInsensitiveContains("00002902") }
         var lines = [
+            "GATT summary: \(characteristicLines.count) characteristics · \(notifyCharacteristics.count) notify/indicate-capable · \(descriptorLines.count) descriptors · \(cccdDescriptors.count) CCCD descriptors",
             "PulseForge BLE diagnostic snapshot",
             "Captured: \(ISO8601DateFormatter().string(from: Date()))",
             "Device: \(connectedName ?? "Not connected")",
@@ -153,7 +160,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         ]
         lines.append(contentsOf: discoveredProfile.isEmpty ? ["No GATT profile captured"] : discoveredProfile)
         lines.append("")
-        lines.append("Note: passive discovery only; no command writes or notification subscriptions.")
+        lines.append("Note: descriptor UUIDs and characteristic properties are metadata only; no descriptor values, sensor payloads, command writes or notification subscriptions are collected.")
         return lines.joined(separator: "\n")
     }
 
