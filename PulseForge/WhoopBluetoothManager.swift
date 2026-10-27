@@ -94,6 +94,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var central: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
     private var connectedDeviceSnapshot: DiscoveredWearable?
+    private var pendingRestoredPeripheral: CBPeripheral?
+    private let rememberedPeripheralKey = "pulseforge.whoop.lastPeripheralUUID"
+    private var isAutomaticReconnectScan = false
     private var scanTimeoutWorkItem: DispatchWorkItem?
     private var connectionTimeoutWorkItem: DispatchWorkItem?
     private var pendingCharacteristicServices = Set<ObjectIdentifier>()
@@ -166,6 +169,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         connectionTimeoutWorkItem = nil
         central.stopScan()
         if let peripheral = connectedPeripheral {
+            UserDefaults.standard.removeObject(forKey: rememberedPeripheralKey)
+            pendingRestoredPeripheral = nil
             central.cancelPeripheralConnection(peripheral)
             statusText = "Disconnecting…"
         } else {
@@ -191,6 +196,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         discoveredProfile.removeAll()
         connectedDeviceSnapshot = device
         connectedPeripheral = device.peripheral
+        UserDefaults.standard.set(device.id.uuidString, forKey: rememberedPeripheralKey)
         lastBLEEvent = "Waiting for first BLE characteristic value on this connection"
         connectedPeripheral?.delegate = self
         isConnecting = true
@@ -316,13 +322,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         connectedName = peripheral.name ?? "WHOOP"
         lastBLEEvent = "CoreBluetooth restored WHOOP peripheral · \(peripheral.identifier.uuidString)"
 
-        if peripheral.state == .connected {
-            statusText = "Bluetooth connection restored · refreshing WHOOP services"
-            peripheral.discoverServices(nil)
-        } else {
-            statusText = "Restoring WHOOP Bluetooth connection…"
-            central.connect(peripheral, options: nil)
-        }
+        pendingRestoredPeripheral = peripheral
+        statusText = "WHOOP peripheral restored · waiting for Bluetooth to become ready"
+        resumeRestoredPeripheralIfPossible()
     }
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
@@ -334,6 +336,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         switch central.state {
         case .poweredOn:
             statusText = connectedPeripheral == nil ? "Bluetooth ready" : "Bluetooth ready · restoring connection state"
+            resumeRestoredPeripheralIfPossible()
         case .poweredOff:
             clearConnectionState()
             statusText = "Bluetooth is off"
@@ -351,6 +354,76 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         @unknown default:
             statusText = "Bluetooth state unavailable"
         }
+    }
+
+    private func resumeRestoredPeripheralIfPossible() {
+        guard central.state == .poweredOn else { return }
+        let peripheral: CBPeripheral?
+        if let pendingRestoredPeripheral {
+            peripheral = pendingRestoredPeripheral
+        } else if let rawID = UserDefaults.standard.string(forKey: rememberedPeripheralKey),
+                  let identifier = UUID(uuidString: rawID) {
+            peripheral = central.retrievePeripherals(withIdentifiers: [identifier]).first
+        } else {
+            peripheral = nil
+        }
+        guard let peripheral else {
+            // CoreBluetooth may no longer have a cached CBPeripheral after a
+            // force-quit. Keep the saved identifier and wait for a later manual scan.
+            statusText = "Bluetooth ready · searching for previously used WHOOP"
+            if !isAutomaticReconnectScan {
+                isAutomaticReconnectScan = true
+                central.scanForPeripherals(withServices: nil, options: [
+                    CBCentralManagerScanOptionAllowDuplicatesKey: false
+                ])
+                DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+                    guard let self, self.isAutomaticReconnectScan else { return }
+                    self.central.stopScan()
+                    self.isAutomaticReconnectScan = false
+                    self.statusText = "WHOOP not found · open Device and tap Scan to retry"
+                }
+            }
+            return
+        }
+
+        pendingRestoredPeripheral = nil
+        connectedPeripheral = peripheral
+        connectedDeviceSnapshot = nil
+        peripheral.delegate = self
+        connectedName = peripheral.name ?? "WHOOP"
+        isConnecting = peripheral.state != .connected
+        resetGattSessionForReconnect()
+
+        if peripheral.state == .connected {
+            statusText = "WHOOP connection recovered · rediscovering services"
+            lastBLEEvent = "Recovered existing CoreBluetooth peripheral · refreshing GATT"
+            peripheral.discoverServices(nil)
+        } else {
+            statusText = "Reconnecting to previously used WHOOP…"
+            lastBLEEvent = "Automatic reconnect requested for remembered WHOOP peripheral"
+            central.connect(peripheral, options: nil)
+        }
+    }
+
+    private func resetGattSessionForReconnect() {
+        pendingCharacteristicServices.removeAll()
+        pendingDescriptorCharacteristics.removeAll()
+        discoveredProfile.removeAll()
+        vendorNotificationStates.removeAll()
+        vendorNotificationPayloads.removeAll()
+        vendorNotificationHistory.removeAll()
+        whoop5CommandCharacteristic = nil
+        whoop5HelloSent = false
+        whoop5HelloWritePending = false
+        whoop5HRStreamEnableSent = false
+        whoop5HRStreamConfirmed = false
+        whoop5PendingWrites.removeAll()
+        whoop5NextCommandSequence = 2
+        isStandardHeartRateNotifying = false
+        liveHeartRateBPM = nil
+        lastHeartRateAt = nil
+        heartRateUpdateCount = 0
+        liveHeartRateSamples.removeAll()
     }
 
     private func clearConnectionState() {
@@ -398,6 +471,22 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         let advertisedUUIDs = advertisedServices + Array(serviceData.keys) + solicitedServices + overflowServices
         let hasCandidateService = advertisedUUIDs.contains {
             candidateUUIDs.contains($0.uuidString.uppercased())
+        }
+        if let rememberedID = UserDefaults.standard.string(forKey: rememberedPeripheralKey),
+           peripheral.identifier.uuidString == rememberedID,
+           isAutomaticReconnectScan {
+            isAutomaticReconnectScan = false
+            central.stopScan()
+            connectedPeripheral = peripheral
+            connectedDeviceSnapshot = nil
+            peripheral.delegate = self
+            isConnecting = true
+            connectedName = peripheral.name ?? "WHOOP"
+            resetGattSessionForReconnect()
+            lastBLEEvent = "Remembered WHOOP found during automatic reconnect scan"
+            statusText = "Reconnecting to WHOOP…"
+            central.connect(peripheral, options: nil)
+            return
         }
         guard name.localizedCaseInsensitiveContains("whoop") || hasCandidateService else { return }
 
