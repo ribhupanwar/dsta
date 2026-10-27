@@ -116,7 +116,11 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             workoutHeartRateSamples = savedSamples
         }
         lastWorkoutDurationSeconds = UserDefaults.standard.object(forKey: "pulseforge.whoop.lastWorkoutDuration") as? Double
-        central = CBCentralManager(delegate: self, queue: .main)
+        central = CBCentralManager(
+            delegate: self,
+            queue: .main,
+            options: [CBCentralManagerOptionRestoreIdentifierKey: "com.ribhupanwar.pulseforge.bluetooth-central"]
+        )
     }
 
     func startScan() {
@@ -298,6 +302,29 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
 }
 
 extension WhoopBluetoothManager: CBCentralManagerDelegate {
+    func centralManager(_ central: CBCentralManager, willRestoreState dict: [String : Any]) {
+        let restored = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] ?? []
+        guard let peripheral = restored.first else {
+            lastBLEEvent = "CoreBluetooth restoration callback received · no peripheral to restore"
+            return
+        }
+
+        connectedPeripheral = peripheral
+        connectedDeviceSnapshot = nil
+        peripheral.delegate = self
+        isConnecting = peripheral.state != .connected
+        connectedName = peripheral.name ?? "WHOOP"
+        lastBLEEvent = "CoreBluetooth restored WHOOP peripheral · \(peripheral.identifier.uuidString)"
+
+        if peripheral.state == .connected {
+            statusText = "Bluetooth connection restored · refreshing WHOOP services"
+            peripheral.discoverServices(nil)
+        } else {
+            statusText = "Restoring WHOOP Bluetooth connection…"
+            central.connect(peripheral, options: nil)
+        }
+    }
+
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         if central.state != .poweredOn {
             scanTimeoutWorkItem?.cancel()
