@@ -707,12 +707,13 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             // A fresh header supersedes an incomplete frame on this channel.
             buffer = chunk
             let declared = Int(bytes[2]) | (Int(bytes[3]) << 8)
-            expected = 8 + declared
-            guard expected >= 12, expected <= 8192 else {
+            let frameLength = 8 + declared
+            guard frameLength >= 12, frameLength <= 8192 else {
                 whoop5FragmentBuffers.removeValue(forKey: channel)
                 whoop5ExpectedFrameLengths.removeValue(forKey: channel)
-                return "WHOOP5 invalid declared frame length · \\(expected)"
+                return "WHOOP5 invalid declared frame length · \\(frameLength)"
             }
+            expected = frameLength
         } else if !buffer.isEmpty {
             buffer.append(chunk)
         } else {
