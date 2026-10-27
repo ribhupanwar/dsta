@@ -291,17 +291,87 @@ struct ZoneRow: View {
 }
 
 struct JournalPrompt: View {
+    @State private var showingJournal = false
+    @AppStorage("pulseforge.journal.savedDate") private var savedDate = ""
+    @AppStorage("pulseforge.journal.mood") private var mood = ""
+    @AppStorage("pulseforge.journal.soreness") private var soreness = ""
+    @AppStorage("pulseforge.journal.notes") private var notes = ""
+
+    private var hasEntryToday: Bool {
+        savedDate == Calendar.current.startOfDay(for: Date()).formatted(.iso8601.year().month().day().dateSeparator(.dash))
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "book.closed.fill").font(.system(size: 20)).foregroundStyle(ForgeColors.lime)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Daily journal").font(.system(size: 14, weight: .semibold))
-                Text("Add habits, soreness and recovery context").font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+        Button { showingJournal = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "book.closed.fill").font(.system(size: 20)).foregroundStyle(ForgeColors.lime)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Daily journal").font(.system(size: 14, weight: .semibold))
+                    Text(hasEntryToday ? "Today's check-in saved · Edit entry" : "Log mood, soreness and recovery context")
+                        .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(ForgeColors.muted)
             }
-            Spacer()
-            Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(ForgeColors.muted)
+            .foregroundStyle(.white)
+            .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
         }
-        .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showingJournal) {
+            JournalEntrySheet(mood: $mood, soreness: $soreness, notes: $notes) {
+                savedDate = Calendar.current.startOfDay(for: Date()).formatted(.iso8601.year().month().day().dateSeparator(.dash))
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+}
+
+struct JournalEntrySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var mood: String
+    @Binding var soreness: String
+    @Binding var notes: String
+    let onSave: () -> Void
+
+    private let moods = ["Great", "Good", "Okay", "Low"]
+    private let sorenessLevels = ["None", "Mild", "Moderate", "High"]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("How are you feeling?") {
+                    Picker("Mood", selection: $mood) {
+                        Text("Select mood").tag("")
+                        ForEach(moods, id: \.self) { Text($0).tag($0) }
+                    }
+                    Picker("Muscle soreness", selection: $soreness) {
+                        Text("Select level").tag("")
+                        ForEach(sorenessLevels, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+                Section("Notes") {
+                    TextField("Training, hydration, stress, habits…", text: $notes, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+                Section {
+                    Text("Your journal stays on this device in this build. It does not alter recovery or strain scores.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Daily check-in")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { onSave(); dismiss() }
+                        .disabled(mood.isEmpty && soreness.isEmpty && notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
     }
 }
 
