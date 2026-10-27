@@ -174,7 +174,7 @@ struct LiveHeartRateCard: View {
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text("WHOOP · LIVE HEART RATE").font(.system(size: 9, weight: .bold)).tracking(0.9).foregroundStyle(ForgeColors.muted)
-                    Text(heartRate.map { "\\($0) BPM" } ?? "Waiting for sensor")
+                    Text(heartRate.map { "\($0) BPM" } ?? "Waiting for sensor")
                         .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
                 }
                 Spacer()
@@ -197,15 +197,15 @@ struct LiveHeartRateChartCard: View {
                 let age = context.date.timeIntervalSince($0.timestamp)
                 return age >= 0 && age <= 60
             }
-            let low = visibleSamples.map(\\.bpm).min() ?? 40
-            let high = visibleSamples.map(\\.bpm).max() ?? 180
+            let low = visibleSamples.map(\.bpm).min() ?? 40
+            let high = visibleSamples.map(\.bpm).max() ?? 180
             let lower = max(30, low - 8)
             let upper = min(220, max(lower + 20, high + 8))
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text(title).font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
                     Spacer()
-                    Text(visibleSamples.isEmpty ? "NO LIVE SAMPLES" : "\\(visibleSamples.count) POINTS")
+                    Text(visibleSamples.isEmpty ? "NO LIVE SAMPLES" : "\(visibleSamples.count) POINTS")
                         .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.lime)
                 }
                 if visibleSamples.count >= 2 {
@@ -237,7 +237,7 @@ struct LiveHeartRateChartCard: View {
                     Text("60 SEC WINDOW")
                     Spacer()
                     if let latest = visibleSamples.last {
-                        Text("LATEST \\(latest.bpm) BPM")
+                        Text("LATEST \(latest.bpm) BPM")
                     }
                 }
                 .font(.system(size: 8, weight: .semibold)).tracking(0.7).foregroundStyle(ForgeColors.muted)
@@ -585,9 +585,9 @@ struct DeviceDashboard: View {
                             Text(bluetooth.freshHeartRateBPM.map(String.init) ?? "—")
                                 .font(.system(size: 28, weight: .semibold, design: .rounded))
                                 .monospacedDigit()
-                            Text(bluetooth.liveHeartRateBPM == nil
-                                 ? (bluetooth.isStandardHeartRateNotifying ? "HR notifications enabled · waiting for first sample" : "Connected does not mean HR is streaming")
-                                 : "LIVE HEART RATE · \(bluetooth.heartRateUpdateCount) update(s)")
+                            Text(bluetooth.freshHeartRateBPM == nil
+                                 ? (bluetooth.isStandardHeartRateNotifying ? "Waiting for a fresh HR sample" : "Connected · HR stream not confirmed")
+                                 : "LIVE · \(bluetooth.heartRateUpdateCount) update(s)")
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(ForgeColors.muted)
                         }
