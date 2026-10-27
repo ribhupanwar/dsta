@@ -38,6 +38,16 @@ The binary scan found 88 UUID-shaped strings. Repeated candidate families includ
 - `8ec9000x-f315-4f60-9fb8-838830daea50`
 - `fd4b000x-cce1-4033-93ce-002d5875f58a`
 
+The binary's nearby printable strings provide additional clues:
+
+- `8A580001-2FE8-4796-9267-B87A2B0C8234` and `59830001-5955-419B-BB8D-C8262926AF23` occur beside BLE scan-manager log strings.
+- The `11500001-6215-11EE-8C99-0242AC120002` family occurs near pairing result strings and `WhoopBatteryPackCentralManagerQueue` / `WhoopStrapCentralManagerQueue`.
+- The `FD4B0001-CCE1-4033-93CE-002D5875F58A` family also occurs beside those strap/battery manager names.
+- The `61080001-8D6D-82B8-614A-1C8CB0F8DCC6` family occurs near `bleWriteValue` and an unknown-command parser error; `61080008/09` occur near strap Memfault/command strings.
+- The `8EC90001-F315-4F60-9FB8-838830DAEA50` family is adjacent to `NordicDFU.DFUFirmware` strings and should be treated as firmware-update related, not assumed to be the live-data service.
+
+These are string-neighborhood correlations only. They suggest candidate roles but do not prove which UUID is the primary service, which are characteristics, or which are used by WHOOP 5.0.
+
 These are **unverified candidates**, not yet a confirmed GATT map. Some UUID strings may belong to third-party SDKs or unrelated components. Before implementing a connection profile, each candidate must be correlated with the CoreBluetooth discovery/write/notify call sites and then validated against the user's WHOOP 5.0 device.
 
 ## Data and feature inventory
