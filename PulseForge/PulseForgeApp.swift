@@ -96,7 +96,7 @@ struct TodayDashboard: View {
                     MetricTile(title: "SLEEP", value: "—", unit: "performance", symbol: "moon.zzz.fill")
                     MetricTile(title: "STRAIN", value: "—", unit: "daily load", symbol: "flame.fill")
                 }
-                LiveHeartRateCard(heartRate: bluetooth.freshHeartRateBPM)
+                LiveHeartRateCard()
                 LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE · LAST 60 SECONDS")
                 SectionHeader(title: "YOUR HEALTH", action: "View trends")
                 HStack(spacing: 12) {
@@ -162,25 +162,28 @@ struct RecoveryHero: View {
 }
 
 struct LiveHeartRateCard: View {
-    let heartRate: Int?
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
 
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle().fill(ForgeColors.lime.opacity(0.12)).frame(width: 42, height: 42)
-                Image(systemName: "heart.fill").foregroundStyle(ForgeColors.lime)
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let heartRate = bluetooth.freshHeartRateBPM
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle().fill(ForgeColors.lime.opacity(0.12)).frame(width: 42, height: 42)
+                    Image(systemName: "heart.fill").foregroundStyle(ForgeColors.lime)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("WHOOP · LIVE HEART RATE").font(.system(size: 9, weight: .bold)).tracking(0.9).foregroundStyle(ForgeColors.muted)
+                    Text(heartRate.map { "\\($0) BPM" } ?? "Waiting for sensor")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
+                }
+                Spacer()
+                Circle().fill(ForgeColors.lime.opacity(heartRate == nil ? 0.3 : 1)).frame(width: 7, height: 7)
             }
-            VStack(alignment: .leading, spacing: 3) {
-                Text("WHOOP · LIVE HEART RATE").font(.system(size: 9, weight: .bold)).tracking(0.9).foregroundStyle(ForgeColors.muted)
-                Text(heartRate.map { "\($0) BPM" } ?? "Waiting for sensor")
-                    .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
-            }
-            Spacer()
-            Circle().fill(ForgeColors.lime.opacity(heartRate == nil ? 0.3 : 1)).frame(width: 7, height: 7)
+            .padding(16)
+            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
         }
-        .padding(16)
-        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
     }
 }
 
@@ -188,60 +191,61 @@ struct LiveHeartRateChartCard: View {
     let samples: [LiveHeartRateSample]
     let title: String
 
-    private var yDomain: ClosedRange<Int> {
-        guard let low = samples.map(\.bpm).min(), let high = samples.map(\.bpm).max() else {
-            return 40...180
-        }
-        let lower = max(30, low - 8)
-        let upper = min(220, max(lower + 20, high + 8))
-        return lower...upper
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(title).font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
-                Spacer()
-                Text(samples.isEmpty ? "NO LIVE SAMPLES" : "\(samples.count) POINTS")
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.lime)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let visibleSamples = samples.filter {
+                let age = context.date.timeIntervalSince($0.timestamp)
+                return age >= 0 && age <= 60
             }
-            if samples.count >= 2 {
-                Chart(samples) { sample in
-                    AreaMark(
-                        x: .value("Time", sample.timestamp),
-                        y: .value("BPM", sample.bpm)
-                    )
-                    .foregroundStyle(ForgeColors.lime.opacity(0.12))
-                    LineMark(
-                        x: .value("Time", sample.timestamp),
-                        y: .value("BPM", sample.bpm)
-                    )
-                    .foregroundStyle(ForgeColors.lime)
-                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
+            let low = visibleSamples.map(\\.bpm).min() ?? 40
+            let high = visibleSamples.map(\\.bpm).max() ?? 180
+            let lower = max(30, low - 8)
+            let upper = min(220, max(lower + 20, high + 8))
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(title).font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
+                    Spacer()
+                    Text(visibleSamples.isEmpty ? "NO LIVE SAMPLES" : "\\(visibleSamples.count) POINTS")
+                        .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.lime)
                 }
-                .chartYScale(domain: yDomain)
-                .chartXAxis(.hidden)
-                .chartYAxis {
-                    AxisMarks(position: .leading, values: .automatic(desiredCount: 3))
+                if visibleSamples.count >= 2 {
+                    Chart(visibleSamples) { sample in
+                        AreaMark(
+                            x: .value("Time", sample.timestamp),
+                            y: .value("BPM", sample.bpm)
+                        )
+                        .foregroundStyle(ForgeColors.lime.opacity(0.12))
+                        LineMark(
+                            x: .value("Time", sample.timestamp),
+                            y: .value("BPM", sample.bpm)
+                        )
+                        .foregroundStyle(ForgeColors.lime)
+                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
+                    }
+                    .chartYScale(domain: lower...upper)
+                    .chartXAxis(.hidden)
+                    .chartYAxis {
+                        AxisMarks(position: .leading, values: .automatic(desiredCount: 3))
+                    }
+                    .frame(height: 125)
+                } else {
+                    Text(visibleSamples.isEmpty ? "Live WHOOP heart-rate samples will draw here." : "Collecting live samples…")
+                        .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                        .frame(maxWidth: .infinity, minHeight: 100)
                 }
-                .frame(height: 125)
-            } else {
-                Text(samples.isEmpty ? "Live WHOOP heart-rate samples will draw here." : "Collecting live samples…")
-                    .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
-                    .frame(maxWidth: .infinity, minHeight: 100)
+                HStack {
+                    Text("60 SEC WINDOW")
+                    Spacer()
+                    if let latest = visibleSamples.last {
+                        Text("LATEST \\(latest.bpm) BPM")
+                    }
+                }
+                .font(.system(size: 8, weight: .semibold)).tracking(0.7).foregroundStyle(ForgeColors.muted)
             }
-            HStack {
-                Text("60 SEC WINDOW")
-                Spacer()
-                if let latest = samples.last {
-                    Text("LATEST \(latest.bpm) BPM")
-                }
-            }
-            .font(.system(size: 8, weight: .semibold)).tracking(0.7).foregroundStyle(ForgeColors.muted)
+            .padding(16)
+            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
         }
-        .padding(16)
-        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
     }
 }
 
@@ -572,6 +576,7 @@ struct DeviceDashboard: View {
                         .font(.system(size: 19, weight: .semibold))
                     Text(bluetooth.statusText)
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
                     HStack(alignment: .center, spacing: 12) {
                         Image(systemName: "heart.fill")
                             .font(.system(size: 18))
@@ -594,6 +599,7 @@ struct DeviceDashboard: View {
                     .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
+                    }
                     LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE · LAST 60 SECONDS")
                     WorkoutRecordingCard(bluetooth: bluetooth)
                     if bluetooth.connectedName != nil {
