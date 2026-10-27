@@ -138,6 +138,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         let secondaryServices = services.filter { $0.localizedCaseInsensitiveContains(" · secondary") }.count
         let characteristics = discoveredProfile.filter { $0.hasPrefix("Characteristic ·") }
         let descriptors = discoveredProfile.filter { $0.hasPrefix("Descriptor ·") }
+        let descriptorErrors = discoveredProfile.filter { $0.hasPrefix("Descriptor error ·") }.count
+        let discoveryErrors = discoveredProfile.filter { $0.hasPrefix("Service error ·") }.count
         func count(_ property: String) -> Int {
             characteristics.filter { line in
                 guard let marker = line.range(of: " · ", options: .backwards) else { return false }
@@ -150,7 +152,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         let cccdCount = descriptors.filter {
             $0.localizedCaseInsensitiveContains("00002902")
         }.count
-        return "\(services.count) services (P:\(primaryServices) S:\(secondaryServices)) · \(characteristics.count) characteristics · R:\(count("read")) W:\(count("write")) WNR:\(count("write-no-response")) N:\(count("notify")) I:\(count("indicate")) · CCCD:\(cccdCount)"
+        return "\(services.count) services (P:\(primaryServices) S:\(secondaryServices)) · \(characteristics.count) characteristics · D:\(descriptors.count) CCCD:\(cccdCount) · R:\(count("read")) W:\(count("write")) WNR:\(count("write-no-response")) N:\(count("notify")) I:\(count("indicate")) · Errors:\(discoveryErrors + descriptorErrors)"
     }
 
     var diagnosticSnapshot: String {
