@@ -90,6 +90,11 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5HRStreamConfirmed = false
     private var whoop5PendingWrites: [String] = []
     private var whoop5NextCommandSequence: UInt8 = 2
+    private var hrTimingConnectionAt: Date?
+    private var hrTimingStandardNotifyRequestedAt: Date?
+    private var hrTimingStandardNotifyEnabledAt: Date?
+    private var hrTimingFirstSampleAt: Date?
+    private var hrTimingEvents: [String] = []
 
     private var central: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
@@ -273,6 +278,11 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "Latest WHOOP standard HR value: \(liveHeartRateBPM.map { "\($0) bpm" } ?? "None received")",
             "Latest HR timestamp: \(lastHeartRateAt.map { ISO8601DateFormatter().string(from: $0) } ?? "None")",
             "HR updates this connection: \(heartRateUpdateCount)",
+            "HR timing · connected: \(hrTimingConnectionAt.map { ISO8601DateFormatter().string(from: $0) } ?? "not recorded")",
+            "HR timing · standard notify requested: \(hrTimingStandardNotifyRequestedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "not requested")",
+            "HR timing · standard notify enabled: \(hrTimingStandardNotifyEnabledAt.map { ISO8601DateFormatter().string(from: $0) } ?? "not enabled")",
+            "HR timing · first sample: \(hrTimingFirstSampleAt.map { ISO8601DateFormatter().string(from: $0) } ?? "not received")",
+            "HR timing events: \(hrTimingEvents.suffix(12).joined(separator: " | "))",
             "WHOOP 5.0 CLIENT_HELLO sent: \(whoop5HelloSent ? "yes" : "no")",
             "WHOOP 5.0 CLIENT_HELLO write pending: \(whoop5HelloWritePending ? "yes" : "no")",
             "WHOOP realtime HR enable command sent: \(whoop5HRStreamEnableSent ? "yes" : "no")",
@@ -424,6 +434,11 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         lastHeartRateAt = nil
         heartRateUpdateCount = 0
         liveHeartRateSamples.removeAll()
+        hrTimingConnectionAt = Date()
+        hrTimingStandardNotifyRequestedAt = nil
+        hrTimingStandardNotifyEnabledAt = nil
+        hrTimingFirstSampleAt = nil
+        hrTimingEvents.removeAll()
     }
 
     private func clearConnectionState() {
@@ -525,6 +540,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         peripheral.delegate = self
         connectedName = peripheral.name ?? "WHOOP candidate"
         statusText = "Connected · discovering GATT profile"
+        hrTimingConnectionAt = Date()
+        hrTimingEvents = ["connected +0.000s"]
         lastBLEEvent = "Connected · waiting for characteristic value"
         peripheral.discoverServices(nil)
     }
@@ -782,6 +799,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         let timestamp = Date()
         liveHeartRateBPM = bpm
         lastHeartRateAt = timestamp
+        if hrTimingFirstSampleAt == nil {
+            hrTimingFirstSampleAt = timestamp
+            let elapsed = hrTimingConnectionAt.map { timestamp.timeIntervalSince($0) } ?? 0
+            hrTimingEvents.append(String(format: "first HR +%.3fs (%@)", elapsed, source))
+        }
         let sample = LiveHeartRateSample(timestamp: timestamp, bpm: bpm)
         liveHeartRateSamples.append(sample)
         liveHeartRateSamples.removeAll { timestamp.timeIntervalSince($0.timestamp) > 60 }
@@ -823,6 +845,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 if service.uuid == CBUUID(string: "180D"),
                    characteristic.uuid == CBUUID(string: "2A37"),
                    characteristic.properties.contains(.notify) {
+                    hrTimingStandardNotifyRequestedAt = Date()
+                    let elapsed = hrTimingConnectionAt.map { Date().timeIntervalSince($0) } ?? 0
+                    hrTimingEvents.append(String(format: "180D/2A37 notify requested +%.3fs", elapsed))
                     peripheral.setNotifyValue(true, for: characteristic)
                     lastBLEEvent = "Subscribed to standard Bluetooth Heart Rate Measurement (180D/2A37)"
                 }
@@ -941,6 +966,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return
         }
         isStandardHeartRateNotifying = characteristic.isNotifying
+        if characteristic.isNotifying {
+            hrTimingStandardNotifyEnabledAt = Date()
+            let elapsed = hrTimingConnectionAt.map { Date().timeIntervalSince($0) } ?? 0
+            hrTimingEvents.append(String(format: "180D/2A37 notify enabled +%.3fs", elapsed))
+        }
         lastBLEEvent = characteristic.isNotifying
             ? "Standard Heart Rate Measurement notifications enabled · waiting for first sample"
             : "Standard Heart Rate Measurement notifications disabled"
