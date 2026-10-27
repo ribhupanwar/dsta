@@ -160,6 +160,21 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         return "\(services.count) services (P:\(primaryServices) S:\(secondaryServices)) · \(characteristics.count) characteristics · D:\(descriptors.count) CCCD:\(cccdCount) · R:\(count("read")) W:\(count("write")) WNR:\(count("write-no-response")) N:\(count("notify")) I:\(count("indicate")) · Errors:\(discoveryErrors + descriptorErrors)"
     }
 
+    var notificationDiagnostics: [String] {
+        let standard = isStandardHeartRateNotifying ? "enabled" : "not enabled"
+        let uuids = [
+            "FD4B0003-CCE1-4033-93CE-002D5875F58A",
+            "FD4B0004-CCE1-4033-93CE-002D5875F58A",
+            "FD4B0005-CCE1-4033-93CE-002D5875F58A",
+            "FD4B0007-CCE1-4033-93CE-002D5875F58A"
+        ]
+        return ["180D / 2A37 standard HR: \\(standard)"] + uuids.map { uuid in
+            let state = vendorNotificationStates[uuid] ?? "not requested"
+            let payload = vendorNotificationPayloads[uuid] ?? "no payload received"
+            return "\\(uuid): \\(state) · \\(payload)"
+        }
+    }
+
     var diagnosticSnapshot: String {
         var lines = [
             "GATT summary: \(gattCapabilitySummary)",
