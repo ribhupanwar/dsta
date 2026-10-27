@@ -537,14 +537,18 @@ final class HealthDataStore: ObservableObject {
     private let store = HKHealthStore()
 
     func refresh() {
-        guard isAuthorized else { return }
+        guard isAuthorized, !isRefreshing else { return }
         isRefreshing = true
-        lastRefreshDate = Date()
-        loadHealthMetrics()
-        loadSleepDuration()
-        loadLatestRun()
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1))
+        let group = DispatchGroup()
+        group.enter()
+        loadHealthMetrics { group.leave() }
+        group.enter()
+        loadSleepDuration { group.leave() }
+        group.enter()
+        loadLatestRun { group.leave() }
+        group.notify(queue: .main) { [weak self] in
+            guard let self else { return }
+            self.lastRefreshDate = Date()
             self.isRefreshing = false
         }
     }
@@ -570,13 +574,20 @@ final class HealthDataStore: ObservableObject {
         }
     }
 
-    private func loadHealthMetrics() {
+    private func loadHealthMetrics(completion: @escaping () -> Void) {
+        let group = DispatchGroup()
         let rateUnit = HKUnit.count().unitDivided(by: HKUnit.minute())
-        loadLatestQuantity(.heartRate, unit: rateUnit) { [weak self] value in self?.heartRate = value.map(Int.init) }
-        loadLatestQuantity(.heartRateVariabilitySDNN, unit: HKUnit.secondUnit(with: .milli)) { [weak self] value in self?.hrvMilliseconds = value }
-        loadLatestQuantity(.restingHeartRate, unit: rateUnit) { [weak self] value in self?.restingHeartRate = value.map(Int.init) }
-        loadLatestQuantity(.respiratoryRate, unit: rateUnit) { [weak self] value in self?.respiratoryRate = value }
-        loadLatestQuantity(.oxygenSaturation, unit: HKUnit.percent(), multiplier: 100) { [weak self] value in self?.bloodOxygenPercent = value }
+        group.enter()
+        loadLatestQuantity(.heartRate, unit: rateUnit) { [weak self] value in self?.heartRate = value.map(Int.init); group.leave() }
+        group.enter()
+        loadLatestQuantity(.heartRateVariabilitySDNN, unit: HKUnit.secondUnit(with: .milli)) { [weak self] value in self?.hrvMilliseconds = value; group.leave() }
+        group.enter()
+        loadLatestQuantity(.restingHeartRate, unit: rateUnit) { [weak self] value in self?.restingHeartRate = value.map(Int.init); group.leave() }
+        group.enter()
+        loadLatestQuantity(.respiratoryRate, unit: rateUnit) { [weak self] value in self?.respiratoryRate = value; group.leave() }
+        group.enter()
+        loadLatestQuantity(.oxygenSaturation, unit: HKUnit.percent(), multiplier: 100) { [weak self] value in self?.bloodOxygenPercent = value; group.leave() }
+        group.notify(queue: .main, execute: completion)
     }
 
     private func loadLatestQuantity(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, multiplier: Double = 1, completion: @escaping (Double?) -> Void) {
@@ -590,8 +601,8 @@ final class HealthDataStore: ObservableObject {
         store.execute(query)
     }
 
-    private func loadSleepDuration() {
-        guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return }
+    private func loadSleepDuration(completion: @escaping () -> Void) {
+        guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { completion(); return }
         let start = Calendar.current.date(byAdding: .hour, value: -36, to: Date()) ?? Date().addingTimeInterval(-129600)
         let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: [])
         let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1000, sortDescriptors: nil) { [weak self] _, samples, _ in
@@ -626,16 +637,30 @@ final class HealthDataStore: ObservableObject {
                 self?.coreSleepMinutes = (core + unspecified) > 0 ? core + unspecified : nil
                 self?.awakeMinutes = awake > 0 ? awake : nil
                 self?.sleepHours = asleep > 0 ? asleep / 60 : nil
+                completion()
             }
         }
         store.execute(query)
     }
 
-    private func loadLatestRun() {
+    private func loadLatestRun(completion: @escaping () -> Void) {
         let predicate = HKQuery.predicateForWorkouts(with: .running)
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
         let query = HKSampleQuery(sampleType: HKObjectType.workoutType(), predicate: predicate, limit: 1, sortDescriptors: [sort]) { [weak self] _, samples, _ in
-            guard let workout = samples?.first as? HKWorkout else { return }
+            guard let workout = samples?.first as? HKWorkout else {
+                Task { @MainActor in
+                    self?.latestRunDistanceKm = nil
+                    self?.latestRunDurationMinutes = nil
+                    self?.latestRunPaceMinutesPerKm = nil
+                    self?.latestRunAverageHeartRate = nil
+                    self?.latestRunHeartRateSampleCount = 0
+                    self?.latestRunHeartRatePoints = []
+                    self?.latestRunSplits = []
+                    self?.latestRunDate = nil
+                    completion()
+                }
+                return
+            }
             let distance: Double?
             if let totalDistance = workout.totalDistance {
                 distance = totalDistance.doubleValue(for: HKUnit.meter()) / 1000
@@ -649,14 +674,18 @@ final class HealthDataStore: ObservableObject {
                 self?.latestRunDurationMinutes = duration
                 self?.latestRunPaceMinutesPerKm = pace
                 self?.latestRunDate = workout.endDate
-                self?.loadHeartRateForRun(workout)
-                self?.loadDistanceSplits(for: workout)
+                let nested = DispatchGroup()
+                nested.enter()
+                self?.loadHeartRateForRun(workout) { nested.leave() }
+                nested.enter()
+                self?.loadDistanceSplits(for: workout) { nested.leave() }
+                nested.notify(queue: .main, execute: completion)
             }
         }
         store.execute(query)
     }
 
-    private func loadHeartRateForRun(_ workout: HKWorkout) {
+    private func loadHeartRateForRun(_ workout: HKWorkout, completion: @escaping () -> Void) {
         guard let type = HKObjectType.quantityType(forIdentifier: .heartRate) else { return }
         let predicate = HKQuery.predicateForObjects(from: workout)
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
@@ -676,12 +705,13 @@ final class HealthDataStore: ObservableObject {
                 self?.latestRunAverageHeartRate = average
                 self?.latestRunHeartRateSampleCount = values.count
                 self?.latestRunHeartRatePoints = points
+                completion()
             }
         }
         store.execute(query)
     }
 
-    private func loadDistanceSplits(for workout: HKWorkout) {
+    private func loadDistanceSplits(for workout: HKWorkout, completion: @escaping () -> Void) {
         guard let type = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) else { return }
         let predicate = HKQuery.predicateForObjects(from: workout)
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
@@ -714,7 +744,10 @@ final class HealthDataStore: ObservableObject {
             if splitDistance > 1 {
                 rows.append(RunSplit(number: splitNumber, distanceKm: splitDistance / 1000, durationSeconds: splitSeconds))
             }
-            Task { @MainActor in self?.latestRunSplits = rows }
+            Task { @MainActor in
+                self?.latestRunSplits = rows
+                completion()
+            }
         }
         store.execute(query)
     }
