@@ -20,3 +20,16 @@ jobs:
       - name: Build unsigned iPhone app
         run: |
           xcodebuild -project PulseForge.xcodeproj -scheme PulseForge -sdk iphoneos -configuration Release -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p package/Payload
+          cp -R build/Build/Products/Release-iphoneos/PulseForge.app package/Payload/
+          cd package
+          zip -qry ../PulseForge-unsigned.ipa Payload
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PulseForge-unsigned-IPA
+          path: PulseForge-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
