@@ -537,6 +537,19 @@ struct DeviceDashboard: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("NOTIFICATION CHANNEL STATUS")
+                            .font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
+                        ForEach(bluetooth.notificationDiagnostics, id: \\.self) { line in
+                            Text(line)
+                                .font(.system(size: 8, design: .monospaced))
+                                .foregroundStyle(ForgeColors.muted)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     if !bluetooth.discoveredProfile.isEmpty {
                         VStack(alignment: .leading, spacing: 7) {
                             Text("DISCOVERED GATT PROFILE")
