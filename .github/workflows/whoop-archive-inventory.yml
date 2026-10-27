@@ -66,6 +66,8 @@ jobs:
                   uuid_pattern = rb"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
                   candidate_ble_uuids = sorted(set(x.decode("ascii").lower() for x in re.findall(uuid_pattern, raw)))
                   printable_strings = [x.decode("ascii", "ignore") for x in re.findall(rb"[\x20-\x7e]{4,}", raw)]
+                  ble_terms = ["ble -", "whoopstrap", "whoopbatterypack", "heartrate", "heart_rate", "livehr", "historical", "get_data", "send_historical", "commandfromstrap", "memfault", "notify", "characteristic", "service", "packet", "hello"]
+                  ble_related_strings = sorted(set(s[:180] for s in printable_strings if len(s) <= 180 and any(t in s.lower() for t in ble_terms) and not any(t in s.lower() for t in ["password", "credential", "privatekey", "access_token", "refresh_token"])))[:600]
                   uuid_contexts = []
                   for idx, value in enumerate(printable_strings):
                       if re.search(uuid_pattern, value.encode("ascii", "ignore")):
@@ -107,6 +109,7 @@ jobs:
                   "binary_marker_presence": binary_strings,
                   "candidate_ble_uuids_from_binary": candidate_ble_uuids,
                   "uuid_string_contexts": uuid_contexts,
+                  "ble_related_strings": ble_related_strings,
                   "protocol_resource_fingerprints": resource_meta,
                   "json_resource_files": json_resources,
                   "dto_data_shapes": dto_schemas
@@ -121,6 +124,8 @@ jobs:
               lines += [f"- {x}" for x in binary_strings] or ["- No selected markers found"]
               lines += ["", "## Candidate BLE UUID strings (unverified)", ""]
               lines += [f"- `{x}`" for x in candidate_ble_uuids] or ["- No UUID strings found"]
+              lines += ["", "## BLE-related strings from executable", ""]
+              lines += [f"- `{x}`" for x in ble_related_strings] or ["- No matching strings found"]
               lines += ["", "## Nearby strings for UUID matches (unverified)", ""]
               for item in uuid_contexts:
                   lines += [f"- Match: `{item['match']}`", f"  - Context: {' | '.join(item['nearby_strings'])}"]
