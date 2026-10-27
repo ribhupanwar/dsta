@@ -356,10 +356,21 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         lastBLEEvent = "BLE value received · \(characteristic.uuid.uuidString) · \(byteCount) bytes · \(timestamp)"
     }
 
+    private func updateGattDiscoveryCompletionStatus() {
+        guard pendingCharacteristicServices.isEmpty && pendingDescriptorCharacteristics.isEmpty else { return }
+        let errorCount = discoveredProfile.filter {
+            $0.hasPrefix("Service error ·") || $0.hasPrefix("Descriptor error ·")
+        }.count
+        statusText = errorCount == 0
+            ? "GATT profile and descriptors inspected · no commands sent"
+            : "GATT inspection finished · \(errorCount) discovery error(s)"
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         if let error {
             discoveredProfile.append("Service error · \(service.uuid.uuidString) · \(error.localizedDescription)")
+            lastBLEEvent = "Characteristic discovery error · service \(service.uuid.uuidString) · \(error.localizedDescription)"
         } else {
             for characteristic in service.characteristics ?? [] {
                 discoveredProfile.append("Characteristic · service \(service.uuid.uuidString) → \(characteristic.uuid.uuidString) · \(propertyNames(characteristic.properties))")
@@ -369,12 +380,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
         }
         pendingCharacteristicServices.remove(ObjectIdentifier(service))
-        if pendingCharacteristicServices.isEmpty {
-            if pendingDescriptorCharacteristics.isEmpty {
-                statusText = "GATT profile inspected · no commands sent"
-            } else {
-                statusText = "Inspecting GATT descriptors · \(pendingDescriptorCharacteristics.count) remaining"
-            }
+        if pendingCharacteristicServices.isEmpty && pendingDescriptorCharacteristics.isEmpty {
+            updateGattDiscoveryCompletionStatus()
+        } else if pendingCharacteristicServices.isEmpty {
+            statusText = "Inspecting GATT descriptors · \(pendingDescriptorCharacteristics.count) remaining"
         } else {
             statusText = "Inspecting characteristics · \(pendingCharacteristicServices.count) service(s) remaining"
         }
@@ -386,6 +395,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         let key = ObjectIdentifier(characteristic)
         if let error {
             discoveredProfile.append("Descriptor error · \(displayKey) · \(error.localizedDescription)")
+            lastBLEEvent = "Descriptor discovery error · \(displayKey) · \(error.localizedDescription)"
         } else {
             let descriptors = characteristic.descriptors ?? []
             if descriptors.isEmpty {
@@ -398,7 +408,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         }
         pendingDescriptorCharacteristics.remove(key)
         if pendingCharacteristicServices.isEmpty && pendingDescriptorCharacteristics.isEmpty {
-            statusText = "GATT profile and descriptors inspected · no commands sent"
+            updateGattDiscoveryCompletionStatus()
         } else if pendingCharacteristicServices.isEmpty {
             statusText = "Inspecting GATT descriptors · \(pendingDescriptorCharacteristics.count) remaining"
         }
