@@ -355,8 +355,8 @@ struct DeviceDashboard: View {
                         VStack(alignment: .leading, spacing: 7) {
                             Text("DISCOVERED GATT PROFILE")
                                 .font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
-                            ForEach(Array(bluetooth.discoveredProfile.enumerated()), id: \.offset) { _, line in
-                                Text(line).font(.system(size: 9, design: .monospaced))
+                            ForEach(Array(bluetooth.discoveredProfile.enumerated()), id: \.offset) { item in
+                                Text(item.element).font(.system(size: 9, design: .monospaced))
                                     .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
                             }
                         }
