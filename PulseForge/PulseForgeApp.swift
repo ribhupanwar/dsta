@@ -445,6 +445,28 @@ struct DeviceDashboard: View {
                         .font(.system(size: 19, weight: .semibold))
                     Text(bluetooth.statusText)
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                    HStack(alignment: .center, spacing: 12) {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(bluetooth.liveHeartRateBPM == nil ? ForgeColors.muted : ForgeColors.lime)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(bluetooth.liveHeartRateBPM.map(String.init) ?? "—")
+                                .font(.system(size: 28, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                            Text(bluetooth.liveHeartRateBPM == nil
+                                 ? (bluetooth.isStandardHeartRateNotifying ? "HR notifications enabled · waiting for first sample" : "Connected does not mean HR is streaming")
+                                 : "LIVE HEART RATE · \(bluetooth.heartRateUpdateCount) update(s)")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(ForgeColors.muted)
+                        }
+                        Spacer()
+                        Text("BPM")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(ForgeColors.muted)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     if bluetooth.connectedName != nil {
                         Button { bluetooth.disconnect() } label: {
                             Label("DISCONNECT BAND", systemImage: "xmark.circle")
