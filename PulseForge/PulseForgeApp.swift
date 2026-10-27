@@ -172,6 +172,7 @@ struct LiveHeartRateCard: View {
 }
 
 struct SleepDashboard: View {
+    @EnvironmentObject private var health: HealthDataStore
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -228,6 +229,7 @@ struct StrainDashboard: View {
 
 
 struct RunningDashboard: View {
+    @EnvironmentObject private var health: HealthDataStore
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
