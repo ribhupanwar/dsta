@@ -65,7 +65,7 @@ jobs:
                           binary_strings.append(token.decode("ascii"))
                   uuid_pattern = rb"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
                   candidate_ble_uuids = sorted(set(x.decode("ascii").lower() for x in re.findall(uuid_pattern, raw)))
-                  printable_strings = [x.decode("ascii", "ignore") for x in re.findall(rb"[\\x20-\\x7e]{4,}", raw)]
+                  printable_strings = [x.decode("ascii", "ignore") for x in re.findall(rb"[\x20-\x7e]{4,}", raw)]
                   uuid_contexts = []
                   for idx, value in enumerate(printable_strings):
                       if re.search(uuid_pattern, value):
