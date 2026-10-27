@@ -29,8 +29,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var connectedDeviceSnapshot: DiscoveredWearable?
     private var scanTimeoutWorkItem: DispatchWorkItem?
     private var connectionTimeoutWorkItem: DispatchWorkItem?
-    private var pendingCharacteristicServices = Set<String>()
-    private var pendingDescriptorCharacteristics = Set<String>()
+    private var pendingCharacteristicServices = Set<ObjectIdentifier>()
+    private var pendingDescriptorCharacteristics = Set<ObjectIdentifier>()
 
     // Candidate UUIDs observed in the WHOOP archive. They are scan hints only;
     // the archive string scan does not prove their exact GATT roles.
@@ -330,7 +330,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             statusText = "Connected · service list unavailable"
             return
         }
-        pendingCharacteristicServices = Set(services.map { $0.uuid.uuidString })
+        pendingCharacteristicServices = Set(services.map { ObjectIdentifier($0) })
         guard !services.isEmpty else {
             statusText = "Connected · no GATT services exposed"
             return
@@ -360,12 +360,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         } else {
             for characteristic in service.characteristics ?? [] {
                 discoveredProfile.append("Characteristic · service \(service.uuid.uuidString) → \(characteristic.uuid.uuidString) · \(propertyNames(characteristic.properties))")
-                let key = "\(service.uuid.uuidString)|\(characteristic.uuid.uuidString)"
+                let key = ObjectIdentifier(characteristic)
                 pendingDescriptorCharacteristics.insert(key)
                 peripheral.discoverDescriptors(for: characteristic)
             }
         }
-        pendingCharacteristicServices.remove(service.uuid.uuidString)
+        pendingCharacteristicServices.remove(ObjectIdentifier(service))
         if pendingCharacteristicServices.isEmpty {
             if pendingDescriptorCharacteristics.isEmpty {
                 statusText = "GATT profile inspected · no commands sent"
@@ -378,13 +378,14 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     }
     func peripheral(_ peripheral: CBPeripheral, didDiscoverDescriptorsFor characteristic: CBCharacteristic, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
-        let key = "\(characteristic.service?.uuid.uuidString ?? "Unknown service")|\(characteristic.uuid.uuidString)"
+        let displayKey = "\(characteristic.service?.uuid.uuidString ?? "Unknown service")|\(characteristic.uuid.uuidString)"
+        let key = ObjectIdentifier(characteristic)
         if let error {
-            discoveredProfile.append("Descriptor error · \(key) · \(error.localizedDescription)")
+            discoveredProfile.append("Descriptor error · \(displayKey) · \(error.localizedDescription)")
         } else {
             let descriptors = characteristic.descriptors ?? []
             if descriptors.isEmpty {
-                discoveredProfile.append("Descriptors · \(key) · none exposed")
+                discoveredProfile.append("Descriptors · \(displayKey) · none exposed")
             } else {
                 for descriptor in descriptors {
                     discoveredProfile.append("Descriptor · characteristic \(characteristic.uuid.uuidString) → \(descriptor.uuid.uuidString)")
