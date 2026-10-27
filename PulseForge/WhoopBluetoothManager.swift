@@ -25,6 +25,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var lastBLEEvent = "No BLE data received yet"
     @Published private(set) var liveHeartRateBPM: Int?
     @Published private(set) var isStandardHeartRateNotifying = false
+    @Published private(set) var lastHeartRateAt: Date?
+    @Published private(set) var heartRateUpdateCount = 0
 
     private var vendorNotificationStates: [String: String] = [:]
     private var vendorNotificationPayloads: [String: String] = [:]
@@ -195,6 +197,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "Latest BLE event: \(lastBLEEvent)",
             "Standard Heart Rate Measurement: \(isStandardHeartRateNotifying ? "subscribed" : "not subscribed")",
             "Latest WHOOP standard HR value: \(liveHeartRateBPM.map { "\($0) bpm" } ?? "None received")",
+            "Latest HR timestamp: \(lastHeartRateAt.map { ISO8601DateFormatter().string(from: $0) } ?? "None")",
+            "HR updates this connection: \(heartRateUpdateCount)",
             "WHOOP FD4B vendor notification subscriptions:",
             "",
             "GATT profile:"
@@ -260,6 +264,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         connectedDeviceSnapshot = nil
         liveHeartRateBPM = nil
         isStandardHeartRateNotifying = false
+        lastHeartRateAt = nil
+        heartRateUpdateCount = 0
         vendorNotificationStates.removeAll()
         vendorNotificationPayloads.removeAll()
         vendorNotificationHistory.removeAll()
@@ -412,7 +418,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return
         }
         liveHeartRateBPM = bpm
-        lastBLEEvent = "WHOOP standard BLE heart rate · \(bpm) bpm · \(ISO8601DateFormatter().string(from: Date()))"
+        lastHeartRateAt = Date()
+        heartRateUpdateCount += 1
+        lastBLEEvent = "WHOOP standard BLE heart rate · \(bpm) bpm · \(ISO8601DateFormatter().string(from: lastHeartRateAt!)) · sample #\(heartRateUpdateCount)"
+        statusText = "Live HR · \(bpm) bpm · \(heartRateUpdateCount) update(s)"
     }
 
     private func updateGattDiscoveryCompletionStatus() {
@@ -420,9 +429,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         let errorCount = discoveredProfile.filter {
             $0.hasPrefix("Service error ·") || $0.hasPrefix("Descriptor error ·")
         }.count
-        statusText = errorCount == 0
-            ? "Connected · GATT profile and descriptors inspected · no commands sent"
-            : "Connected · GATT inspection finished · \(errorCount) discovery error(s) · no commands sent"
+        let inspection = errorCount == 0
+            ? "GATT profile and descriptors inspected"
+            : "GATT inspection finished · \(errorCount) discovery error(s)"
+        statusText = isStandardHeartRateNotifying
+            ? "Connected · HR notifications enabled · waiting for first sample · \(inspection)"
+            : "Connected · HR notification not enabled yet · \(inspection)"
     }
 
     private func parseStandardHeartRateMeasurement(_ data: Data) -> Int? {
@@ -498,8 +510,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         }
         isStandardHeartRateNotifying = characteristic.isNotifying
         lastBLEEvent = characteristic.isNotifying
-            ? "Standard Heart Rate Measurement notifications enabled"
+            ? "Standard Heart Rate Measurement notifications enabled · waiting for first sample"
             : "Standard Heart Rate Measurement notifications disabled"
+        if characteristic.isNotifying && liveHeartRateBPM == nil {
+            statusText = "Connected · HR notifications enabled · waiting for first sample"
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverDescriptorsFor characteristic: CBCharacteristic, error: Error?) {
