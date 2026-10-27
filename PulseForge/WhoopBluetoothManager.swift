@@ -302,7 +302,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             discoveredProfile.append("Service error · \(service.uuid.uuidString) · \(error.localizedDescription)")
         } else {
             for characteristic in service.characteristics ?? [] {
-                discoveredProfile.append("  \(characteristic.uuid.uuidString) · \(propertyNames(characteristic.properties))")
+                discoveredProfile.append("Characteristic · service \(service.uuid.uuidString) → \(characteristic.uuid.uuidString) · \(propertyNames(characteristic.properties))")
             }
         }
         pendingCharacteristicServices.remove(service.uuid.uuidString)
