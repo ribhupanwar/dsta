@@ -20,6 +20,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var connectedPeripheral: CBPeripheral?
     private var scanTimeoutWorkItem: DispatchWorkItem?
     private var connectionTimeoutWorkItem: DispatchWorkItem?
+    private var pendingCharacteristicServices = Set<String>()
 
     // Candidate UUIDs observed in the WHOOP archive. They are scan hints only;
     // the archive string scan does not prove their exact GATT roles.
@@ -211,6 +212,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return
         }
         guard let services = peripheral.services else { return }
+        pendingCharacteristicServices = Set(services.map { $0.uuid.uuidString })
+        guard !services.isEmpty else {
+            statusText = "Connected · no GATT services exposed"
+            return
+        }
         for service in services {
             discoveredProfile.append("Service · \(service.uuid.uuidString)")
             peripheral.discoverCharacteristics(nil, for: service)
@@ -224,9 +230,18 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             discoveredProfile.append("Service error · \(error.localizedDescription)")
             return
         }
-        for characteristic in service.characteristics ?? [] {
-            discoveredProfile.append("  \(characteristic.uuid.uuidString) · \(propertyNames(characteristic.properties))")
+        if let error {
+            discoveredProfile.append("Service error · \(service.uuid.uuidString) · \(error.localizedDescription)")
+        } else {
+            for characteristic in service.characteristics ?? [] {
+                discoveredProfile.append("  \(characteristic.uuid.uuidString) · \(propertyNames(characteristic.properties))")
+            }
         }
-        statusText = "GATT profile inspected · no commands sent"
+        pendingCharacteristicServices.remove(service.uuid.uuidString)
+        if pendingCharacteristicServices.isEmpty {
+            statusText = "GATT profile inspected · no commands sent"
+        } else {
+            statusText = "Inspecting characteristics · \(pendingCharacteristicServices.count) service(s) remaining"
+        }
     }
 }
