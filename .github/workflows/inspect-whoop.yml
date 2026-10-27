@@ -1,0 +1,30 @@
+name: Inspect WHOOP archive metadata
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout private archive with LFS
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Inspect archive structure only
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== Archive size ==="
+          ls -lh Whoop.zip
+          echo "=== Top-level entries ==="
+          unzip -Z1 Whoop.zip | awk -F/ 'NF>0 {print $1}' | sort -u | head -80
+          echo "=== Relevant metadata/resource paths ==="
+          unzip -Z1 Whoop.zip | grep -Ei '(^|/)(Info\.plist|PrivacyInfo\.xcprivacy|.*(HelloPacket|hrBroadcastBeat|DeviceStatus|Bluetooth|HealthKit|WHOOP.*\.framework)(/|$))' | head -250 || true
+          echo "=== Archive integrity ==="
+          unzip -tq Whoop.zip | tail -2
