@@ -26,6 +26,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var liveHeartRateBPM: Int?
     @Published private(set) var isStandardHeartRateNotifying = false
     @Published private(set) var lastHeartRateAt: Date?
+    @Published private(set) var whoopProtocolDiagnostics = "No WHOOP 5.0 protocol frame decoded yet"
+    @Published private(set) var whoopRealtimePacketCount = 0
+    @Published private(set) var whoopCommandResponseCount = 0
+    @Published private(set) var whoopLastPacketType = "None"
     @Published private(set) var heartRateUpdateCount = 0
 
     private var vendorNotificationStates: [String: String] = [:]
@@ -206,6 +210,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "HR updates this connection: \(heartRateUpdateCount)",
             "WHOOP 5.0 CLIENT_HELLO sent: \(whoop5HelloSent ? "yes" : "no")",
             "WHOOP 5.0 CLIENT_HELLO write pending: \(whoop5HelloWritePending ? "yes" : "no")",
+            "WHOOP protocol diagnosis: \\(whoopProtocolDiagnostics)",
+            "WHOOP packet counts · realtime: \\(whoopRealtimePacketCount) · command responses: \\(whoopCommandResponseCount)",
+            "WHOOP last packet type: \\(whoopLastPacketType)",
             "WHOOP FD4B vendor notification subscriptions:",
             "",
             "GATT profile:"
@@ -406,6 +413,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let data = characteristic.value ?? Data()
             let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
             let timestamp = ISO8601DateFormatter().string(from: Date())
+            whoopProtocolDiagnostics = diagnoseWhoop5Frame(data)
             vendorNotificationPayloads[uuid] = "\(data.count) bytes · \(hex.isEmpty ? "empty" : hex)"
             vendorNotificationHistory.append("\(timestamp) · \(uuid) · \(data.count) bytes · HEX: \(hex.isEmpty ? "empty" : hex)")
             if vendorNotificationHistory.count > 40 {
@@ -445,6 +453,44 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         statusText = isStandardHeartRateNotifying
             ? "Connected · HR notifications enabled · waiting for first sample · \(inspection)"
             : "Connected · HR notification not enabled yet · \(inspection)"
+    }
+
+    /// WHOOP 5.0 framing diagnosis. Length is checked; CRC is explicitly not claimed validated.
+    private func diagnoseWhoop5Frame(_ data: Data) -> String {
+        let b = [UInt8](data)
+        guard b.count >= 13 else { return "Fragment/short frame · \(b.count) bytes" }
+        guard b[0] == 0xAA else { return "Unknown frame prefix · \(String(format: "%02X", b[0]))" }
+        let declared = Int(b[2]) | (Int(b[3]) << 8)
+        let expected = 8 + declared
+        guard expected == b.count else {
+            return "WHOOP5 length mismatch · expected \(expected), received \(b.count) · not decoded"
+        }
+        let type = Int(b[8])
+        whoopLastPacketType = "\(type)"
+        switch type {
+        case 36:
+            whoopCommandResponseCount += 1
+            let command = Int(b[10])
+            guard b.count > 12 else { return "COMMAND_RESPONSE · cmd \(command) · truncated" }
+            let result = Int(b[12])
+            let resultName = [0: "FAILURE", 1: "SUCCESS", 2: "PENDING", 3: "UNSUPPORTED"][result] ?? "UNKNOWN(\(result))"
+            return command == 145
+                ? "COMMAND_RESPONSE · GET_HELLO(145) · result \(resultName) · length OK · CRC pending"
+                : "COMMAND_RESPONSE · command \(command) · result \(resultName) · length OK · CRC pending"
+        case 40:
+            whoopRealtimePacketCount += 1
+            guard b.count > 17 else { return "REALTIME_DATA · too short for HR byte at offset 16" }
+            let bpm = Int(b[16])
+            guard (1...240).contains(bpm) else { return "REALTIME_DATA · HR byte \(bpm) outside plausible range · rejected" }
+            liveHeartRateBPM = bpm
+            lastHeartRateAt = Date()
+            heartRateUpdateCount += 1
+            lastBLEEvent = "WHOOP5 REALTIME_DATA · \(bpm) bpm · sample #\(heartRateUpdateCount)"
+            statusText = "Live HR · \(bpm) bpm · \(heartRateUpdateCount) update(s)"
+            return "REALTIME_DATA · HR \(bpm) bpm decoded at offset 16 · length OK · CRC pending"
+        default:
+            return "WHOOP5 packet type \(type) · \(b.count) bytes · length OK · no HR decoded"
+        }
     }
 
     private func parseStandardHeartRateMeasurement(_ data: Data) -> Int? {
