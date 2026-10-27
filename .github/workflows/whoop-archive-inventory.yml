@@ -68,7 +68,7 @@ jobs:
                   printable_strings = [x.decode("ascii", "ignore") for x in re.findall(rb"[\x20-\x7e]{4,}", raw)]
                   uuid_contexts = []
                   for idx, value in enumerate(printable_strings):
-                      if re.search(uuid_pattern, value):
+                      if re.search(uuid_pattern, value.encode("ascii", "ignore")):
                           nearby = printable_strings[max(0, idx - 2):min(len(printable_strings), idx + 3)]
                           safe_nearby = [s[:140] for s in nearby if len(s) <= 140 and not any(t in s.lower() for t in ["password", "credential", "privatekey", "access_token", "refresh_token"])]
                           uuid_contexts.append({"match": value[:140], "nearby_strings": safe_nearby})
