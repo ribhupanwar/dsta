@@ -263,11 +263,24 @@ struct RunningDashboard: View {
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
                 SectionHeader(title: "PACE & SPLITS")
                 VStack(spacing: 12) {
-                    HStack { Text("KM"); Spacer(); Text("PACE"); Spacer(); Text("AVG HR") }
+                    HStack { Text("KM"); Spacer(); Text("PACE"); Spacer(); Text("DISTANCE") }
                         .font(.system(size: 9, weight: .bold)).foregroundStyle(ForgeColors.muted)
                     Divider().overlay(ForgeColors.stroke)
-                    Text("No split data yet").font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if health.latestRunSplits.isEmpty {
+                        Text("No distance split samples available").font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        ForEach(health.latestRunSplits) { split in
+                            HStack {
+                                Text(split.label).frame(width: 42, alignment: .leading)
+                                Spacer()
+                                Text(split.paceText).monospacedDigit()
+                                Spacer()
+                                Text(String(format: "%.2f km", split.distanceKm)).foregroundStyle(ForgeColors.muted)
+                            }
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                        }
+                    }
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
                 Text("Running metrics are kept blank until verified workout data is available; no sample performance is presented as real.")
@@ -484,6 +497,7 @@ final class HealthDataStore: ObservableObject {
     @Published private(set) var latestRunPaceMinutesPerKm: Double?
     @Published private(set) var latestRunAverageHeartRate: Int?
     @Published private(set) var latestRunHeartRateSampleCount = 0
+    @Published private(set) var latestRunSplits: [RunSplit] = []
     @Published private(set) var latestRunDate: Date?
     @Published private(set) var lastRefreshDate: Date?
     @Published private(set) var isRefreshing = false
@@ -603,6 +617,7 @@ final class HealthDataStore: ObservableObject {
                 self?.latestRunPaceMinutesPerKm = pace
                 self?.latestRunDate = workout.endDate
                 self?.loadHeartRateForRun(workout)
+                self?.loadDistanceSplits(for: workout)
             }
         }
         store.execute(query)
@@ -623,6 +638,57 @@ final class HealthDataStore: ObservableObject {
             }
         }
         store.execute(query)
+    }
+
+    private func loadDistanceSplits(for workout: HKWorkout) {
+        guard let type = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) else { return }
+        let predicate = HKQuery.predicateForObjects(from: workout)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { [weak self] _, samples, _ in
+            let entries = (samples as? [HKQuantitySample] ?? []).sorted { $0.startDate < $1.startDate }
+            var rows: [RunSplit] = []
+            var splitDistance = 0.0
+            var splitSeconds = 0.0
+            var totalDistance = 0.0
+            var splitNumber = 1
+            for sample in entries {
+                var remaining = max(0, sample.quantity.doubleValue(for: HKUnit.meter()))
+                guard remaining > 0 else { continue }
+                let sampleSeconds = max(0, sample.endDate.timeIntervalSince(sample.startDate))
+                let secondsPerMeter = sampleSeconds / remaining
+                while remaining > 0 {
+                    let portion = min(remaining, 1000 - splitDistance)
+                    splitDistance += portion
+                    splitSeconds += portion * secondsPerMeter
+                    totalDistance += portion
+                    remaining -= portion
+                    if splitDistance >= 999.999 {
+                        rows.append(RunSplit(number: splitNumber, distanceKm: splitDistance / 1000, durationSeconds: splitSeconds))
+                        splitNumber += 1
+                        splitDistance = 0
+                        splitSeconds = 0
+                    }
+                }
+            }
+            if splitDistance > 1 {
+                rows.append(RunSplit(number: splitNumber, distanceKm: splitDistance / 1000, durationSeconds: splitSeconds))
+            }
+            Task { @MainActor in self?.latestRunSplits = rows }
+        }
+        store.execute(query)
+    }
+}
+
+struct RunSplit: Identifiable {
+    let number: Int
+    let distanceKm: Double
+    let durationSeconds: Double
+    var id: Int { number }
+    var label: String { String(format: "%02d", number) }
+    var paceText: String {
+        guard distanceKm > 0 else { return "—" }
+        let secondsPerKm = durationSeconds / distanceKm
+        return String(format: "%d:%02d /km", Int(secondsPerKm) / 60, Int(secondsPerKm) % 60)
     }
 }
 
