@@ -474,6 +474,19 @@ struct DeviceDashboard: View {
                                             Text(device.name).font(.system(size: 13, weight: .semibold))
                                             Text(device.id.uuidString.prefix(8))
                                                 .font(.system(size: 9, design: .monospaced)).foregroundStyle(ForgeColors.muted)
+                                            if !device.advertisedServices.isEmpty {
+                                                Text("ADV: " + device.advertisedServices.joined(separator: ", "))
+                                                    .font(.system(size: 8, design: .monospaced))
+                                                    .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
+                                            }
+                                            if let byteCount = device.manufacturerDataByteCount {
+                                                Text("Manufacturer data: \(byteCount) bytes")
+                                                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(ForgeColors.muted)
+                                            }
+                                            if let connectable = device.isConnectable {
+                                                Text(connectable ? "Connectable" : "Not connectable")
+                                                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(ForgeColors.muted)
+                                            }
                                         }
                                         Spacer()
                                         Text("\(device.rssi) dBm").font(.system(size: 10, design: .monospaced)).foregroundStyle(ForgeColors.muted)
