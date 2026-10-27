@@ -362,8 +362,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             $0.hasPrefix("Service error ·") || $0.hasPrefix("Descriptor error ·")
         }.count
         statusText = errorCount == 0
-            ? "GATT profile and descriptors inspected · no commands sent"
-            : "GATT inspection finished · \(errorCount) discovery error(s)"
+            ? "Connected · GATT profile and descriptors inspected · no commands sent"
+            : "Connected · GATT inspection finished · \(errorCount) discovery error(s) · no commands sent"
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
