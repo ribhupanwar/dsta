@@ -114,6 +114,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         discoveredProfile.removeAll()
         connectedDeviceSnapshot = device
         connectedPeripheral = device.peripheral
+        lastBLEEvent = "Waiting for first BLE characteristic value on this connection"
         connectedPeripheral?.delegate = self
         isConnecting = true
         statusText = "Connecting to \(device.name)…"
@@ -257,6 +258,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         peripheral.delegate = self
         connectedName = peripheral.name ?? "WHOOP candidate"
         statusText = "Connected · discovering GATT profile"
+        lastBLEEvent = "Connected · waiting for characteristic value"
         peripheral.discoverServices(nil)
     }
 
