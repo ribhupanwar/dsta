@@ -475,7 +475,12 @@ final class HealthDataStore: ObservableObject {
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
         let query = HKSampleQuery(sampleType: HKObjectType.workoutType(), predicate: predicate, limit: 1, sortDescriptors: [sort]) { [weak self] _, samples, _ in
             guard let workout = samples?.first as? HKWorkout else { return }
-            let distance = workout.totalDistance?.doubleValue(for: HKUnit.meter()).map { $0 / 1000 }
+            let distance: Double?
+            if let totalDistance = workout.totalDistance {
+                distance = totalDistance.doubleValue(for: HKUnit.meter()) / 1000
+            } else {
+                distance = nil
+            }
             let duration = workout.duration / 60
             let pace = distance.flatMap { $0 > 0 ? duration / $0 : nil }
             Task { @MainActor in
