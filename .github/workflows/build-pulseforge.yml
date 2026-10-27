@@ -1,0 +1,22 @@
+name: Build PulseForge iOS
+
+on:
+  push:
+    branches: [whoop-native]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Build unsigned iPhone app
+        run: |
+          xcodebuild -project PulseForge.xcodeproj -scheme PulseForge -sdk iphoneos -configuration Release -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
