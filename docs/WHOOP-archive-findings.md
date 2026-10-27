@@ -69,3 +69,26 @@ The JSON schema inventory records field names and value types only; sample paylo
 3. Treat every BLE UUID and packet interpretation as provisional until verified on-device.
 4. Do not display fabricated recovery, sleep, strain or running scores. Unknown values remain blank until sourced.
 5. Keep metric provenance visible: WHOOP sensor, Apple Health, or PulseForge calculation.
+
+
+## Additional BLE and historical-sync diagnostics (inventory run 2026-10-27)
+
+A second pass over executable strings found more useful diagnostic vocabulary:
+
+- `Malformed HRM packet of length` and `Unknown packet type` indicate that the app has explicit HRM packet validation/parsing paths.
+- Historical-transfer diagnostics include `Historical Pulls`, `HistoricalPullThroughputAnalyticsDataStore`, `HistoricalPullAnalyticsDataStore`, `History Start Packet`, packet append/processing queue messages, and parsed/failed packet counters.
+- A string neighborhood around the `6108000x` family includes a log stating that characteristics with identifiers are being subscribed to, a `bleWriteValue(_:for:type:)` call-site marker, and an unknown-command parser error. This supports investigating this family for command/notification transport, but does not establish the exact characteristic mapping.
+- The archive contains a dedicated `LiveHRView.strings` resource family, confirming a distinct live-HR feature surface; it does not expose a safe packet schema by itself.
+- `8EC9000x` remains associated with Nordic DFU firmware resources and must not be treated as a live-HR candidate without further evidence.
+
+### Implications for the reported WHOOP 5.0 symptoms
+
+The user's earlier symptoms were live HR remaining at “Waiting” and historical transfer receiving metadata without packet bodies. The archive confirms that WHOOP has separate HRM parsing and historical-pull processing paths, so a generic BLE connection or successful GATT discovery is not sufficient to claim either feature works.
+
+PulseForge should therefore implement and diagnose these as separate state machines:
+
+1. Pairing/handshake and notification subscription.
+2. Live-HR packet validation and timestamped sample delivery.
+3. Historical range request, start/metadata handling, packet-body receipt, ordering, parsing and completion.
+
+Do not send speculative commands or subscribe indiscriminately to every characteristic. The next protocol step is to map the exact characteristic roles and packet framing from call-site context, then validate the result on the WHOOP 5.0 hardware. These archive strings are diagnostic evidence, not a complete protocol specification.
