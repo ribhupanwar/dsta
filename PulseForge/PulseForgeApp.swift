@@ -518,9 +518,17 @@ struct DeviceDashboard: View {
                             }
                         }
                     }
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("LATEST BLE EVENT")
-                            .font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("LATEST BLE EVENT")
+                                .font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
+                            Spacer()
+                            ShareLink(item: bluetooth.diagnosticSnapshot) {
+                                Label("EXPORT", systemImage: "square.and.arrow.up")
+                                    .font(.system(size: 9, weight: .bold)).tracking(0.6)
+                                    .foregroundStyle(ForgeColors.lime)
+                            }
+                        }
                         Text(bluetooth.lastBLEEvent)
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
@@ -529,16 +537,11 @@ struct DeviceDashboard: View {
                     .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     if !bluetooth.discoveredProfile.isEmpty {
                         VStack(alignment: .leading, spacing: 7) {
-                            HStack {
-                                Text("DISCOVERED GATT PROFILE")
-                                    .font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
-                                Spacer()
-                                ShareLink(item: bluetooth.diagnosticSnapshot) {
-                                    Label("EXPORT", systemImage: "square.and.arrow.up")
-                                        .font(.system(size: 9, weight: .bold)).tracking(0.6)
-                                        .foregroundStyle(ForgeColors.lime)
-                                }
-                            }
+                            Text("DISCOVERED GATT PROFILE")
+                                .font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
+                            Text(bluetooth.gattCapabilitySummary)
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(ForgeColors.muted)
                             ForEach(Array(bluetooth.discoveredProfile.enumerated()), id: \.offset) { item in
                                 Text(item.element).font(.system(size: 9, design: .monospaced))
                                     .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
