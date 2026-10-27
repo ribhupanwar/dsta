@@ -42,6 +42,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var workoutStartedAt: Date?
     @Published private(set) var workoutIsRecording = false
     @Published private(set) var lastWorkoutDurationSeconds: TimeInterval?
+    @Published private(set) var whoopIMUFrameCount = 0
+    @Published private(set) var whoopIMUSampleCount = 0
+    @Published private(set) var whoopIMULastFrameAt: Date?
+    @Published private(set) var whoopIMUStatus = "Waiting for WHOOP motion stream"
 
     var freshHeartRateBPM: Int? {
         guard connectedName != nil, let lastHeartRateAt,
@@ -91,6 +95,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5HelloWritePending = false
     private var whoop5HRStreamEnableSent = false
     private var whoop5HRStreamConfirmed = false
+    private var whoop5AutoIMUStartRequested = false
+    private var whoop5AutoIMUEnabled = false
     private var whoop5PendingWrites: [String] = []
     private var whoop5NextCommandSequence: UInt8 = 2
     private var hrTimingConnectionAt: Date?
@@ -290,6 +296,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP 5.0 CLIENT_HELLO write pending: \(whoop5HelloWritePending ? "yes" : "no")",
             "WHOOP realtime HR enable command sent: \(whoop5HRStreamEnableSent ? "yes" : "no")",
             "WHOOP realtime HR ON event confirmed: \(whoop5HRStreamConfirmed ? "yes" : "no")",
+            "WHOOP automatic IMU request: \(whoop5AutoIMUStartRequested ? "yes" : "no")",
+            "WHOOP automatic IMU enabled: \(whoop5AutoIMUEnabled ? "yes" : "no")",
+            "WHOOP IMU frames: \(whoopIMUFrameCount) · samples: \(whoopIMUSampleCount) · status: \(whoopIMUStatus)",
+            "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP protocol diagnosis: \(whoopProtocolDiagnostics)",
             "WHOOP packet counts · realtime: \(whoopRealtimePacketCount) · command responses: \(whoopCommandResponseCount)",
             "WHOOP last packet type: \(whoopLastPacketType)",
@@ -436,6 +446,12 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HelloWritePending = false
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
+        whoop5AutoIMUStartRequested = false
+        whoop5AutoIMUEnabled = false
+        whoopIMUFrameCount = 0
+        whoopIMUSampleCount = 0
+        whoopIMULastFrameAt = nil
+        whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoop5PendingWrites.removeAll()
         whoop5NextCommandSequence = 2
         isStandardHeartRateNotifying = false
@@ -476,6 +492,12 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HelloWritePending = false
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
+        whoop5AutoIMUStartRequested = false
+        whoop5AutoIMUEnabled = false
+        whoopIMUFrameCount = 0
+        whoopIMUSampleCount = 0
+        whoopIMULastFrameAt = nil
+        whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoop5PendingWrites.removeAll()
         whoop5NextCommandSequence = 2
         isConnecting = false
@@ -698,6 +720,19 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let echoedSequence = Int(b[11])
             let result = Int(b[12])
             let resultName = [0: "FAILURE", 1: "SUCCESS", 2: "PENDING", 3: "UNSUPPORTED"][result] ?? "UNKNOWN(\(result))"
+            if command == 81 {
+                if result == 1 {
+                    sendWhoopAutoIMUEnable(to: peripheral)
+                    return "COMMAND_RESPONSE · START_RAW_DATA(81) SUCCESS · requesting IMU mode"
+                }
+                whoopIMUStatus = "WHOOP rejected START_RAW_DATA · result \(resultName)"
+                return "COMMAND_RESPONSE · START_RAW_DATA(81) · result \(resultName)"
+            }
+            if command == 106 {
+                whoop5AutoIMUEnabled = result == 1
+                whoopIMUStatus = result == 1 ? "IMU mode accepted · awaiting motion frames" : "IMU mode rejected · \(resultName)"
+                return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · result \(resultName)"
+            }
             if command == 145 {
                 guard result == 1, echoedSequence == 1 else {
                     return "COMMAND_RESPONSE · GET_HELLO · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
@@ -710,6 +745,23 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR enable requested"
             }
             return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
+
+        case 43: // WHOOP 5/MG raw six-axis IMU frame (1244-byte verified layout)
+            guard b.count == 1244 else {
+                whoopIMUStatus = "IMU packet type 43 · unexpected length \(b.count) bytes"
+                return "REALTIME_RAW_DATA · unexpected length \(b.count) · CRC valid"
+            }
+            let accelCount = Int(b[24]) | (Int(b[25]) << 8)
+            let gyroCount = Int(b[630]) | (Int(b[631]) << 8)
+            guard accelCount == 100, gyroCount == 100 else {
+                whoopIMUStatus = "IMU frame layout not recognised · A:\(accelCount) G:\(gyroCount)"
+                return "REALTIME_RAW_DATA · unrecognised sample counts A:\(accelCount) G:\(gyroCount)"
+            }
+            whoopIMUFrameCount += 1
+            whoopIMUSampleCount += accelCount
+            whoopIMULastFrameAt = Date()
+            whoopIMUStatus = "Live motion active · \(whoopIMUFrameCount) one-second frames"
+            return "REALTIME_RAW_DATA · 100 Hz six-axis IMU · frame \(whoopIMUFrameCount) · CRC valid"
 
         case 40: // REALTIME_DATA; protocol inner[8] == complete-frame byte[16]
             whoopRealtimePacketCount += 1
@@ -783,6 +835,34 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         return crc ^ 0xFFFFFFFF
     }
 
+    /// Start the hardware-verified WHOOP 5/MG IMU producer after live HR is confirmed.
+    /// Sequence: START_RAW_DATA (81) payload [01], then TOGGLE_IMU_MODE (106) [01,01].
+    private func startWhoopAutoIMUIfNeeded() {
+        guard !whoop5AutoIMUStartRequested,
+              let peripheral = connectedPeripheral,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        whoop5AutoIMUStartRequested = true
+        whoopIMUStatus = "Requesting automatic WHOOP motion stream"
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x51, payload: [0x01])
+        whoop5PendingWrites.append("START_RAW_DATA")
+        lastBLEEvent = "Automatic IMU START_RAW_DATA requested · sequence \(sequence)"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    private func sendWhoopAutoIMUEnable(to peripheral: CBPeripheral) {
+        guard let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x6A, payload: [0x01, 0x01])
+        whoop5PendingWrites.append("TOGGLE_IMU_MODE")
+        lastBLEEvent = "Automatic IMU TOGGLE_IMU_MODE requested · sequence \(sequence)"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
     /// Enable WHOOP 5.0 live HR (opcode 0x03, body [0x01]).
     /// This is separate from subscribing to 180D/2A37 and FD4B notify CCCDs.
     private func sendRealtimeHrEnable(to peripheral: CBPeripheral) {
@@ -828,6 +908,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         liveHeartRateSamples.removeAll { timestamp.timeIntervalSince($0.timestamp) > 60 }
         if liveHeartRateSamples.count > 120 {
             liveHeartRateSamples.removeFirst(liveHeartRateSamples.count - 120)
+        }
+        if whoop5HRStreamConfirmed {
+            startWhoopAutoIMUIfNeeded()
         }
         if workoutIsRecording {
             workoutHeartRateSamples.append(sample)
@@ -931,6 +1014,24 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
               characteristic.uuid == whoop5CommandUUID,
               !whoop5PendingWrites.isEmpty else { return }
         let kind = whoop5PendingWrites.removeFirst()
+
+        if kind == "START_RAW_DATA" {
+            if let error {
+                whoop5AutoIMUStartRequested = false
+                whoopIMUStatus = "START_RAW_DATA write failed · \(error.localizedDescription)"
+                return
+            }
+            whoopIMUStatus = "START_RAW_DATA write acknowledged · awaiting strap response"
+            return
+        }
+        if kind == "TOGGLE_IMU_MODE" {
+            if let error {
+                whoopIMUStatus = "IMU mode write failed · \(error.localizedDescription)"
+            } else {
+                whoopIMUStatus = "IMU mode write acknowledged · awaiting motion frames"
+            }
+            return
+        }
 
         if kind == "REALTIME_HR_ON" {
             if let error {
