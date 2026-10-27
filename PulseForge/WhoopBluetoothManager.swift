@@ -66,7 +66,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         workoutIsRecording = false
         workoutStartedAt = nil
         persistWorkoutSession()
-        statusText = "Workout saved on this iPhone · \\(workoutHeartRateSamples.count) HR samples"
+        statusText = "Workout saved on this iPhone · \(workoutHeartRateSamples.count) HR samples"
     }
 
     private func persistWorkoutSession() {
@@ -290,9 +290,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP 5.0 CLIENT_HELLO write pending: \(whoop5HelloWritePending ? "yes" : "no")",
             "WHOOP realtime HR enable command sent: \(whoop5HRStreamEnableSent ? "yes" : "no")",
             "WHOOP realtime HR ON event confirmed: \(whoop5HRStreamConfirmed ? "yes" : "no")",
-            "WHOOP protocol diagnosis: \\(whoopProtocolDiagnostics)",
-            "WHOOP packet counts · realtime: \\(whoopRealtimePacketCount) · command responses: \\(whoopCommandResponseCount)",
-            "WHOOP last packet type: \\(whoopLastPacketType)",
+            "WHOOP protocol diagnosis: \(whoopProtocolDiagnostics)",
+            "WHOOP packet counts · realtime: \(whoopRealtimePacketCount) · command responses: \(whoopCommandResponseCount)",
+            "WHOOP last packet type: \(whoopLastPacketType)",
             "WHOOP FD4B vendor notification subscriptions:",
             "",
             "GATT profile:"
@@ -974,6 +974,13 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        let notificationUUID = characteristic.uuid.uuidString.uppercased()
+        if motionProbeUUIDPrefixes.contains(where: { notificationUUID.hasPrefix($0) }) {
+            candidateNotificationStates[notificationUUID] = error.map { "failed · \($0.localizedDescription)" }
+                ?? (characteristic.isNotifying ? "enabled" : "disabled")
+            lastBLEEvent = "WHOOP candidate notification \(candidateNotificationStates[notificationUUID] ?? "updated") · \(notificationUUID)"
+            return
+        }
         if characteristic.service?.uuid == CBUUID(string: "FD4B0001-CCE1-4033-93CE-002D5875F58A") {
             let uuid = characteristic.uuid.uuidString.uppercased()
             vendorNotificationStates[uuid] = error.map { "failed · \($0.localizedDescription)" }
