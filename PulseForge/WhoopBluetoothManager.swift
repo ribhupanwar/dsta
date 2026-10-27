@@ -86,14 +86,32 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
 extension WhoopBluetoothManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
-        case .poweredOn: statusText = "Bluetooth ready"
-        case .poweredOff: statusText = "Bluetooth is off"
-        case .unauthorized: statusText = "Bluetooth permission not granted"
-        case .unsupported: statusText = "Bluetooth LE is unavailable"
-        case .resetting: statusText = "Bluetooth is resetting"
-        case .unknown: statusText = "Bluetooth state unknown"
-        @unknown default: statusText = "Bluetooth state unavailable"
+        case .poweredOn:
+            statusText = connectedPeripheral == nil ? "Bluetooth ready" : "Bluetooth ready · restoring connection state"
+        case .poweredOff:
+            clearConnectionState()
+            statusText = "Bluetooth is off"
+        case .unauthorized:
+            clearConnectionState()
+            statusText = "Bluetooth permission not granted"
+        case .unsupported:
+            clearConnectionState()
+            statusText = "Bluetooth LE is unavailable"
+        case .resetting:
+            clearConnectionState()
+            statusText = "Bluetooth is resetting"
+        case .unknown:
+            statusText = "Bluetooth state unknown"
+        @unknown default:
+            statusText = "Bluetooth state unavailable"
         }
+    }
+
+    private func clearConnectionState() {
+        connectedName = nil
+        connectedPeripheral?.delegate = nil
+        connectedPeripheral = nil
+        discoveredProfile.removeAll()
     }
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
@@ -117,14 +135,20 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        guard connectedPeripheral?.identifier == peripheral.identifier else {
+            central.cancelPeripheralConnection(peripheral)
+            return
+        }
+        peripheral.delegate = self
         connectedName = peripheral.name ?? "WHOOP candidate"
         statusText = "Connected · discovering GATT profile"
         peripheral.discoverServices(nil)
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        clearConnectionState()
         statusText = "Connection failed: \(error?.localizedDescription ?? "unknown error")"
-        connectedPeripheral = nil
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
@@ -138,6 +162,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
 
 extension WhoopBluetoothManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         if let error {
             statusText = "Service discovery failed: \(error.localizedDescription)"
             return
@@ -151,6 +176,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         if let error {
             discoveredProfile.append("Service error · \(error.localizedDescription)")
             return
