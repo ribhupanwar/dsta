@@ -249,7 +249,7 @@ struct RunningDashboard: View {
                     MetricTile(title: "AVG PACE", value: health.latestRunPaceMinutesPerKm.map { String(format: "%.2f", $0) } ?? "—", unit: "/km", symbol: "speedometer")
                 }
                 HStack(spacing: 10) {
-                    MetricTile(title: "AVG HEART RATE", value: "—", unit: "bpm", symbol: "heart.fill")
+                    MetricTile(title: "AVG HEART RATE", value: health.latestRunAverageHeartRate.map(String.init) ?? "—", unit: "bpm", symbol: "heart.fill")
                     MetricTile(title: "DURATION", value: health.latestRunDurationMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min", symbol: "timer")
                 }
                 SectionHeader(title: "HEART RATE ZONES")
@@ -482,6 +482,8 @@ final class HealthDataStore: ObservableObject {
     @Published private(set) var latestRunDistanceKm: Double?
     @Published private(set) var latestRunDurationMinutes: Double?
     @Published private(set) var latestRunPaceMinutesPerKm: Double?
+    @Published private(set) var latestRunAverageHeartRate: Int?
+    @Published private(set) var latestRunHeartRateSampleCount = 0
     @Published private(set) var latestRunDate: Date?
     @Published private(set) var lastRefreshDate: Date?
     @Published private(set) var isRefreshing = false
@@ -600,6 +602,24 @@ final class HealthDataStore: ObservableObject {
                 self?.latestRunDurationMinutes = duration
                 self?.latestRunPaceMinutesPerKm = pace
                 self?.latestRunDate = workout.endDate
+                self?.loadHeartRateForRun(workout)
+            }
+        }
+        store.execute(query)
+    }
+
+    private func loadHeartRateForRun(_ workout: HKWorkout) {
+        guard let type = HKObjectType.quantityType(forIdentifier: .heartRate) else { return }
+        let predicate = HKQuery.predicateForObjects(from: workout)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { [weak self] _, samples, _ in
+            let values = (samples as? [HKQuantitySample] ?? []).map {
+                $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
+            }
+            let average = values.isEmpty ? nil : Int((values.reduce(0, +) / Double(values.count)).rounded())
+            Task { @MainActor in
+                self?.latestRunAverageHeartRate = average
+                self?.latestRunHeartRateSampleCount = values.count
             }
         }
         store.execute(query)
