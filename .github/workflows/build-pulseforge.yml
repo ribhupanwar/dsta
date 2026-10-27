@@ -39,3 +39,5 @@ jobs:
           path: PulseForge-unsigned.ipa
           if-no-files-found: error
           retention-days: 7
+
+# Rebuild trigger: preserve the existing unsigned IPA workflow configuration.
