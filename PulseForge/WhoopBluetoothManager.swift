@@ -151,12 +151,6 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     }
 
     var diagnosticSnapshot: String {
-        let characteristicLines = discoveredProfile.filter { $0.hasPrefix("Characteristic ·") }
-        let descriptorLines = discoveredProfile.filter { $0.hasPrefix("Descriptor ·") }
-        let notifyCharacteristics = characteristicLines.filter {
-            $0.localizedCaseInsensitiveContains("notify") || $0.localizedCaseInsensitiveContains("indicate")
-        }
-        let cccdDescriptors = descriptorLines.filter { $0.localizedCaseInsensitiveContains("00002902") }
         var lines = [
             "GATT summary: \(gattCapabilitySummary)",
             "PulseForge BLE diagnostic snapshot",
