@@ -18,6 +18,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var central: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
     private var scanTimeoutWorkItem: DispatchWorkItem?
+    private var connectionTimeoutWorkItem: DispatchWorkItem?
 
     // Candidate UUIDs observed in the WHOOP archive. They are scan hints only;
     // the archive string scan does not prove their exact GATT roles.
@@ -67,12 +68,16 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     }
 
     func disconnect() {
+        scanTimeoutWorkItem?.cancel()
+        scanTimeoutWorkItem = nil
+        connectionTimeoutWorkItem?.cancel()
+        connectionTimeoutWorkItem = nil
         central.stopScan()
         if let peripheral = connectedPeripheral {
             central.cancelPeripheralConnection(peripheral)
+            statusText = "Disconnecting…"
         } else {
-            connectedName = nil
-            discoveredProfile.removeAll()
+            clearConnectionState()
             statusText = "Disconnected"
         }
     }
@@ -86,6 +91,16 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         connectedPeripheral?.delegate = self
         statusText = "Connecting to \(device.name)…"
         central.connect(device.peripheral, options: nil)
+        let timeout = DispatchWorkItem { [weak self, weak peripheral = device.peripheral] in
+            guard let self, let peripheral,
+                  self.connectedPeripheral?.identifier == peripheral.identifier,
+                  self.connectedName == nil else { return }
+            self.central.cancelPeripheralConnection(peripheral)
+            self.clearConnectionState()
+            self.statusText = "Connection timed out · try again"
+        }
+        connectionTimeoutWorkItem = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: timeout)
     }
 
     private func propertyNames(_ properties: CBCharacteristicProperties) -> String {
@@ -156,6 +171,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
             central.cancelPeripheralConnection(peripheral)
             return
         }
+        connectionTimeoutWorkItem?.cancel()
+        connectionTimeoutWorkItem = nil
         peripheral.delegate = self
         connectedName = peripheral.name ?? "WHOOP candidate"
         statusText = "Connected · discovering GATT profile"
@@ -164,12 +181,16 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        connectionTimeoutWorkItem?.cancel()
+        connectionTimeoutWorkItem = nil
         clearConnectionState()
         statusText = "Connection failed: \(error?.localizedDescription ?? "unknown error")"
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        connectionTimeoutWorkItem?.cancel()
+        connectionTimeoutWorkItem = nil
         connectedName = nil
         connectedPeripheral = nil
         discoveredProfile.removeAll()
