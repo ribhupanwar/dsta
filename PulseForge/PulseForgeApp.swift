@@ -19,6 +19,7 @@ enum ForgeTab: String, CaseIterable {
     case today = "Today"
     case sleep = "Sleep"
     case strain = "Strain"
+    case run = "Run"
     case device = "Device"
 
     var symbol: String {
@@ -26,6 +27,7 @@ enum ForgeTab: String, CaseIterable {
         case .today: "circle.grid.2x2.fill"
         case .sleep: "moon.zzz.fill"
         case .strain: "flame.fill"
+        case .run: "figure.run"
         case .device: "waveform.path.ecg"
         }
     }
@@ -42,6 +44,7 @@ struct MainTabView: View {
                 case .today: TodayDashboard()
                 case .sleep: SleepDashboard()
                 case .strain: StrainDashboard()
+                case .run: RunningDashboard()
                 case .device: DeviceDashboard()
                 }
             }
@@ -97,6 +100,7 @@ struct TodayDashboard: View {
                     CompactMetric(title: "SLEEP DEBT", value: "—", unit: "min")
                 }
                 ConnectPrompt()
+                JournalPrompt()
                 Text("Metrics appear after you connect a supported wearable or allow Apple Health access.")
                     .font(.system(size: 11))
                     .foregroundStyle(ForgeColors.muted)
@@ -215,6 +219,83 @@ struct StrainDashboard: View {
             }
             .padding(20).padding(.top, 18)
         }
+    }
+}
+
+
+struct RunningDashboard: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HeaderView(eyebrow: "ENDURANCE", title: "Running")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("LAST RUN").font(.system(size: 10, weight: .bold)).tracking(1.5).foregroundStyle(ForgeColors.muted)
+                    Text("No activity synced").font(.system(size: 20, weight: .semibold))
+                    Text("Your distance, pace, heart-rate zones and splits will appear here after a workout sync.")
+                        .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                }
+                .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 20))
+                HStack(spacing: 10) {
+                    MetricTile(title: "DISTANCE", value: "—", unit: "km", symbol: "point.topleft.down.to.point.bottomright.curvepath")
+                    MetricTile(title: "AVG PACE", value: "—", unit: "/km", symbol: "speedometer")
+                }
+                HStack(spacing: 10) {
+                    MetricTile(title: "AVG HEART RATE", value: "—", unit: "bpm", symbol: "heart.fill")
+                    MetricTile(title: "DURATION", value: "—", unit: "min", symbol: "timer")
+                }
+                SectionHeader(title: "HEART RATE ZONES")
+                VStack(spacing: 13) {
+                    ZoneRow(name: "Zone 5 · Maximum", color: Color(red: 0.96, green: 0.31, blue: 0.27))
+                    ZoneRow(name: "Zone 4 · Threshold", color: Color(red: 1.0, green: 0.58, blue: 0.22))
+                    ZoneRow(name: "Zone 3 · Aerobic", color: Color(red: 0.96, green: 0.82, blue: 0.25))
+                    ZoneRow(name: "Zone 2 · Easy", color: ForgeColors.lime)
+                    ZoneRow(name: "Zone 1 · Recovery", color: Color(red: 0.32, green: 0.67, blue: 0.92))
+                }
+                .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+                SectionHeader(title: "PACE & SPLITS")
+                VStack(spacing: 12) {
+                    HStack { Text("KM"); Spacer(); Text("PACE"); Spacer(); Text("AVG HR") }
+                        .font(.system(size: 9, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                    Divider().overlay(ForgeColors.stroke)
+                    Text("No split data yet").font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+                Text("Running metrics are kept blank until verified workout data is available; no sample performance is presented as real.")
+                    .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                Spacer(minLength: 110)
+            }
+            .padding(20).padding(.top, 18)
+        }
+    }
+}
+
+struct ZoneRow: View {
+    let name: String
+    let color: Color
+    var body: some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 3).fill(color).frame(width: 4, height: 20)
+            Text(name).font(.system(size: 11, weight: .medium))
+            Spacer()
+            Text("—").font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(ForgeColors.muted)
+        }
+    }
+}
+
+struct JournalPrompt: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "book.closed.fill").font(.system(size: 20)).foregroundStyle(ForgeColors.lime)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Daily journal").font(.system(size: 14, weight: .semibold))
+                Text("Add habits, soreness and recovery context").font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(ForgeColors.muted)
+        }
+        .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
     }
 }
 
