@@ -48,7 +48,7 @@ struct MainTabView: View {
             ForgeColors.background.ignoresSafeArea()
             Group {
                 switch selected {
-                case .today: TodayDashboard()
+                case .today: WhoopStyleTodayDashboard()
                 case .sleep: SleepDashboard()
                 case .strain: StrainDashboard()
                 case .run: RunningDashboard()
@@ -71,24 +71,48 @@ struct ForgeTabBar: View {
     @Binding var selected: ForgeTab
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 2) {
             ForEach(ForgeTab.allCases, id: \.self) { tab in
                 Button { selected = tab } label: {
-                    VStack(spacing: 5) {
-                        Image(systemName: tab.symbol).font(.system(size: 18, weight: .semibold))
-                        Text(tab.rawValue).font(.system(size: 10, weight: .semibold))
+                    VStack(spacing: 4) {
+                        Image(systemName: tab.symbol)
+                            .font(.system(size: 17, weight: .semibold))
+                        Text(tab.rawValue)
+                            .font(.system(size: 9, weight: .bold))
                     }
                     .foregroundStyle(selected == tab ? ForgeColors.lime : ForgeColors.muted)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 18)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) { Rectangle().fill(ForgeColors.stroke).frame(height: 1) }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background {
+            Capsule(style: .continuous)
+                .fill(.ultraThinMaterial)
+                .environment(\.colorScheme, .dark)
+                .overlay {
+                    Capsule(style: .continuous)
+                        .fill(LinearGradient(
+                            colors: [Color.white.opacity(0.13), Color.white.opacity(0.025), Color.cyan.opacity(0.035)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ))
+                }
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(colors: [Color.white.opacity(0.24), ForgeColors.stroke, Color.white.opacity(0.07)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 1
+                        )
+                }
+                .shadow(color: Color.cyan.opacity(0.10), radius: 16, y: 5)
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 5)
     }
 }
 
@@ -145,7 +169,7 @@ struct TodayDashboard: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)
-                .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                .forgeGlassCard(cornerRadius: 22)
                 .overlay(RoundedRectangle(cornerRadius: 22).stroke(ForgeColors.stroke, lineWidth: 1))
 
                 HStack(spacing: 9) {
@@ -163,7 +187,7 @@ struct TodayDashboard: View {
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(15).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 17))
+                .padding(15).forgeGlassCard(cornerRadius: 17)
                 ConnectPrompt()
                 Text("Scores are shown only when supported by available measurements. PulseForge estimates are not WHOOP scores.")
                     .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
@@ -246,7 +270,7 @@ struct ScoreRing: View {
                     .stroke(tint, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Text(value.map(String.init) ?? "—")
-                    .font(.system(size: 25, weight: .medium, design: .rounded))
+                    .font(.system(size: 25, weight: .black, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.white)
             }
@@ -281,7 +305,7 @@ struct LiveHeartRateCard: View {
                 Circle().fill(ForgeColors.lime.opacity(heartRate == nil ? 0.3 : 1)).frame(width: 7, height: 7)
             }
             .padding(16)
-            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .forgeGlassCard(cornerRadius: 18)
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
         }
     }
@@ -343,7 +367,7 @@ struct LiveHeartRateChartCard: View {
                 .font(.system(size: 8, weight: .semibold)).tracking(0.7).foregroundStyle(ForgeColors.muted)
             }
             .padding(16)
-            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .forgeGlassCard(cornerRadius: 18)
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
         }
     }
@@ -432,7 +456,7 @@ struct WhoopMotionCard: View {
                     .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
             }
             .padding(16)
-            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .forgeGlassCard(cornerRadius: 18)
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
         }
     }
@@ -649,7 +673,7 @@ struct WorkoutRecordingCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(16)
-            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .forgeGlassCard(cornerRadius: 18)
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
         }
     }
@@ -666,6 +690,40 @@ struct WorkoutRecordingCard: View {
     }
 }
 
+struct WhoopSectionHero: View {
+    let eyebrow: String
+    let value: String
+    let detail: String
+    let symbol: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 16) {
+            ZStack {
+                Circle().stroke(ForgeColors.track, lineWidth: 9)
+                Circle().trim(from: 0, to: value == "—" ? 0 : 0.72)
+                    .stroke(tint, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: symbol)
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(tint)
+            }
+            .frame(width: 104, height: 104)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(eyebrow).font(.system(size: 10, weight: .black)).tracking(1.4).foregroundStyle(ForgeColors.muted)
+                Text(value).font(.system(size: 31, weight: .black, design: .rounded)).monospacedDigit()
+                Text(detail).font(.system(size: 11, weight: .semibold)).foregroundStyle(tint)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(17)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).fill(LinearGradient(colors: [Color.white.opacity(0.08), Color.white.opacity(0.012)], startPoint: .topLeading, endPoint: .bottomTrailing)).clipShape(RoundedRectangle(cornerRadius: 22)))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(ForgeColors.stroke, lineWidth: 1))
+    }
+}
+
 struct SleepDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
@@ -673,7 +731,8 @@ struct SleepDashboard: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 22) {
-                HeaderView(eyebrow: "SLEEP", title: "Sleep")
+                HeaderView(eyebrow: "TODAY · SLEEP", title: "Sleep")
+                WhoopSectionHero(eyebrow: "SLEEP PERFORMANCE", value: health.sleepHours.map { String(format: "%.1f h", $0) } ?? "—", detail: health.sleepHours == nil ? "WAITING FOR SLEEP DATA" : "TIME ASLEEP", symbol: "moon.zzz.fill", tint: Color(red: 0.48, green: 0.68, blue: 0.82))
                 VStack(alignment: .leading, spacing: 16) {
                     SectionHeader(title: "SLEEP PERFORMANCE")
                     HStack(spacing: 20) {
@@ -700,7 +759,7 @@ struct SleepDashboard: View {
                         }
                     }
                 }
-                .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                .padding(18).forgeGlassCard(cornerRadius: 22)
                 SectionHeader(title: "SLEEP STAGES")
                 SleepStageBreakdown(deep: health.deepSleepMinutes, rem: health.remSleepMinutes, core: health.coreSleepMinutes, awake: health.awakeMinutes)
                 SectionHeader(title: "SLEEP SUMMARY")
@@ -711,7 +770,7 @@ struct SleepDashboard: View {
                 }
                 Text("Sleep stages are read from Apple Health. Debt is the rolling shortfall against an 8-hour target across completed nights with recorded sleep.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
-                Spacer(minLength: 110)
+                Spacer(minLength: 82)
             }
             .padding(18).padding(.top, 16)
         }
@@ -726,7 +785,8 @@ struct StrainDashboard: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 22) {
-                HeaderView(eyebrow: "CARDIOVASCULAR LOAD", title: "Strain")
+                HeaderView(eyebrow: "TODAY · STRAIN", title: "Strain")
+                WhoopSectionHero(eyebrow: "CARDIO LOAD", value: insights.cardioLoadPoints.map { String(format: "%.1f", $0) } ?? "—", detail: insights.cardioLoadPoints == nil ? "STRAIN SCORE NOT YET VERIFIED" : "CARDIO LOAD POINTS", symbol: "flame.fill", tint: Color(red: 0.98, green: 0.58, blue: 0.27))
                 VStack(alignment: .leading, spacing: 15) {
                     SectionHeader(title: "TODAY'S STRAIN")
                     HStack(spacing: 22) {
@@ -745,7 +805,7 @@ struct StrainDashboard: View {
                         }
                     }
                 }
-                .padding(20).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                .padding(20).forgeGlassCard(cornerRadius: 22)
                 SectionHeader(title: "PERSONAL HEART-RATE SETUP")
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Measured maximum heart rate (bpm)")
@@ -758,7 +818,7 @@ struct StrainDashboard: View {
                     Text("Enter a value measured during a hard effort or clinical test. PulseForge will leave cardio load blank until this is set.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
-                .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+                .padding(16).forgeGlassCard(cornerRadius: 18)
                 SectionHeader(title: "CARDIO LOAD")
                 HStack(spacing: 10) {
                     CompactMetric(title: "CARDIO LOAD", value: insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—", unit: "load pts")
@@ -786,7 +846,7 @@ struct StrainDashboard: View {
                     }
                 }
                 .font(.system(size: 13, weight: .medium))
-                .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+                .padding(18).forgeGlassCard(cornerRadius: 18)
                 Text("Cardio-load points use workout HR samples and your saved measured max HR. WHOOP-style strain remains blank until its model is validated.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
@@ -901,7 +961,7 @@ struct GPSRunCard: View {
                     .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
             }
             .padding(17)
-            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 20))
+            .forgeGlassCard(cornerRadius: 20)
             .overlay(RoundedRectangle(cornerRadius: 20).stroke(ForgeColors.stroke, lineWidth: 1))
         }
     }
@@ -929,7 +989,8 @@ struct RunningDashboard: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
-                HeaderView(eyebrow: "PERFORMANCE", title: "Running")
+                HeaderView(eyebrow: "TODAY · ACTIVITY", title: "Running")
+                WhoopSectionHero(eyebrow: "LAST 7 DAYS", value: health.weeklyRunDistanceKm.map { String(format: "%.1f km", $0) } ?? "—", detail: "\(health.weeklyRunCount) RECORDED RUNS", symbol: "figure.run", tint: Color(red: 0.12, green: 0.61, blue: 0.95))
                 GPSRunCard()
                 WorkoutRecordingCard(bluetooth: bluetooth)
                 VStack(alignment: .leading, spacing: 12) {
@@ -950,7 +1011,7 @@ struct RunningDashboard: View {
                     Text("Rolling 7-day total from completed running workouts in Apple Health.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
-                .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                .padding(18).forgeGlassCard(cornerRadius: 22)
                 VStack(alignment: .leading, spacing: 8) {
                     SectionHeader(title: "LATEST ACTIVITY")
                     Text(health.latestRunDate.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "No run synced")
@@ -964,7 +1025,7 @@ struct RunningDashboard: View {
                     }
                     .padding(.top, 8)
                 }
-                .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                .padding(18).forgeGlassCard(cornerRadius: 22)
                 HStack(spacing: 10) {
                     CompactMetric(title: "AVERAGE HR", value: health.latestRunAverageHeartRate.map(String.init) ?? "—", unit: "bpm")
                     CompactMetric(title: "HR SAMPLES", value: health.latestRunHeartRateSampleCount.formatted(), unit: "points")
@@ -1005,7 +1066,7 @@ struct RunningDashboard: View {
                             .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                     }
                 }
-                .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+                .padding(18).forgeGlassCard(cornerRadius: 18)
                 SectionHeader(title: "PACE & SPLITS")
                 VStack(spacing: 12) {
                     HStack {
@@ -1034,7 +1095,7 @@ struct RunningDashboard: View {
                         }
                     }
                 }
-                .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+                .padding(18).forgeGlassCard(cornerRadius: 18)
                 Text("Only synced workout measurements are displayed.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
@@ -1099,7 +1160,7 @@ struct JournalPrompt: View {
                 Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(ForgeColors.muted)
             }
             .foregroundStyle(.white)
-            .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .padding(16).forgeGlassCard(cornerRadius: 18)
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $showingJournal) {
@@ -1365,7 +1426,7 @@ struct DeviceDashboard: View {
                     Text("This first pass only scans, connects and lists GATT services/characteristics. It does not send commands or guess the live-HR packet format.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
-                .padding(20).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                .padding(20).forgeGlassCard(cornerRadius: 22)
                 SectionHeader(title: "APPLE HEALTH")
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -1384,7 +1445,7 @@ struct DeviceDashboard: View {
                     }
                     .disabled(health.isAuthorized)
                 }
-                .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+                .padding(18).forgeGlassCard(cornerRadius: 18)
                 Spacer(minLength: 110)
             }
             .padding(20).padding(.top, 18)
@@ -1736,7 +1797,7 @@ struct WorkoutHeartRateChart: View {
             }
         }
         .padding(18)
-        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+        .forgeGlassCard(cornerRadius: 18)
     }
 }
 
@@ -1793,14 +1854,37 @@ struct HeaderView: View {
     let eyebrow: String
     let title: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(eyebrow).font(.system(size: 10, weight: .bold)).tracking(1.7).foregroundStyle(ForgeColors.lime)
-            HStack {
-                Text(title).font(.system(size: 31, weight: .bold, design: .rounded)).tracking(-0.8)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .center) {
+                Text("PULSEFORGE")
+                    .font(.system(size: 17, weight: .black, design: .rounded))
+                    .tracking(2.2)
+                    .foregroundStyle(.white)
                 Spacer()
-                Image(systemName: "person.crop.circle").font(.system(size: 25, weight: .light)).foregroundStyle(ForgeColors.muted)
+                Image(systemName: "person.crop.circle")
+                    .font(.system(size: 25, weight: .light))
+                    .foregroundStyle(ForgeColors.muted)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Text(title.uppercased())
+                    .font(.system(size: 11, weight: .black))
+                    .tracking(1.3)
+                    .foregroundStyle(ForgeColors.lime)
+                Text("·")
+                    .foregroundStyle(ForgeColors.muted)
+                Text(eyebrow.replacingOccurrences(of: "TODAY · ", with: ""))
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(1)
+                    .foregroundStyle(ForgeColors.muted)
+                Spacer()
+                Text(Date.now.formatted(.dateTime.month(.abbreviated).day()).uppercased())
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(ForgeColors.muted)
             }
         }
+        .padding(.top, 7)
+        .padding(.bottom, 3)
     }
 }
 
@@ -1809,7 +1893,7 @@ struct SectionHeader: View {
     var action: String? = nil
     var body: some View {
         HStack {
-            Text(title).font(.system(size: 11, weight: .bold)).tracking(1.4)
+            Text(title).font(.system(size: 11, weight: .black)).tracking(1.35)
             Spacer()
             if let action { Text(action).font(.system(size: 11, weight: .semibold)).foregroundStyle(ForgeColors.lime) }
         }
@@ -1833,9 +1917,8 @@ struct MetricTile: View {
                 Text(unit).font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
             }
         }
-        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
+        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        .forgeGlassCard(cornerRadius: 18)
     }
 }
 
@@ -1850,7 +1933,7 @@ struct CompactMetric: View {
             Text(unit).font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 15))
+        .padding(12).forgeGlassCard(cornerRadius: 15)
     }
 }
 
@@ -1866,7 +1949,7 @@ struct BigPlaceholderCard: View {
             Text(subtitle).font(.system(size: 13)).foregroundStyle(ForgeColors.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(22).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+        .padding(22).forgeGlassCard(cornerRadius: 22)
         .overlay(RoundedRectangle(cornerRadius: 22).stroke(ForgeColors.stroke, lineWidth: 1))
     }
 }
@@ -1911,7 +1994,7 @@ struct SleepStageBreakdown: View {
             }
         }
         .padding(16)
-        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+        .forgeGlassCard(cornerRadius: 18)
     }
 }
 
@@ -1926,15 +2009,41 @@ struct ConnectPrompt: View {
             Spacer()
             Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(ForgeColors.muted)
         }
-        .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+        .padding(16).forgeGlassCard(cornerRadius: 18)
+    }
+}
+
+
+/// Shared WHOOP-inspired glass surface used by every dashboard section.
+private struct ForgeGlassCardStyle: ViewModifier {
+    let cornerRadius: CGFloat
+    func body(content: Content) -> some View {
+        content
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(LinearGradient(colors: [Color.white.opacity(0.085), Color.white.opacity(0.018)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .allowsHitTesting(false)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(ForgeColors.stroke, lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+    }
+}
+
+extension View {
+    func forgeGlassCard(cornerRadius: CGFloat = 18) -> some View {
+        modifier(ForgeGlassCardStyle(cornerRadius: cornerRadius))
     }
 }
 
 enum ForgeColors {
     static let background = Color(red: 0.018, green: 0.035, blue: 0.065)
-    static let card = Color(red: 0.035, green: 0.075, blue: 0.12)
+    static let card = Color(red: 0.035, green: 0.075, blue: 0.12).opacity(0.78)
     static let track = Color(red: 0.08, green: 0.16, blue: 0.23)
-    static let stroke = Color(red: 0.12, green: 0.31, blue: 0.43).opacity(0.62)
+    static let stroke = Color(red: 0.20, green: 0.55, blue: 0.70).opacity(0.48)
     static let muted = Color(red: 0.57, green: 0.68, blue: 0.77)
     static let lime = Color(red: 0.12, green: 0.78, blue: 0.88)
 }
