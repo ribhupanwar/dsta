@@ -1406,6 +1406,9 @@ final class HealthDataStore: ObservableObject {
         if let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate) {
             shareTypes.insert(heartRateType)
         }
+        if let distanceType = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) {
+            shareTypes.insert(distanceType)
+        }
         do {
             try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
             isAuthorized = true
