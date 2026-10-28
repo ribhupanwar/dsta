@@ -754,9 +754,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
 
         pendingRestoredPeripheral = nil
         if connectedPeripheral?.identifier == peripheral.identifier,
-           (isConnecting || peripheral.state == .connected) {
+           isConnecting, peripheral.state == .connecting {
             // CoreBluetooth may deliver restoration and poweredOn callbacks close
-            // together. Do not issue a second connect/discovery for the same link.
+            // together. Keep the existing in-flight connection and its timeout.
             return
         }
         connectedPeripheral = peripheral
