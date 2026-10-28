@@ -410,6 +410,38 @@ struct WorkoutRecordingCard: View {
                             .foregroundStyle(bluetooth.lastWorkoutWasInterrupted ? ForgeColors.muted : ForgeColors.lime)
                     }
                 }
+                if !bluetooth.workoutHistory.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("RECENT WORKOUTS")
+                                .font(.system(size: 9, weight: .bold)).tracking(1)
+                                .foregroundStyle(ForgeColors.muted)
+                            Spacer()
+                            Text("\(bluetooth.workoutHistory.count) SAVED")
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundStyle(ForgeColors.muted)
+                        }
+                        ForEach(Array(bluetooth.workoutHistory.prefix(5))) { session in
+                            HStack(spacing: 8) {
+                                Image(systemName: session.wasInterrupted ? "exclamationmark.circle" : "checkmark.circle")
+                                    .foregroundStyle(session.wasInterrupted ? ForgeColors.muted : ForgeColors.lime)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(session.startedAt.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.system(size: 10, weight: .semibold))
+                                    Text("\(session.wasAutomatic ? "AUTO" : "MANUAL") · \(session.wasInterrupted ? "PARTIAL" : "SAVED") · \(session.heartRateSamples.count) HR SAMPLES")
+                                        .font(.system(size: 8, weight: .medium)).foregroundStyle(ForgeColors.muted)
+                                }
+                                Spacer()
+                                let seconds = max(0, Int(session.durationSeconds))
+                                Text(String(format: "%02d:%02d", seconds / 60, seconds % 60))
+                                    .font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
+                            }
+                            .padding(.vertical, 5)
+                        }
+                    }
+                    .padding(10)
+                    .background(ForgeColors.track.opacity(0.65), in: RoundedRectangle(cornerRadius: 12))
+                }
                 HStack(spacing: 8) {
                     workoutStat("MIN", value: minBPM)
                     workoutStat("MAX", value: maxBPM)
