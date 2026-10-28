@@ -698,6 +698,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
             scanTimeoutWorkItem?.cancel()
             scanTimeoutWorkItem = nil
             central.stopScan()
+            // A Bluetooth power transition ends the automatic restoration scan.
+            // Clear its guard so the next poweredOn callback can start a fresh scan.
+            isAutomaticReconnectScan = false
         }
         switch central.state {
         case .poweredOn:
