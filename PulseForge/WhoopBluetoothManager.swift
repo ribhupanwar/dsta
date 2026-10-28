@@ -111,6 +111,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var lastWhoopIMUPersistedSampleCount = 0
     private var whoop5HistoricalRequestSent = false
     private var whoop5HistoricalOffloadActive = false
+    private var whoop5ClockSyncStarted = false
+    private var whoop5ClockSyncWorkItem: DispatchWorkItem?
     private var whoop5HistoricalChunkFrames: [[UInt8]] = []
     // De-duplicate repeated chunks during this process lifetime. The durable archive remains
     // append-only; a strap that replays an unacked chunk cannot inflate the in-memory counters.
@@ -1083,6 +1085,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         historicalWhoopIMUSamples.removeAll()
         whoop5HistoricalRequestSent = false
         whoop5HistoricalOffloadActive = false
+        whoop5ClockSyncStarted = false
+        whoop5ClockSyncWorkItem?.cancel()
+        whoop5ClockSyncWorkItem = nil
         whoop5HistoricalChunkFrames.removeAll()
         whoopHistoricalOffloadStatus = "Waiting for WHOOP historical motion offload"
         liveWhoopIMUSamples.removeAll()
@@ -1502,9 +1507,14 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     return "COMMAND_RESPONSE · GET_HELLO success but body too short (\(b.count) bytes)"
                 }
                 recordVendorTimeline("GET_HELLO response accepted · sequence 1 · success · minimum body length met")
-                whoopSessionPhase = "GET_HELLO response parsed · requesting realtime HR"
-                sendRealtimeHrEnable(to: peripheral)
-                return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR enable requested"
+                whoopSessionPhase = "GET_HELLO response parsed · syncing strap clock before history"
+                sendWhoop5ClockSyncBeforeHistory(to: peripheral)
+                return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · SET_CLOCK/GET_CLOCK requested before HR and history"
+            }
+            if command == 10 || command == 11 {
+                let name = command == 10 ? "SET_CLOCK" : "GET_CLOCK"
+                recordVendorTimeline("\\(name) response · seq=\\(echoedSequence) · \\(resultName) · CRC valid")
+                return "COMMAND_RESPONSE · \\(name)(\\(command)) · \\(resultName)"
             }
             if command == 3 {
                 guard result == 1 else {
@@ -1834,6 +1844,55 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         return Data(header + inner + tail)
     }
 
+    /// WHOOP 5 must have a valid strap RTC before it banks or serves historical sensor data.
+    /// NOOP/OpenStrap hardware notes confirm the 8-byte SET_CLOCK followed by GET_CLOCK;
+    /// wait briefly for the command channel to settle before enabling live HR. History is
+    /// requested later, only after the strap confirms HR activation with EVENT 33.
+    private func sendWhoop5ClockSyncBeforeHistory(to peripheral: CBPeripheral) {
+        guard !whoop5ClockSyncStarted,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        whoop5ClockSyncStarted = true
+
+        let now = UInt32(Date().timeIntervalSince1970)
+        let clockPayload: [UInt8] = [
+            UInt8(now & 0xFF),
+            UInt8((now >> 8) & 0xFF),
+            UInt8((now >> 16) & 0xFF),
+            UInt8((now >> 24) & 0xFF),
+            0, 0, 0, 0
+        ]
+        let setClockSequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let setClockFrame = buildWhoop5CommandFrame(
+            sequence: setClockSequence, opcode: 0x0A, payload: clockPayload
+        )
+        let getClockSequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let getClockFrame = buildWhoop5CommandFrame(
+            sequence: getClockSequence, opcode: 0x0B, payload: []
+        )
+
+        whoop5PendingWrites.append("SET_CLOCK")
+        whoop5PendingWrites.append("GET_CLOCK")
+        whoopHistoricalOffloadStatus = "Strap clock sync requested · history waits for HR activation"
+        recordVendorTimeline("SET_CLOCK(10) requested · 8-byte Unix seconds · seq=\\(setClockSequence)")
+        peripheral.writeValue(setClockFrame, for: command, type: .withResponse)
+        recordVendorTimeline("GET_CLOCK(11) requested · seq=\\(getClockSequence)")
+        peripheral.writeValue(getClockFrame, for: command, type: .withResponse)
+
+        whoop5ClockSyncWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self, weak peripheral] in
+            guard let self, let peripheral,
+                  self.connectedPeripheral?.identifier == peripheral.identifier,
+                  peripheral.state == .connected else { return }
+            self.whoop5ClockSyncWorkItem = nil
+            self.sendRealtimeHrEnable(to: peripheral)
+        }
+        whoop5ClockSyncWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+    }
+
     /// Request the WHOOP 5 historical store after the strap confirms live-HR activation.
     /// Command 22 is read-only; command 23 is sent only after the received type-47 chunk
     /// has been synchronously persisted to the local raw archive.
@@ -2144,6 +2203,15 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             } else {
                 whoopIMUStatus = "STOP_RAW_DATA write acknowledged · awaiting strap response"
                 recordVendorTimeline("STOP_RAW_DATA write callback · acknowledged by CoreBluetooth")
+            }
+            return
+        }
+        if kind == "SET_CLOCK" || kind == "GET_CLOCK" {
+            if let error {
+                recordVendorTimeline("\\(kind) write failed · \\(error.localizedDescription)")
+                whoopHistoricalOffloadStatus = "Strap clock sync write failed · \\(kind) · history may return no sensor records"
+            } else {
+                recordVendorTimeline("\\(kind) write acknowledged by CoreBluetooth")
             }
             return
         }
