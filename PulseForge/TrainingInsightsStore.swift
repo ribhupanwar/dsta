@@ -108,7 +108,9 @@ final class TrainingInsightsStore: ObservableObject {
             let debtMinutes = completedNights.reduce(0.0) { partial, night in
                 partial + max(0, self.sleepTargetMinutes - (minutesByNight[night] ?? 0))
             }
-            completion(latestHours, completedNights.isEmpty ? nil : debtMinutes / 60)
+            DispatchQueue.main.async {
+                completion(latestHours, completedNights.isEmpty ? nil : debtMinutes / 60)
+            }
         }
         healthStore.execute(query)
     }
@@ -163,7 +165,9 @@ final class TrainingInsightsStore: ObservableObject {
         let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit,
                                   sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)]) {
             _, samples, _ in
-            completion(samples as? [HKQuantitySample] ?? [])
+            DispatchQueue.main.async {
+                completion(samples as? [HKQuantitySample] ?? [])
+            }
         }
         healthStore.execute(query)
     }
@@ -209,16 +213,15 @@ final class TrainingInsightsStore: ObservableObject {
                                       sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) {
                 _, samples, _ in
                 let values = samples as? [HKQuantitySample] ?? []
-                let restingHR = 60.0
                 for (index, sample) in values.enumerated() {
                     let bpm = sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
                     let nextGap = index + 1 < values.count
                         ? values[index + 1].startDate.timeIntervalSince(sample.startDate)
                         : sample.endDate.timeIntervalSince(sample.startDate)
                     let minutes = min(1.0, max(0, nextGap) / 60)
-                    let reserve = min(1, max(0, (bpm - restingHR) / Double(max(1, maxHR - Int(restingHR)))))
+                    let intensity = min(1, max(0, bpm / Double(maxHR)))
                     lock.lock()
-                    totalLoad += minutes * reserve * 100
+                    totalLoad += minutes * intensity * 100
                     lock.unlock()
                 }
                 group.leave()
