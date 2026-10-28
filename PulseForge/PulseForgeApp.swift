@@ -1299,7 +1299,10 @@ final class HealthDataStore: ObservableObject {
     }
 
     private func loadHeartRateForRun(_ workout: HKWorkout, completion: @escaping () -> Void) {
-        guard let type = HKObjectType.quantityType(forIdentifier: .heartRate) else { return }
+        guard let type = HKObjectType.quantityType(forIdentifier: .heartRate) else {
+            completion()
+            return
+        }
         let predicate = HKQuery.predicateForObjects(from: workout)
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
         let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { [weak self] _, samples, _ in
@@ -1325,7 +1328,10 @@ final class HealthDataStore: ObservableObject {
     }
 
     private func loadDistanceSplits(for workout: HKWorkout, completion: @escaping () -> Void) {
-        guard let type = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) else { return }
+        guard let type = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) else {
+            completion()
+            return
+        }
         let predicate = HKQuery.predicateForObjects(from: workout)
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
         let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { [weak self] _, samples, _ in
