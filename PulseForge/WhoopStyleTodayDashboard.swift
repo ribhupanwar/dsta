@@ -105,7 +105,7 @@ struct WhoopStyleTodayDashboard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 94, alignment: .leading)
-        .background(Color.white.opacity(0.105), in: RoundedRectangle(cornerRadius: 16))
+        .forgeGlassCard(cornerRadius: 16)
     }
 
     private var myDay: some View {
@@ -131,7 +131,7 @@ struct WhoopStyleTodayDashboard: View {
                     .foregroundStyle(.white.opacity(0.55))
             }
             .padding(16)
-            .background(Color.white.opacity(0.105), in: RoundedRectangle(cornerRadius: 15))
+            .forgeGlassCard(cornerRadius: 15)
         }
     }
 
@@ -162,14 +162,14 @@ struct WhoopStyleTodayDashboard: View {
                     .monospacedDigit()
             }
             .padding(10)
-            .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 15))
+            .forgeGlassCard(cornerRadius: 15)
             HStack(spacing: 10) {
                 actionTile("ADD ACTIVITY", symbol: "plus")
                 actionTile("START ACTIVITY", symbol: "stopwatch")
             }
         }
         .padding(15)
-        .background(Color.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 20))
+        .forgeGlassCard(cornerRadius: 20)
     }
 
     private func actionTile(_ title: String, symbol: String) -> some View {
@@ -178,7 +178,7 @@ struct WhoopStyleTodayDashboard: View {
             Text(title).font(.system(size: 10, weight: .black)).tracking(0.6)
         }
         .frame(maxWidth: .infinity, minHeight: 49)
-        .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+        .forgeGlassCard(cornerRadius: 12)
     }
 
     private var tonightSleep: some View {
@@ -198,7 +198,7 @@ struct WhoopStyleTodayDashboard: View {
                 .foregroundStyle(mutedBlue)
         }
         .padding(17)
-        .background(Color.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 18))
+        .forgeGlassCard(cornerRadius: 18)
     }
 
     private var liveHeartRate: some View {
@@ -214,7 +214,7 @@ struct WhoopStyleTodayDashboard: View {
             LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE HEART RATE")
         }
         .padding(15)
-        .background(Color.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 18))
+        .forgeGlassCard(cornerRadius: 18)
     }
 }
 
