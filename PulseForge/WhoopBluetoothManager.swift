@@ -1022,9 +1022,13 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     "FD4B0007-CCE1-4033-93CE-002D5875F58A"
                 ]
                 let characteristicUUID = characteristic.uuid.uuidString.uppercased()
-                if motionProbeUUIDPrefixes.contains(where: { characteristicUUID.hasPrefix($0) }), (characteristic.properties.contains(.notify) || characteristic.properties.contains(.indicate)) {
-                    candidateNotificationStates[characteristicUUID] = "passive subscription requested"
-                    peripheral.setNotifyValue(true, for: characteristic)
+                if motionProbeUUIDPrefixes.contains(where: { characteristicUUID.hasPrefix($0) }),
+                   characteristic.properties.contains(.notify) || characteristic.properties.contains(.indicate) {
+                    // Archive string clusters are discovery leads, not a verified
+                    // subscription map. Record capability and parent service, but
+                    // do not enable notifications on every candidate family.
+                    candidateNotificationStates[characteristicUUID] =
+                        "discovered under \(service.uuid.uuidString.uppercased()) · \(propertyNames(characteristic.properties)) · subscription withheld pending role verification"
                 }
                 if service.uuid == whoop5ServiceUUID && characteristic.uuid == whoop5CommandUUID {
                     whoop5CommandCharacteristic = characteristic
