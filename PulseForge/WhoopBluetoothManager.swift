@@ -1083,7 +1083,14 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         var buffer = whoop5FragmentBuffers[channel] ?? Data()
         if buffer.isEmpty {
             let incoming = [UInt8](chunk)
-            guard incoming.count >= 2, incoming[0] == 0xAA, incoming[1] == 0x01 else {
+            // A BLE notification boundary may split the two-byte 0xAA 0x01
+            // frame marker. Preserve a lone 0xAA (or scan forward to a marker)
+            // instead of discarding the first byte before the next callback.
+            let containsFrameMarker = incoming.count >= 2 &&
+                (0..<(incoming.count - 1)).contains {
+                    incoming[$0] == 0xAA && incoming[$0 + 1] == 0x01
+                }
+            guard incoming.first == 0xAA || containsFrameMarker else {
                 return diagnoseWhoop5Frame(chunk, peripheral: peripheral)
             }
         }
