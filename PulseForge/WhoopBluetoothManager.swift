@@ -89,6 +89,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         lastWorkoutWasAutomatic = automatic
         lastWorkoutWasInterrupted = false
         lastWorkoutDurationSeconds = nil
+        UserDefaults.standard.removeObject(forKey: "pulseforge.whoop.lastWorkoutDuration")
         workoutRecordingIsAutomatic = automatic
         workoutSessionBaselineBPM = automatic ? baselineBPM : nil
         workoutIsRecording = true
@@ -101,6 +102,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         statusText = automatic
             ? "Workout auto-detected · recording HR"
             : "Workout recording · waiting for HR samples"
+        persistWorkoutSession()
     }
 
     func stopWorkoutRecording() {
@@ -256,6 +258,14 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             UserDefaults.standard.set(wasAutomatic, forKey: "pulseforge.whoop.lastWorkoutWasAutomatic")
         }
         UserDefaults.standard.set(lastWorkoutWasInterrupted, forKey: "pulseforge.whoop.lastWorkoutWasInterrupted")
+        UserDefaults.standard.set(workoutIsRecording, forKey: "pulseforge.whoop.activeWorkout")
+        if workoutIsRecording, let startedAt = workoutStartedAt {
+            UserDefaults.standard.set(startedAt, forKey: "pulseforge.whoop.activeWorkoutStartedAt")
+            UserDefaults.standard.set(workoutRecordingIsAutomatic, forKey: "pulseforge.whoop.activeWorkoutWasAutomatic")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "pulseforge.whoop.activeWorkoutStartedAt")
+            UserDefaults.standard.removeObject(forKey: "pulseforge.whoop.activeWorkoutWasAutomatic")
+        }
     }
 
     private var vendorNotificationStates: [String: String] = [:]
@@ -321,6 +331,18 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             lastWorkoutWasAutomatic = UserDefaults.standard.bool(forKey: "pulseforge.whoop.lastWorkoutWasAutomatic")
         }
         lastWorkoutWasInterrupted = UserDefaults.standard.bool(forKey: "pulseforge.whoop.lastWorkoutWasInterrupted")
+        if UserDefaults.standard.bool(forKey: "pulseforge.whoop.activeWorkout"),
+           let interruptedStart = UserDefaults.standard.object(forKey: "pulseforge.whoop.activeWorkoutStartedAt") as? Date {
+            lastWorkoutStartedAt = interruptedStart
+            lastWorkoutWasAutomatic = UserDefaults.standard.bool(forKey: "pulseforge.whoop.activeWorkoutWasAutomatic")
+            lastWorkoutDurationSeconds = max(0, Date().timeIntervalSince(interruptedStart))
+            lastWorkoutWasInterrupted = true
+            workoutIsRecording = false
+            workoutStartedAt = nil
+            workoutRecordingIsAutomatic = false
+            workoutDetectionStatus = "Workout recovered after app restart · partial data"
+            persistWorkoutSession()
+        }
         central = CBCentralManager(
             delegate: self,
             queue: .main,
@@ -1174,6 +1196,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             workoutHeartRateSamples.append(sample)
             if workoutHeartRateSamples.count > 14_400 {
                 workoutHeartRateSamples.removeFirst(workoutHeartRateSamples.count - 14_400)
+            }
+            // Checkpoint periodically so an iOS process termination does not
+            // discard the entire in-progress workout.
+            if workoutHeartRateSamples.count.isMultiple(of: 10) {
+                persistWorkoutSession()
             }
         }
         heartRateUpdateCount += 1
