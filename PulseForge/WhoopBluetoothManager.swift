@@ -1093,7 +1093,6 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
             lastBLEEvent = "Automatic reconnect limit reached · \(reason)"
             return
         }
-
         reconnectWorkItem?.cancel()
         let delay = automaticReconnectDelays[automaticReconnectAttempt]
         automaticReconnectAttempt += 1
@@ -1106,7 +1105,6 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         resetGattSessionForReconnect()
         statusText = "WHOOP reconnecting · attempt \(attempt)/6 in \(Int(delay))s"
         lastBLEEvent = "Automatic reconnect scheduled · attempt \(attempt)/6 · \(reason)"
-
         let work = DispatchWorkItem { [weak self, weak peripheral] in
             guard let self, let peripheral,
                   self.connectedPeripheral?.identifier == peripheral.identifier,
@@ -1445,3 +1443,499 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             // carries epoch, sequence, counts, ranges and sample-rate metadata.
             // Until those fields are mapped, retain only packet-level diagnostics:
             // never manufacture calibrated axes or timestamps from guessed offsets.
+            whoopIMUFrameCount += 1
+            whoopIMULastFrameAt = Date()
+            whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
+            let capturedAt = ISO8601DateFormatter().string(from: Date())
+            whoopIMURawFrameHistory.append("\(capturedAt) · \(whoopIMULastRawFrameHex)")
+            if whoopIMURawFrameHistory.count > 4 {
+                whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
+            }
+            whoopIMUStatus = "Candidate raw-data frame observed · \(b.count) bytes · CRC valid · raw capture available · revision-aware decode pending"
+            return "CANDIDATE_RAW_DATA(0x2F) · \(b.count) bytes · CRC valid · axes not decoded"
+
+        case 40: // REALTIME_DATA; protocol inner[8] == complete-frame byte[16]
+            whoopRealtimePacketCount += 1
+            guard b.count > 16 else { return "REALTIME_DATA · too short for HR field · CRC valid" }
+            let bpm = Int(b[16])
+            guard (1...250).contains(bpm) else {
+                return "REALTIME_DATA · HR byte \(bpm) outside plausible range · rejected · CRC valid"
+            }
+            recordHeartRateSample(bpm, source: "WHOOP5 REALTIME_DATA")
+            return "REALTIME_DATA · HR \(bpm) bpm decoded at frame offset 16 · CRC valid"
+
+        case 48: // EVENT
+            guard b.count >= 20 else { return "EVENT · truncated · CRC valid" }
+            let eventID = Int(b[10]) | (Int(b[11]) << 8)
+            whoopEventPacketCount += 1
+            whoopLastEventID = eventID
+            whoopLastEventFrameHex = b.map { String(format: "%02X", $0) }.joined(separator: " ")
+            if eventID == 33 {
+                whoop5HRStreamConfirmed = true
+                whoopSessionPhase = "Realtime HR stream confirmed · generation \(whoopConnectionGeneration)"
+                recordVendorTimeline("WHOOP realtime HR active event 33 received")
+                lastBLEEvent = "WHOOP event 33 · BLE_REALTIME_HR_ON · stream activation confirmed"
+                statusText = "Connected · WHOOP realtime HR stream confirmed · waiting for sample"
+                return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid · realtime HR active; IMU activation withheld pending protocol verification"
+            }
+            if eventID == 34 {
+                whoop5HRStreamConfirmed = false
+                lastBLEEvent = "WHOOP event 34 · BLE_REALTIME_HR_OFF"
+                return "EVENT · BLE_REALTIME_HR_OFF(34) · CRC valid"
+            }
+            if eventID == 3 {
+                guard b.count > 22 else {
+                    return "BATTERY_EVENT(3) · truncated frame · \(b.count) bytes · CRC valid · raw captured"
+                }
+                let socRaw = Int(b[21]) | (Int(b[22]) << 8)
+                let percentage = Double(socRaw) / 10.0
+                guard (0.0...100.0).contains(percentage) else {
+                    return "EVENT · BATTERY_LEVEL(3) · raw \(socRaw) · out of range · CRC valid"
+                }
+                whoopBatteryPercent = percentage
+                whoopBatteryLastUpdatedAt = Date()
+                UserDefaults.standard.set(percentage, forKey: "pulseforge.whoop.batteryPercent")
+                UserDefaults.standard.set(whoopBatteryLastUpdatedAt, forKey: "pulseforge.whoop.batteryUpdatedAt")
+                return "EVENT · BATTERY_LEVEL(3) · \(String(format: "%.1f", percentage))% · UI value updated · CRC valid"
+            }
+            return "EVENT · id \(eventID) · CRC valid · not a realtime HR sample"
+
+        default:
+            return "WHOOP5 packet type \(type) · \(b.count) bytes · CRC valid · no HR decoded"
+        }
+    }
+
+    private func isValidWhoop5Frame(_ b: [UInt8]) -> Bool {
+        guard b.count >= 12, b[0] == 0xAA, b[1] == 0x01 else { return false }
+        let declared = Int(b[2]) | (Int(b[3]) << 8)
+        guard declared >= 4, 8 + declared == b.count else { return false }
+        let storedHeaderCRC = UInt16(b[6]) | (UInt16(b[7]) << 8)
+        guard crc16Modbus(Array(b[0..<6])) == storedHeaderCRC else { return false }
+        let payloadEnd = b.count - 4
+        let paddedInner = Array(b[8..<payloadEnd])
+        let storedPayloadCRC = UInt32(b[payloadEnd])
+            | (UInt32(b[payloadEnd + 1]) << 8)
+            | (UInt32(b[payloadEnd + 2]) << 16)
+            | (UInt32(b[payloadEnd + 3]) << 24)
+        return crc32(paddedInner) == storedPayloadCRC
+    }
+
+    private func crc16Modbus(_ bytes: [UInt8]) -> UInt16 {
+        var crc: UInt16 = 0xFFFF
+        for byte in bytes {
+            crc ^= UInt16(byte)
+            for _ in 0..<8 {
+                crc = (crc & 1) == 1 ? (crc >> 1) ^ 0xA001 : (crc >> 1)
+            }
+        }
+        return crc
+    }
+
+    private func crc32(_ bytes: [UInt8]) -> UInt32 {
+        var crc: UInt32 = 0xFFFFFFFF
+        for byte in bytes {
+            crc ^= UInt32(byte)
+            for _ in 0..<8 {
+                crc = (crc & 1) == 1 ? (crc >> 1) ^ 0xEDB88320 : (crc >> 1)
+            }
+        }
+        return crc ^ 0xFFFFFFFF
+    }
+
+    /// Start Gen5 raw streaming with a bounded revision-2 duration.
+    /// OpenStrap documents START_RAW_DATA (0x51) body [0x02][u32 duration-ms LE].
+    /// Never use revision 1: the strap may default to a full 24-hour stream.
+    private func sendWhoop5RawDataStart(to peripheral: CBPeripheral,
+                                         durationMilliseconds: UInt32) {
+        guard !whoop5AutoIMUStartRequested,
+              durationMilliseconds > 0,
+              durationMilliseconds <= 86_400_000,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        whoop5AutoIMUStartRequested = true
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let duration = durationMilliseconds
+        let payload: [UInt8] = [
+            0x02,
+            UInt8(duration & 0xFF),
+            UInt8((duration >> 8) & 0xFF),
+            UInt8((duration >> 16) & 0xFF),
+            UInt8((duration >> 24) & 0xFF)
+        ]
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x51, payload: payload)
+        whoop5PendingWrites.append("START_RAW_DATA_60S")
+        let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
+        recordVendorTimeline("START_RAW_DATA write requested · opcode 51 · revision 2 · duration=\(durationMilliseconds)ms · seq=\(sequence) · HEX: \(hex)")
+        whoopIMUStatus = "Bounded 60-second Gen5 raw stream requested · awaiting command response"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    /// Schedule an explicit STOP_RAW_DATA (0x52) after the bounded stream.
+    /// This is a safety stop even though START_RAW_DATA carries its own duration.
+    private func scheduleWhoop5RawStreamStop(for peripheral: CBPeripheral, after seconds: TimeInterval) {
+        whoop5RawStreamStopWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self, weak peripheral] in
+            guard let self, let peripheral,
+                  self.connectedPeripheral?.identifier == peripheral.identifier,
+                  self.whoop5AutoIMUEnabled else { return }
+            self.sendWhoop5RawDataStop(to: peripheral)
+        }
+        whoop5RawStreamStopWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+        recordVendorTimeline("STOP_RAW_DATA safety stop scheduled · after \(Int(seconds))s")
+    }
+
+    /// Stop Gen5 raw streaming (STOP_RAW_DATA = 0x52, body [0x01]).
+    private func sendWhoop5RawDataStop(to peripheral: CBPeripheral) {
+        guard whoop5AutoIMUEnabled,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x52, payload: [0x01])
+        whoop5PendingWrites.append("STOP_RAW_DATA_60S")
+        recordVendorTimeline("STOP_RAW_DATA write requested · opcode 52 · revision 1 · seq=\(sequence)")
+        whoopIMUStatus = "60-second raw stream elapsed · STOP_RAW_DATA requested"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    /// Enable WHOOP 5.0 live HR (opcode 0x03, body [0x01]).
+    /// This is separate from subscribing to 180D/2A37 and FD4B notify CCCDs.
+    private func sendRealtimeHrEnable(to peripheral: CBPeripheral) {
+        guard !whoop5HRStreamEnableSent,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x03, payload: [0x01])
+        whoop5HRStreamEnableSent = true
+        whoop5PendingWrites.append("REALTIME_HR_ON")
+        let frameHex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
+        lastBLEEvent = "WHOOP realtime HR ON command requested · opcode 03 · sequence \(sequence)"
+        recordVendorTimeline("REALTIME_HR_ON write requested · FD4B0002 · seq=\(sequence) · \(frame.count) bytes · HEX: \(frameHex)")
+        statusText = "Connected · requesting WHOOP live HR stream"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    /// Gen5 outbound command envelope: CRC16-Modbus header + CRC32 padded inner.
+    private func buildWhoop5CommandFrame(sequence: UInt8, opcode: UInt8, payload: [UInt8]) -> Data {
+        var inner: [UInt8] = [0x23, sequence, opcode] + payload
+        while inner.count % 4 != 0 { inner.append(0) }
+        let declared = UInt16(inner.count + 4)
+        var header: [UInt8] = [0xAA, 0x01, UInt8(declared & 0xFF), UInt8((declared >> 8) & 0xFF), 0x00, 0x01]
+        let headerCRC = crc16Modbus(header)
+        header.append(UInt8(headerCRC & 0xFF))
+        header.append(UInt8((headerCRC >> 8) & 0xFF))
+        let payloadCRC = crc32(inner)
+        let tail: [UInt8] = [UInt8(payloadCRC & 0xFF), UInt8((payloadCRC >> 8) & 0xFF), UInt8((payloadCRC >> 16) & 0xFF), UInt8((payloadCRC >> 24) & 0xFF)]
+        return Data(header + inner + tail)
+    }
+
+    /// Route every validated HR source through the same live UI, chart and workout pipeline.
+    private func recordHeartRateSample(_ bpm: Int, source: String) {
+        let timestamp = Date()
+        liveHeartRateBPM = bpm
+        lastHeartRateAt = timestamp
+        if hrTimingFirstSampleAt == nil {
+            hrTimingFirstSampleAt = timestamp
+            let elapsed = hrTimingConnectionAt.map { timestamp.timeIntervalSince($0) } ?? 0
+            hrTimingEvents.append(String(format: "first HR +%.3fs (%@)", elapsed, source))
+        }
+        let sample = LiveHeartRateSample(timestamp: timestamp, bpm: bpm)
+        liveHeartRateSamples.append(sample)
+        liveHeartRateSamples.removeAll { timestamp.timeIntervalSince($0.timestamp) > 60 }
+        if liveHeartRateSamples.count > 120 {
+            liveHeartRateSamples.removeFirst(liveHeartRateSamples.count - 120)
+        }
+        evaluateAutomaticWorkoutDetection(bpm: bpm, at: timestamp)
+        if workoutIsRecording {
+            workoutHeartRateSamples.append(sample)
+            if workoutHeartRateSamples.count > 14_400 {
+                workoutHeartRateSamples.removeFirst(workoutHeartRateSamples.count - 14_400)
+            }
+            // Checkpoint periodically so an iOS process termination does not
+            // discard the entire in-progress workout.
+            if workoutHeartRateSamples.count.isMultiple(of: 10) {
+                // HR checkpoints must not re-encode the growing 100 Hz IMU buffer.
+                persistWorkoutSession(includeIMU: false)
+            }
+        }
+        heartRateUpdateCount += 1
+        lastBLEEvent = "\(source) · \(bpm) bpm · \(ISO8601DateFormatter().string(from: timestamp)) · sample #\(heartRateUpdateCount)"
+        statusText = "Live HR · \(bpm) bpm · \(heartRateUpdateCount) update(s)"
+    }
+
+    private func parseStandardHeartRateMeasurement(_ data: Data) -> Int? {
+        guard data.count >= 2 else { return nil }
+        let flags = data[data.startIndex]
+        let isUInt16 = (flags & 0x01) != 0
+        if isUInt16 {
+            guard data.count >= 3 else { return nil }
+            let low = UInt16(data[data.startIndex + 1])
+            let high = UInt16(data[data.startIndex + 2]) << 8
+            return Int(low | high)
+        }
+        return Int(data[data.startIndex + 1])
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        if let error {
+            discoveredProfile.append("Service error · \(service.uuid.uuidString) · \(error.localizedDescription)")
+            lastBLEEvent = "Characteristic discovery error · service \(service.uuid.uuidString) · \(error.localizedDescription)"
+        } else {
+            for characteristic in service.characteristics ?? [] {
+                discoveredProfile.append("Characteristic · service \(service.uuid.uuidString) → \(characteristic.uuid.uuidString) · \(propertyNames(characteristic.properties))")
+                if service.uuid == CBUUID(string: "180D"),
+                   characteristic.uuid == CBUUID(string: "2A37"),
+                   characteristic.properties.contains(.notify) {
+                    hrTimingStandardNotifyRequestedAt = Date()
+                    let elapsed = hrTimingConnectionAt.map { Date().timeIntervalSince($0) } ?? 0
+                    hrTimingEvents.append(String(format: "180D/2A37 notify requested +%.3fs", elapsed))
+                    peripheral.setNotifyValue(true, for: characteristic)
+                    lastBLEEvent = "Subscribed to standard Bluetooth Heart Rate Measurement (180D/2A37)"
+                }
+                let fd4bNotifyUUIDs: Set<String> = [
+                    "FD4B0003-CCE1-4033-93CE-002D5875F58A",
+                    "FD4B0004-CCE1-4033-93CE-002D5875F58A",
+                    "FD4B0005-CCE1-4033-93CE-002D5875F58A",
+                    "FD4B0007-CCE1-4033-93CE-002D5875F58A"
+                ]
+                let characteristicUUID = characteristic.uuid.uuidString.uppercased()
+                if motionProbeUUIDPrefixes.contains(where: { characteristicUUID.hasPrefix($0) }),
+                   characteristic.properties.contains(.notify) || characteristic.properties.contains(.indicate) {
+                    // Archive string clusters are discovery leads, not a verified
+                    // subscription map. Record capability and parent service, but
+                    // do not enable notifications on every candidate family.
+                    candidateNotificationStates[characteristicUUID] =
+                        "discovered under \(service.uuid.uuidString.uppercased()) · \(propertyNames(characteristic.properties)) · subscription withheld pending role verification"
+                }
+                if service.uuid == whoop5ServiceUUID && characteristic.uuid == whoop5CommandUUID {
+                    whoop5CommandCharacteristic = characteristic
+                }
+                if service.uuid == whoop5ServiceUUID,
+                   fd4bNotifyUUIDs.contains(characteristicUUID),
+                   characteristic.properties.contains(.notify) {
+                    vendorNotificationStates[characteristicUUID] = "subscription requested"
+                    recordVendorTimeline("pre-hello notify request · \(characteristicUUID)")
+                    peripheral.setNotifyValue(true, for: characteristic)
+                }
+                let key = ObjectIdentifier(characteristic)
+                pendingDescriptorCharacteristics.insert(key)
+                peripheral.discoverDescriptors(for: characteristic)
+            }
+        }
+        pendingCharacteristicServices.remove(ObjectIdentifier(service))
+        if pendingCharacteristicServices.isEmpty {
+            // Do not start the WHOOP session while CoreBluetooth is still
+            // discovering characteristics on other GATT services. The old
+            // per-service trigger could send CLIENT_HELLO before the complete
+            // profile (including any companion service) was known.
+            startWhoopHelloAfterGattDiscovery(peripheral)
+        }
+        if pendingCharacteristicServices.isEmpty && pendingDescriptorCharacteristics.isEmpty {
+            updateGattDiscoveryCompletionStatus()
+        } else if pendingCharacteristicServices.isEmpty {
+            statusText = "Inspecting GATT descriptors · \(pendingDescriptorCharacteristics.count) remaining"
+        } else {
+            statusText = "Inspecting characteristics · \(pendingCharacteristicServices.count) service(s) remaining"
+        }
+    }
+
+    /// Starts exactly one existing CLIENT_HELLO only after every discovered
+    /// service has completed characteristic discovery. Packet bytes and write
+    /// type remain unchanged; this fixes the cross-service discovery race.
+    private func startWhoopHelloAfterGattDiscovery(_ peripheral: CBPeripheral) {
+        guard !whoop5HelloSent else { return }
+        guard let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else {
+            let hasWhoopService = discoveredProfile.contains {
+                $0.contains("Service · \(whoop5ServiceUUID.uuidString)")
+            }
+            if hasWhoopService {
+                lastBLEEvent = "WHOOP 5.0 command characteristic FD4B0002 not found after complete GATT discovery"
+                recordVendorTimeline("CLIENT_HELLO withheld · FD4B0002 unavailable after all services discovered")
+            }
+            return
+        }
+
+        let hello: [UInt8] = [
+            0xAA, 0x01, 0x08, 0x00, 0x00, 0x01, 0xE6, 0x71,
+            0x23, 0x01, 0x91, 0x01, 0x36, 0x3E, 0x5C, 0x8D
+        ]
+        whoop5HelloSent = true
+        whoop5HelloWritePending = true
+        whoop5PendingWrites.append("CLIENT_HELLO")
+        lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write requested · FD4B0002 · 16 bytes · all services discovered"
+        recordVendorTimeline("CLIENT_HELLO write requested · FD4B0002 · 16 bytes · all service characteristics discovered")
+        whoopSessionPhase = "CLIENT_HELLO write pending · generation \(whoopConnectionGeneration)"
+        statusText = "Connected · starting WHOOP 5.0 secure session"
+        peripheral.writeValue(Data(hello), for: command, type: .withResponse)
+    }
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard connectedPeripheral?.identifier == peripheral.identifier,
+              characteristic.uuid == whoop5CommandUUID,
+              !whoop5PendingWrites.isEmpty else { return }
+        let kind = whoop5PendingWrites.removeFirst()
+
+        if kind == "START_RAW_DATA_60S" {
+            if let error {
+                whoop5AutoIMUStartRequested = false
+                whoopIMUStatus = "START_RAW_DATA write failed · \(error.localizedDescription)"
+                recordVendorTimeline("START_RAW_DATA write callback · failed · \(error.localizedDescription)")
+            } else {
+                whoopIMUStatus = "START_RAW_DATA write acknowledged · awaiting strap response"
+                recordVendorTimeline("START_RAW_DATA write callback · acknowledged by CoreBluetooth")
+            }
+            return
+        }
+        if kind == "STOP_RAW_DATA_60S" {
+            if let error {
+                whoopIMUStatus = "STOP_RAW_DATA write failed · \(error.localizedDescription)"
+                recordVendorTimeline("STOP_RAW_DATA write callback · failed · \(error.localizedDescription)")
+            } else {
+                whoopIMUStatus = "STOP_RAW_DATA write acknowledged · awaiting strap response"
+                recordVendorTimeline("STOP_RAW_DATA write callback · acknowledged by CoreBluetooth")
+            }
+            return
+        }
+        if kind == "REALTIME_HR_ON" {
+            if let error {
+                recordVendorTimeline("REALTIME_HR_ON write callback · failed · \(error.localizedDescription)")
+                whoop5HRStreamEnableSent = false
+                lastBLEEvent = "WHOOP realtime HR ON write failed · \(error.localizedDescription)"
+                statusText = "Connected · live HR command failed"
+                return
+            }
+            recordVendorTimeline("REALTIME_HR_ON write callback · acknowledged by CoreBluetooth")
+            lastBLEEvent = "WHOOP realtime HR ON write acknowledged by CoreBluetooth · opcode 03"
+            statusText = whoop5HRStreamConfirmed
+                ? "Connected · WHOOP realtime HR stream confirmed"
+                : "Connected · HR stream requested · awaiting WHOOP confirmation/data"
+            return
+        }
+
+        guard kind == "CLIENT_HELLO" else { return }
+        whoop5HelloWritePending = false
+        if let error {
+            lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write failed · \(error.localizedDescription)"
+            statusText = "Connected · WHOOP session handshake failed"
+            return
+        }
+        whoop5HelloWriteAcknowledged = true
+        whoopSessionPhase = "CLIENT_HELLO write acknowledged · awaiting strap response"
+        lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write acknowledged by CoreBluetooth · FD4B0002"
+        recordVendorTimeline("CLIENT_HELLO write callback · acknowledged")
+        statusText = "Connected · WHOOP 5.0 hello write acknowledged · awaiting response"
+        // Re-arm vendor notifications after the command write callback, matching
+        // the NOOP post-hello sequence. The callback confirms the write operation,
+        // not independently that the strap accepted or encrypted the session.
+        guard let service = characteristic.service else { return }
+        for item in service.characteristics ?? [] {
+            let uuid = item.uuid.uuidString.uppercased()
+            if ["FD4B0003-CCE1-4033-93CE-002D5875F58A",
+                "FD4B0004-CCE1-4033-93CE-002D5875F58A",
+                "FD4B0005-CCE1-4033-93CE-002D5875F58A",
+                "FD4B0007-CCE1-4033-93CE-002D5875F58A"].contains(uuid),
+               item.properties.contains(.notify) {
+                let priorState = vendorNotificationStates[uuid] ?? ""
+                // The pre-hello request may still be awaiting CoreBluetooth's
+                // notification-state callback. Do not enqueue a duplicate CCCD
+                // operation; only retry channels that actually ended disabled
+                // or failed, and leave already-enabled channels untouched.
+                let requestAlreadyPending =
+                    priorState == "subscription requested" ||
+                    priorState == "post-hello subscription requested"
+                guard !item.isNotifying, !requestAlreadyPending else {
+                    recordVendorTimeline("post-hello notify skipped · \(uuid) · \(item.isNotifying ? "already enabled" : "request pending")")
+                    continue
+                }
+                whoop5PostHelloNotifyRetryAttempted.insert(uuid)
+                vendorNotificationStates[uuid] = "post-hello subscription requested"
+                recordVendorTimeline("post-hello notify request · \(uuid)")
+                peripheral.setNotifyValue(true, for: item)
+            }
+        }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        let notificationUUID = characteristic.uuid.uuidString.uppercased()
+        if motionProbeUUIDPrefixes.contains(where: { notificationUUID.hasPrefix($0) }) {
+            candidateNotificationStates[notificationUUID] = error.map { "failed · \($0.localizedDescription)" }
+                ?? (characteristic.isNotifying ? "enabled" : "disabled")
+            lastBLEEvent = "WHOOP candidate notification \(candidateNotificationStates[notificationUUID] ?? "updated") · \(notificationUUID)"
+            return
+        }
+        if characteristic.service?.uuid == CBUUID(string: "FD4B0001-CCE1-4033-93CE-002D5875F58A") {
+            let uuid = characteristic.uuid.uuidString.uppercased()
+            vendorNotificationStates[uuid] = error.map { "failed · \($0.localizedDescription)" }
+                ?? (characteristic.isNotifying ? "enabled" : "disabled")
+            recordVendorTimeline("notify callback · \(uuid) · \(vendorNotificationStates[uuid] ?? "updated") · error=\(error?.localizedDescription ?? "none")")
+            lastBLEEvent = "WHOOP vendor notification \(vendorNotificationStates[uuid] ?? "updated") · \(uuid)"
+            // If the pre-hello CCCD operation completes disabled after the
+            // hello write acknowledgement, retry that channel exactly once.
+            // If it completed before the acknowledgement, didWriteValueFor
+            // handles the retry instead. This closes the callback-order race
+            // without creating an unbounded notification retry loop.
+            if !characteristic.isNotifying,
+               (error != nil || vendorNotificationStates[uuid] == "disabled"),
+               whoop5HelloWriteAcknowledged,
+               !whoop5PostHelloNotifyRetryAttempted.contains(uuid),
+               characteristic.properties.contains(.notify) {
+                whoop5PostHelloNotifyRetryAttempted.insert(uuid)
+                vendorNotificationStates[uuid] = "post-hello subscription requested"
+                recordVendorTimeline("post-hello notify retry · \(uuid) · initial callback disabled/failed")
+                peripheral.setNotifyValue(true, for: characteristic)
+            }
+            return
+        }
+        guard characteristic.service?.uuid == CBUUID(string: "180D"),
+              characteristic.uuid == CBUUID(string: "2A37") else { return }
+        if let error {
+            isStandardHeartRateNotifying = false
+            lastBLEEvent = "Standard HR subscription failed · \(error.localizedDescription)"
+            return
+        }
+        isStandardHeartRateNotifying = characteristic.isNotifying
+        if characteristic.isNotifying {
+            hrTimingStandardNotifyEnabledAt = Date()
+            let elapsed = hrTimingConnectionAt.map { Date().timeIntervalSince($0) } ?? 0
+            hrTimingEvents.append(String(format: "180D/2A37 notify enabled +%.3fs", elapsed))
+        }
+        lastBLEEvent = characteristic.isNotifying
+            ? "Standard Heart Rate Measurement notifications enabled · waiting for first sample"
+            : "Standard Heart Rate Measurement notifications disabled"
+        if characteristic.isNotifying && liveHeartRateBPM == nil {
+            statusText = "Connected · HR notifications enabled · waiting for first sample"
+        }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverDescriptorsFor characteristic: CBCharacteristic, error: Error?) {
+        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        let serviceUUID = characteristic.service?.uuid.uuidString ?? "Unknown service"
+        let displayKey = "\(serviceUUID)|\(characteristic.uuid.uuidString)"
+        let key = ObjectIdentifier(characteristic)
+        if let error {
+            discoveredProfile.append("Descriptor error · \(displayKey) · \(error.localizedDescription)")
+            lastBLEEvent = "Descriptor discovery error · \(displayKey) · \(error.localizedDescription)"
+        } else {
+            let descriptors = characteristic.descriptors ?? []
+            if descriptors.isEmpty {
+                discoveredProfile.append("Descriptors · \(displayKey) · none exposed")
+            } else {
+                for descriptor in descriptors {
+                    discoveredProfile.append("Descriptor · service \(serviceUUID) → characteristic \(characteristic.uuid.uuidString) → \(descriptor.uuid.uuidString)")
+                }
+            }
+        }
+        pendingDescriptorCharacteristics.remove(key)
+        if pendingCharacteristicServices.isEmpty && pendingDescriptorCharacteristics.isEmpty {
+            updateGattDiscoveryCompletionStatus()
+        } else if pendingCharacteristicServices.isEmpty {
+            statusText = "Inspecting GATT descriptors · \(pendingDescriptorCharacteristics.count) remaining"
+        }
+    }
+
+}
