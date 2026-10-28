@@ -981,12 +981,17 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         let invalidatedIDs = Array(Set(invalidatedServices.map { $0.uuid.uuidString })).sorted()
-        pendingCharacteristicServices.removeAll()
-        pendingDescriptorCharacteristics.removeAll()
-        discoveredProfile.removeAll()
         let invalidatedSummary = invalidatedIDs.isEmpty ? "unspecified services" : invalidatedIDs.joined(separator: ", ")
+
+        // Service invalidation invalidates the old CBCharacteristic instances too.
+        // Start a clean GATT session so we rediscover the command characteristic,
+        // resend CLIENT_HELLO once, and rebuild notification state against fresh
+        // characteristic objects instead of retaining stale session flags.
+        resetGattSessionForReconnect()
+        peripheral.delegate = self
+        recordVendorTimeline("GATT services invalidated · \(invalidatedSummary) · restarting GATT session")
         lastBLEEvent = "GATT services invalidated · \(invalidatedSummary) · refreshing profile"
-        statusText = "GATT services changed · refreshing profile"
+        statusText = "GATT services changed · restarting WHOOP handshake"
         peripheral.discoverServices(nil)
     }
 
