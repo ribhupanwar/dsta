@@ -1513,8 +1513,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             if command == 10 || command == 11 {
                 let name = command == 10 ? "SET_CLOCK" : "GET_CLOCK"
-                recordVendorTimeline("\\(name) response · seq=\\(echoedSequence) · \\(resultName) · CRC valid")
-                return "COMMAND_RESPONSE · \\(name)(\\(command)) · \\(resultName)"
+                recordVendorTimeline("\(name) response · seq=\(echoedSequence) · \(resultName) · CRC valid")
+                return "COMMAND_RESPONSE · \(name)(\(command)) · \(resultName)"
             }
             if command == 3 {
                 guard result == 1 else {
@@ -1532,9 +1532,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 } else {
                     whoop5HistoricalRequestSent = false
                     whoop5HistoricalOffloadActive = false
-                    whoopHistoricalOffloadStatus = "Historical request rejected · \\(resultName)"
+                    whoopHistoricalOffloadStatus = "Historical request rejected · \(resultName)"
                 }
-                return "COMMAND_RESPONSE · SEND_HISTORICAL_DATA(22) · \\(resultName)"
+                return "COMMAND_RESPONSE · SEND_HISTORICAL_DATA(22) · \(resultName)"
             }
             if command == 23 {
                 if result == 2 {
@@ -1542,9 +1542,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 } else if result == 1 {
                     recordVendorTimeline("HISTORICAL_DATA_RESULT(23) accepted · trim advanced")
                 } else {
-                    whoopHistoricalOffloadStatus = "History ACK response · \\(resultName) · strap may replay chunk"
+                    whoopHistoricalOffloadStatus = "History ACK response · \(resultName) · strap may replay chunk"
                 }
-                return "COMMAND_RESPONSE · HISTORICAL_DATA_RESULT(23) · \\(resultName)"
+                return "COMMAND_RESPONSE · HISTORICAL_DATA_RESULT(23) · \(resultName)"
             }
             return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
 
@@ -1876,9 +1876,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         whoop5PendingWrites.append("SET_CLOCK")
         whoop5PendingWrites.append("GET_CLOCK")
         whoopHistoricalOffloadStatus = "Strap clock sync requested · history waits for HR activation"
-        recordVendorTimeline("SET_CLOCK(10) requested · 8-byte Unix seconds · seq=\\(setClockSequence)")
+        recordVendorTimeline("SET_CLOCK(10) requested · 8-byte Unix seconds · seq=\(setClockSequence)")
         peripheral.writeValue(setClockFrame, for: command, type: .withResponse)
-        recordVendorTimeline("GET_CLOCK(11) requested · seq=\\(getClockSequence)")
+        recordVendorTimeline("GET_CLOCK(11) requested · seq=\(getClockSequence)")
         peripheral.writeValue(getClockFrame, for: command, type: .withResponse)
 
         whoop5ClockSyncWorkItem?.cancel()
@@ -2003,15 +2003,15 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoop5HistoricalChunkFrames.removeAll(keepingCapacity: true)
                 if let deviceID = connectedPeripheral?.identifier.uuidString {
                     UserDefaults.standard.set(Int(trim),
-                        forKey: "pulseforge.whoop5.history.lastTrim.\\(deviceID)")
+                        forKey: "pulseforge.whoop5.history.lastTrim.\(deviceID)")
                 }
-                whoopHistoricalOffloadStatus = "Archived \\(persisted) raw frame(s) · trim \\(trim) · ACK requested"
-                recordVendorTimeline("HISTORY_END · \\(persisted) raw type-47 frame(s) durable · trim=\\(trim)")
+                whoopHistoricalOffloadStatus = "Archived \(persisted) raw frame(s) · trim \(trim) · ACK requested"
+                recordVendorTimeline("HISTORY_END · \(persisted) raw type-47 frame(s) durable · trim=\(trim)")
                 sendWhoop5HistoricalChunkAck(to: peripheral, endData: endData, trim: trim)
-                return "METADATA · HISTORY_END · \\(persisted) raw frame(s) persisted · trim \\(trim) · ACK requested"
+                return "METADATA · HISTORY_END · \(persisted) raw frame(s) persisted · trim \(trim) · ACK requested"
             } catch {
-                whoopHistoricalOffloadStatus = "Archive write failed · chunk NOT acknowledged · \\(error.localizedDescription)"
-                recordVendorTimeline("HISTORY_END storage failure · ACK withheld · \\(error.localizedDescription)")
+                whoopHistoricalOffloadStatus = "Archive write failed · chunk NOT acknowledged · \(error.localizedDescription)"
+                recordVendorTimeline("HISTORY_END storage failure · ACK withheld · \(error.localizedDescription)")
                 return "METADATA · HISTORY_END · storage failed · ACK withheld"
             }
 
@@ -2019,7 +2019,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             do {
                 let persisted = try persistWhoop5HistoricalChunk(whoop5HistoricalChunkFrames)
                 whoop5HistoricalChunkFrames.removeAll(keepingCapacity: true)
-                whoopHistoricalOffloadStatus = "Historical offload complete · \\(persisted) trailing frame(s) archived"
+                whoopHistoricalOffloadStatus = "Historical offload complete · \(persisted) trailing frame(s) archived"
             } catch {
                 whoopHistoricalOffloadStatus = "Offload ended · trailing archive failed · unacked data remains on strap"
             }
@@ -2029,7 +2029,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return "METADATA · HISTORY_COMPLETE · offload finished"
 
         case .other(let subtype):
-            return "METADATA · subtype \\(subtype) · CRC valid"
+            return "METADATA · subtype \(subtype) · CRC valid"
 
         case .invalid:
             whoopHistoricalOffloadStatus = "Malformed historical metadata · no ACK sent"
@@ -2208,10 +2208,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         }
         if kind == "SET_CLOCK" || kind == "GET_CLOCK" {
             if let error {
-                recordVendorTimeline("\\(kind) write failed · \\(error.localizedDescription)")
-                whoopHistoricalOffloadStatus = "Strap clock sync write failed · \\(kind) · history may return no sensor records"
+                recordVendorTimeline("\(kind) write failed · \(error.localizedDescription)")
+                whoopHistoricalOffloadStatus = "Strap clock sync write failed · \(kind) · history may return no sensor records"
             } else {
-                recordVendorTimeline("\\(kind) write acknowledged by CoreBluetooth")
+                recordVendorTimeline("\(kind) write acknowledged by CoreBluetooth")
             }
             return
         }
