@@ -89,75 +89,103 @@ struct TodayDashboard: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 22) {
-                HeaderView(eyebrow: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)).uppercased(), title: "Your day")
-                RecoveryHero()
-                HStack(spacing: 12) {
-                    MetricTile(title: "SLEEP", value: "—", unit: "performance", symbol: "moon.zzz.fill")
-                    MetricTile(title: "STRAIN", value: "—", unit: "daily load", symbol: "flame.fill")
+            VStack(alignment: .leading, spacing: 24) {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)).uppercased())
+                            .font(.system(size: 10, weight: .bold)).tracking(1.5)
+                            .foregroundStyle(ForgeColors.muted)
+                        Text("Today").font(.system(size: 32, weight: .bold, design: .rounded))
+                            .tracking(-0.8)
+                    }
+                    Spacer()
+                    Image(systemName: "person.crop.circle")
+                        .font(.system(size: 27, weight: .light))
+                        .foregroundStyle(ForgeColors.muted)
                 }
+
+                VStack(alignment: .leading, spacing: 16) {
+                    SectionHeader(title: "YOUR SCORES")
+                    HStack(alignment: .top, spacing: 0) {
+                        ScoreRing(title: "RECOVERY", value: nil, tint: Color(red: 0.25, green: 0.82, blue: 0.48))
+                        Spacer(minLength: 2)
+                        ScoreRing(title: "SLEEP", value: nil, tint: Color(red: 0.35, green: 0.62, blue: 0.96))
+                        Spacer(minLength: 2)
+                        ScoreRing(title: "STRAIN", value: nil, tint: Color(red: 0.98, green: 0.58, blue: 0.27))
+                    }
+                    .padding(.vertical, 8)
+                    Text("Scores will appear when the required WHOOP and sleep data is available.")
+                        .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                }
+                .padding(18)
+                .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                .overlay(RoundedRectangle(cornerRadius: 22).stroke(ForgeColors.stroke, lineWidth: 1))
+
+                VStack(alignment: .leading, spacing: 13) {
+                    SectionHeader(title: "HEALTH MONITOR", action: "View details")
+                    HStack(spacing: 10) {
+                        CompactMetric(title: "HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
+                        CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
+                        CompactMetric(title: "RESP. RATE", value: health.respiratoryRate.map { String(format: "%.1f", $0) } ?? "—", unit: "br/min")
+                    }
+                    HStack(spacing: 10) {
+                        CompactMetric(title: "BLOOD O₂", value: health.bloodOxygenPercent.map { String(format: "%.0f", $0) } ?? "—", unit: "%")
+                        CompactMetric(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                        CompactMetric(title: "LIVE HR", value: bluetooth.freshHeartRateBPM.map(String.init) ?? "—", unit: "bpm")
+                    }
+                }
+
                 LiveHeartRateCard()
-                LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE · LAST 60 SECONDS")
-                SectionHeader(title: "YOUR HEALTH", action: "View trends")
-                HStack(spacing: 12) {
-                    CompactMetric(title: "HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
-                    CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
-                    CompactMetric(title: "SLEEP DEBT", value: "—", unit: "min")
-                }
-                SectionHeader(title: "HEALTH MONITOR")
-                HStack(spacing: 12) {
-                    CompactMetric(title: "RESP. RATE", value: health.respiratoryRate.map { String(format: "%.1f", $0) } ?? "—", unit: "br/min")
-                    CompactMetric(title: "BLOOD O₂", value: health.bloodOxygenPercent.map { String(format: "%.0f", $0) } ?? "—", unit: "%")
-                    CompactMetric(title: "SKIN TEMP", value: "—", unit: "°")
-                }
+                LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE HEART RATE")
                 ConnectPrompt()
                 JournalPrompt()
                 HStack {
-                    Text(health.lastRefreshDate.map { "HEALTH DATA CHECKED · \($0.formatted(date: .omitted, time: .shortened))" } ?? "PULL DOWN TO REFRESH HEALTH DATA")
+                    Text(health.lastRefreshDate.map { "DATA UPDATED · \($0.formatted(date: .omitted, time: .shortened))" } ?? "PULL DOWN TO REFRESH")
                         .font(.system(size: 9, weight: .semibold)).tracking(0.6)
                         .foregroundStyle(ForgeColors.muted)
                     Spacer()
                     if health.isRefreshing { ProgressView().tint(ForgeColors.lime).scaleEffect(0.8) }
                 }
-                Text("Metrics appear after you connect a supported wearable or allow Apple Health access.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(ForgeColors.muted)
+                Text("Unavailable scores stay blank until the underlying data and calculation are verified.")
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                     .padding(.bottom, 110)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
+            .padding(.horizontal, 18)
+            .padding(.top, 16)
         }
         .refreshable { health.refresh() }
     }
 }
 
-struct RecoveryHero: View {
+struct ScoreRing: View {
+    let title: String
+    let value: Int?
+    let tint: Color
+
+    private var progress: Double { min(1, max(0, Double(value ?? 0) / 100)) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Text("RECOVERY").font(.system(size: 11, weight: .bold, design: .rounded)).tracking(1.8)
-                    .foregroundStyle(ForgeColors.muted)
-                Spacer()
-                Image(systemName: "info.circle").foregroundStyle(ForgeColors.muted)
+        VStack(spacing: 9) {
+            ZStack {
+                Circle()
+                    .stroke(ForgeColors.track, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(tint, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text(value.map(String.init) ?? "—")
+                    .font(.system(size: 25, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
             }
-            HStack(spacing: 20) {
-                ZStack {
-                    Circle().stroke(ForgeColors.track, style: StrokeStyle(lineWidth: 10, lineCap: .round, dash: [3, 5]))
-                    Text("—").font(.system(size: 42, weight: .light, design: .rounded)).foregroundStyle(.white)
-                }
-                .frame(width: 116, height: 116)
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("Waiting for data").font(.system(size: 19, weight: .semibold))
-                    Text("Connect your band to calculate your recovery.")
-                        .font(.system(size: 13)).foregroundStyle(ForgeColors.muted).fixedSize(horizontal: false, vertical: true)
-                    Text("NO SCORE YET").font(.system(size: 9, weight: .bold)).tracking(1.5).foregroundStyle(ForgeColors.lime)
-                        .padding(.top, 4)
-                }
-            }
+            .frame(width: 82, height: 82)
+            Text(title)
+                .font(.system(size: 9, weight: .bold)).tracking(0.8)
+                .foregroundStyle(ForgeColors.muted)
+                .lineLimit(1).minimumScaleFactor(0.8)
         }
-        .padding(20)
-        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 24))
-        .overlay(RoundedRectangle(cornerRadius: 24).stroke(ForgeColors.stroke, lineWidth: 1))
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
     }
 }
 
