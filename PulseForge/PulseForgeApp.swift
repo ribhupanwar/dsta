@@ -421,15 +421,37 @@ struct WorkoutRecordingCard: View {
                     Text(bluetooth.workoutIsRecording ? "RECORDING" : "READY")
                         .font(.system(size: 9, weight: .bold)).foregroundStyle(bluetooth.workoutIsRecording ? ForgeColors.lime : ForgeColors.muted)
                 }
-                HStack(alignment: .firstTextBaseline) {
-                    Text(durationText(at: context.date)).font(.system(size: 28, weight: .light, design: .rounded)).monospacedDigit()
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 3) {
-                        Text("\(bluetooth.workoutHeartRateSamples.count) SAMPLES")
-                        Text(averageBPM.map { "AVG \($0) BPM" } ?? "AVG — BPM")
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("LIVE HEART RATE")
+                            .font(.system(size: 8, weight: .bold)).tracking(0.8)
+                            .foregroundStyle(ForgeColors.muted)
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(bluetooth.freshHeartRateBPM.map(String.init) ?? "—")
+                                .font(.system(size: 38, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(bluetooth.freshHeartRateBPM == nil ? ForgeColors.muted : ForgeColors.lime)
+                            Text("BPM").font(.system(size: 9, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                        }
+                        Text(bluetooth.connectedName == nil ? "BAND DISCONNECTED" : (bluetooth.freshHeartRateBPM == nil ? "WAITING FOR FRESH HR" : "WHOOP CONNECTED"))
+                            .font(.system(size: 8, weight: .bold)).tracking(0.5)
+                            .foregroundStyle(ForgeColors.muted)
                     }
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
+                    Spacer(minLength: 4)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("ELAPSED")
+                            .font(.system(size: 8, weight: .bold)).tracking(0.8)
+                            .foregroundStyle(ForgeColors.muted)
+                        Text(durationText(at: context.date))
+                            .font(.system(size: 23, weight: .light, design: .rounded))
+                            .monospacedDigit()
+                        Text("\(bluetooth.workoutHeartRateSamples.count) SAMPLES · AVG \(averageBPM.map(String.init) ?? "—")")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(ForgeColors.muted)
+                    }
                 }
+                .padding(12)
+                .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                 if let savedStart = bluetooth.lastWorkoutStartedAt {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("LAST SAVED SESSION · " + savedStart.formatted(date: .abbreviated, time: .shortened))
