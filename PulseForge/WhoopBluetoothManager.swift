@@ -1283,36 +1283,16 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let resultName = [0: "FAILURE", 1: "SUCCESS", 2: "PENDING", 3: "UNSUPPORTED"][result] ?? "UNKNOWN(\(result))"
             recordVendorTimeline("COMMAND_RESPONSE · cmd=\(command) · seq=\(echoedSequence) · result=\(resultName) · frame=\(b.count) bytes · CRC valid")
             if command == 81 {
-                whoop5AutoIMUEnabled = false
-                whoopIMUStatus = result == 1
-                    ? "Raw-data command acknowledged · IMU mode not requested (wire format unverified)"
-                    : "Raw-data command rejected · \(resultName)"
-                return "COMMAND_RESPONSE · START_RAW_DATA(81) · \(resultName) · no follow-up command sent"
-            }
-            if command == 63 {
                 if result == 2 {
-                    whoopIMUStatus = "R10/R11 realtime request pending · awaiting final response"
-                    return "COMMAND_RESPONSE · SEND_R10_R11_REALTIME(63) · PENDING"
-                }
-                guard result == 1 else {
-                    whoop5AutoIMUEnabled = false
-                    whoopIMUStatus = "R10/R11 realtime request rejected · \(resultName)"
-                    return "COMMAND_RESPONSE · SEND_R10_R11_REALTIME(63) · \(resultName)"
-                }
-                sendWhoop5IMUModeEnable(to: peripheral)
-                return "COMMAND_RESPONSE · SEND_R10_R11_REALTIME(63) SUCCESS · IMU mode request queued"
-            }
-            if command == 106 {
-                if result == 2 {
-                    whoopIMUStatus = "IMU mode request pending · awaiting final response"
-                    return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · PENDING"
+                    whoopIMUStatus = "START_RAW_DATA pending · awaiting final response"
+                    return "COMMAND_RESPONSE · START_RAW_DATA(81) · PENDING"
                 }
                 whoop5AutoIMUEnabled = result == 1
                 whoopIMUStatus = result == 1
-                    ? "IMU mode enabled · waiting for realtime IMU packets (type 51)"
-                    : "IMU mode request rejected · \(resultName)"
-                recordVendorTimeline("TOGGLE_IMU_MODE(106) response · \(resultName)")
-                return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · \(resultName)"
+                    ? "Bounded raw stream accepted · waiting for Gen5 R21 packets (type 43)"
+                    : "START_RAW_DATA rejected · \(resultName)"
+                recordVendorTimeline("START_RAW_DATA(81) response · \(resultName)")
+                return "COMMAND_RESPONSE · START_RAW_DATA(81) · \(resultName)"
             }
             if command == 145 {
                 if result == 1 && echoedSequence == 1 {
@@ -1334,14 +1314,36 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             if command == 3 {
                 guard result == 1 else {
-                    return "COMMAND_RESPONSE · REALTIME_HR_ON(3) · \(resultName) · IMU start sequence withheld"
+                    return "COMMAND_RESPONSE · REALTIME_HR_ON(3) · \(resultName) · bounded raw stream withheld"
                 }
-                sendWhoop5R10R11Enable(to: peripheral)
-                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · R10/R11 realtime request sent"
+                sendWhoop5RawDataStart(to: peripheral, durationMilliseconds: 60_000)
+                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · bounded 60-second raw stream requested"
             }
             return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
 
-        case 51: // REALTIME_IMU_DATA_STREAM; preserve verified frame bytes until subtype parser is ported.
+        case 43: // Gen5 R21 realtime IMU buffer (0x2B); retain raw until device capture validates scales.
+            whoopIMUFrameCount += 1
+            whoopIMULastFrameAt = Date()
+            whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
+            let capturedAt = ISO8601DateFormatter().string(from: Date())
+            whoopIMURawFrameHistory.append("type=43 · \(capturedAt) · \(whoopIMULastRawFrameHex)")
+            if whoopIMURawFrameHistory.count > 4 {
+                whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
+            }
+            guard b.count == 1232, b[0] == 0x2B, b[1] == 21, b[2] == 0x80 else {
+                whoopIMUStatus = "Gen5 R21 candidate received · \(b.count) bytes · header/length mismatch · raw retained"
+                return "GEN5_R21_IMU(0x2B) · candidate retained · header/length validation failed"
+            }
+            let accelCount = Int(b[16]) | (Int(b[17]) << 8)
+            let gyroCount = Int(b[622]) | (Int(b[623]) << 8)
+            guard (1...100).contains(accelCount), (1...100).contains(gyroCount) else {
+                whoopIMUStatus = "Gen5 R21 frame rejected · invalid sample counts · raw retained"
+                return "GEN5_R21_IMU(0x2B) · invalid counts accel=\(accelCount) gyro=\(gyroCount)"
+            }
+            whoopIMUStatus = "Gen5 R21 IMU frame validated · \(accelCount) accel + \(gyroCount) gyro samples · raw retained · scale uncalibrated"
+            return "GEN5_R21_IMU(0x2B) · 1232 bytes · header valid · accel=\(accelCount) gyro=\(gyroCount) · raw retained"
+
+        case 51: // Existing REALTIME_IMU_DATA_STREAM path retained independently; do not conflate with Gen5 R21.
             whoopIMUFrameCount += 1
             whoopIMULastFrameAt = Date()
             whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
@@ -1457,9 +1459,34 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         return crc ^ 0xFFFFFFFF
     }
 
-    // Raw-data activation is intentionally not automated yet. The supplied
-    // WHOOP audit exposes revision-aware command/parser types, but not enough
-    // wire-level evidence to validate command payloads or activation ordering.
+    /// Start Gen5 raw streaming with a bounded revision-2 duration.
+    /// OpenStrap documents START_RAW_DATA (0x51) body [0x02][u32 duration-ms LE].
+    /// Never use revision 1: the strap may default to a full 24-hour stream.
+    private func sendWhoop5RawDataStart(to peripheral: CBPeripheral,
+                                         durationMilliseconds: UInt32) {
+        guard !whoop5AutoIMUStartRequested,
+              durationMilliseconds > 0,
+              durationMilliseconds <= 86_400_000,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        whoop5AutoIMUStartRequested = true
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let duration = durationMilliseconds
+        let payload: [UInt8] = [
+            0x02,
+            UInt8(duration & 0xFF),
+            UInt8((duration >> 8) & 0xFF),
+            UInt8((duration >> 16) & 0xFF),
+            UInt8((duration >> 24) & 0xFF)
+        ]
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x51, payload: payload)
+        whoop5PendingWrites.append("START_RAW_DATA_60S")
+        let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
+        recordVendorTimeline("START_RAW_DATA write requested · opcode 51 · revision 2 · duration=\(durationMilliseconds)ms · seq=\(sequence) · HEX: \(hex)")
+        whoopIMUStatus = "Bounded 60-second Gen5 raw stream requested · awaiting command response"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
 
     /// Enable WHOOP 5.0 live HR (opcode 0x03, body [0x01]).
     /// This is separate from subscribing to 180D/2A37 and FD4B notify CCCDs.
