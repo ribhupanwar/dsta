@@ -434,9 +434,15 @@ struct WorkoutRecordingCard: View {
                 .buttonStyle(.plain)
                 .disabled(!bluetooth.workoutIsRecording && bluetooth.connectedName == nil)
                 Text(bluetooth.workoutIsRecording
-                     ? "Recording WHOOP heart-rate samples locally on this iPhone."
-                     : "Start a session while connected. The latest saved session stays on this iPhone.")
+                     ? (bluetooth.workoutRecordingIsAutomatic
+                        ? "Automatically detected from sustained elevated HR. Activity type is not inferred yet."
+                        : "Recording WHOOP heart-rate samples locally on this iPhone.")
+                     : "Automatic detection monitors sustained HR elevation; manual start remains available.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                Text("AUTO-DETECTION · " + bluetooth.workoutDetectionStatus.uppercased())
+                    .font(.system(size: 8, weight: .semibold)).tracking(0.5)
+                    .foregroundStyle(ForgeColors.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(16)
             .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
