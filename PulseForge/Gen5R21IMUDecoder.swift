@@ -1,6 +1,6 @@
 import Foundation
 
-/// Pure decoder for WHOOP Gen5 realtime R21 (packet type 0x2B).
+/// Pure decoder for WHOOP Gen5 R21 IMU buffers carried by live 0x2B or historical/offload 0x2F frames.
 /// Input is the complete CRC-validated transport frame, including its 8-byte header.
 enum Gen5R21IMUDecoder {
     enum DecodeError: Error, Equatable {
@@ -12,7 +12,7 @@ enum Gen5R21IMUDecoder {
     static func decode(_ frame: [UInt8]) throws -> [WhoopIMUSample] {
         guard frame.count == 1244 else { throw DecodeError.invalidFrameLength(frame.count) }
         let inner = Array(frame[8..<1240])
-        guard inner.count == 1232, inner[0] == 0x2B, inner[1] == 21 else {
+        guard inner.count == 1232, (inner[0] == 0x2B || inner[0] == 0x2F), inner[1] == 21 else {
             throw DecodeError.invalidInnerHeader
         }
 
