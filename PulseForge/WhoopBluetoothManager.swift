@@ -753,21 +753,36 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         }
 
         pendingRestoredPeripheral = nil
+        if connectedPeripheral?.identifier == peripheral.identifier,
+           (isConnecting || peripheral.state == .connected) {
+            // CoreBluetooth may deliver restoration and poweredOn callbacks close
+            // together. Do not issue a second connect/discovery for the same link.
+            return
+        }
         connectedPeripheral = peripheral
         connectedDeviceSnapshot = nil
         peripheral.delegate = self
         connectedName = peripheral.name ?? "WHOOP"
-        isConnecting = peripheral.state != .connected
         resetGattSessionForReconnect()
 
         if peripheral.state == .connected {
+            connectionTimeoutWorkItem?.cancel()
+            connectionTimeoutWorkItem = nil
+            isConnecting = false
             statusText = "WHOOP connection recovered · rediscovering services"
             lastBLEEvent = "Recovered existing CoreBluetooth peripheral · refreshing GATT"
             peripheral.discoverServices(nil)
+        } else if peripheral.state == .connecting {
+            isConnecting = true
+            statusText = "WHOOP connection restoration in progress"
+            lastBLEEvent = "CoreBluetooth already connecting restored WHOOP peripheral"
+            scheduleReconnectTimeout(for: peripheral)
         } else {
+            isConnecting = true
             statusText = "Reconnecting to previously used WHOOP…"
             lastBLEEvent = "Automatic reconnect requested for remembered WHOOP peripheral"
             central.connect(peripheral, options: nil)
+            scheduleReconnectTimeout(for: peripheral)
         }
     }
 
@@ -817,6 +832,21 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         hrTimingStandardNotifyEnabledAt = nil
         hrTimingFirstSampleAt = nil
         hrTimingEvents.removeAll()
+    }
+
+    private func scheduleReconnectTimeout(for peripheral: CBPeripheral) {
+        connectionTimeoutWorkItem?.cancel()
+        let timeout = DispatchWorkItem { [weak self, weak peripheral] in
+            guard let self, let peripheral,
+                  self.connectedPeripheral?.identifier == peripheral.identifier,
+                  self.isConnecting else { return }
+            self.central.cancelPeripheralConnection(peripheral)
+            self.clearConnectionState()
+            self.statusText = "Automatic reconnect timed out · tap Scan to retry"
+            self.lastBLEEvent = "Automatic reconnect timed out before CoreBluetooth callback"
+        }
+        connectionTimeoutWorkItem = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: timeout)
     }
 
     private func clearConnectionState() {
@@ -916,6 +946,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
             lastBLEEvent = "Remembered WHOOP found during automatic reconnect scan"
             statusText = "Reconnecting to WHOOP…"
             central.connect(peripheral, options: nil)
+            scheduleReconnectTimeout(for: peripheral)
             return
         }
         guard name.localizedCaseInsensitiveContains("whoop") || hasCandidateService else { return }
@@ -995,19 +1026,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         statusText = "WHOOP disconnected · reconnecting automatically"
         central.connect(peripheral, options: nil)
 
-        // Do not leave the UI in a permanent reconnecting state if
-        // CoreBluetooth never delivers didConnect/didFailToConnect.
-        let reconnectTimeout = DispatchWorkItem { [weak self, weak peripheral] in
-            guard let self, let peripheral,
-                  self.connectedPeripheral?.identifier == peripheral.identifier,
-                  self.isConnecting else { return }
-            self.central.cancelPeripheralConnection(peripheral)
-            self.clearConnectionState()
-            self.statusText = "Automatic reconnect timed out · tap Scan to retry"
-            self.lastBLEEvent = "Automatic reconnect timed out before CoreBluetooth callback"
-        }
-        connectionTimeoutWorkItem = reconnectTimeout
-        DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: reconnectTimeout)
+        // Bound every automatic reconnect path with the same timeout.
+        scheduleReconnectTimeout(for: peripheral)
     }
 }
 
