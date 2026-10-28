@@ -1,8 +1,7 @@
 name: WHOOP archive technical inventory
 
 on:
-  push:
-    branches: [whoop-native, whoop-background-ble]
+  # Run this expensive archive scan manually, not on every source-code push.
   workflow_dispatch:
 
 permissions:
