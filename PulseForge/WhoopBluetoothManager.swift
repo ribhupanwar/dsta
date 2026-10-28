@@ -644,12 +644,26 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         pendingDescriptorCharacteristics.removeAll()
         connectedName = nil
         connectedDeviceSnapshot = nil
-        if workoutIsRecording, let workoutStartedAt {
-            lastWorkoutDurationSeconds = Date().timeIntervalSince(workoutStartedAt)
+        if workoutIsRecording {
+            if let workoutStartedAt {
+                lastWorkoutDurationSeconds = Date().timeIntervalSince(workoutStartedAt)
+            }
+            // Preserve the partial session, but never leave the UI claiming that
+            // a workout is still recording after its HR source has disconnected.
+            workoutIsRecording = false
+            workoutStartedAt = nil
+            workoutRecordingIsAutomatic = false
+            workoutSessionBaselineBPM = nil
+            workoutDetectionCandidateSince = nil
+            workoutDetectionCandidateBaselineBPM = nil
+            workoutRecoverySince = nil
+            workoutDetectionStatus = "Workout interrupted · band disconnected · partial data saved"
             persistWorkoutSession()
+        } else {
+            workoutDetectionCandidateSince = nil
+            workoutDetectionCandidateBaselineBPM = nil
+            workoutRecoverySince = nil
         }
-        workoutIsRecording = false
-        workoutStartedAt = nil
         liveHeartRateBPM = nil
         liveHeartRateSamples.removeAll()
         isStandardHeartRateNotifying = false
