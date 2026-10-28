@@ -974,9 +974,6 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         if liveHeartRateSamples.count > 120 {
             liveHeartRateSamples.removeFirst(liveHeartRateSamples.count - 120)
         }
-        if whoop5HRStreamConfirmed {
-            startWhoopAutoIMUIfNeeded()
-        }
         if workoutIsRecording {
             workoutHeartRateSamples.append(sample)
             if workoutHeartRateSamples.count > 14_400 {
