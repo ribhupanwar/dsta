@@ -23,7 +23,26 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Check whether this branch contains the iOS project
+        id: source
+        shell: bash
+        run: |
+          mkdir -p ci-logs
+          if [[ -f project.yml ]] || compgen -G "*.xcodeproj" > /dev/null || compgen -G "*.xcworkspace" > /dev/null; then
+            echo "has_project=true" >> "$GITHUB_OUTPUT"
+            echo "iOS project source detected." | tee ci-logs/source-check.log
+          else
+            echo "has_project=false" >> "$GITHUB_OUTPUT"
+            echo "Build skipped: this branch does not contain project.yml, .xcodeproj, or .xcworkspace. The iOS app source is currently maintained on whoop-background-ble." | tee ci-logs/source-check.log
+            {
+              echo "## iOS build skipped"
+              echo "This branch has no Xcode project/workspace or project.yml. No compile was attempted."
+              echo "The app source is currently on whoop-background-ble."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Install XcodeGen when needed
+        if: steps.source.outputs.has_project == 'true'
         shell: bash
         run: |
           if [[ -f project.yml ]] && ! compgen -G "*.xcodeproj" > /dev/null && ! compgen -G "*.xcworkspace" > /dev/null; then
@@ -32,6 +51,7 @@ jobs:
           fi
 
       - name: Discover project, workspace, scheme and test targets
+        if: steps.source.outputs.has_project == 'true'
         id: discover
         shell: bash
         run: |
@@ -99,6 +119,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build for iOS Simulator and run available unit tests
+        if: steps.source.outputs.has_project == 'true'
         shell: bash
         env:
           CONTAINER: ${{ steps.discover.outputs.container }}
