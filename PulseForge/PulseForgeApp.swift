@@ -1854,14 +1854,37 @@ struct HeaderView: View {
     let eyebrow: String
     let title: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(eyebrow).font(.system(size: 10, weight: .black)).tracking(1.8).foregroundStyle(ForgeColors.muted)
-            HStack {
-                Text(title).font(.system(size: 27, weight: .black, design: .rounded)).tracking(-0.5)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .center) {
+                Text("PULSEFORGE")
+                    .font(.system(size: 17, weight: .black, design: .rounded))
+                    .tracking(2.2)
+                    .foregroundStyle(.white)
                 Spacer()
-                Image(systemName: "person.crop.circle").font(.system(size: 25, weight: .light)).foregroundStyle(ForgeColors.muted)
+                Image(systemName: "person.crop.circle")
+                    .font(.system(size: 25, weight: .light))
+                    .foregroundStyle(ForgeColors.muted)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Text(title.uppercased())
+                    .font(.system(size: 11, weight: .black))
+                    .tracking(1.3)
+                    .foregroundStyle(ForgeColors.lime)
+                Text("·")
+                    .foregroundStyle(ForgeColors.muted)
+                Text(eyebrow.replacingOccurrences(of: "TODAY · ", with: ""))
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(1)
+                    .foregroundStyle(ForgeColors.muted)
+                Spacer()
+                Text(Date.now.formatted(.dateTime.month(.abbreviated).day()).uppercased())
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(ForgeColors.muted)
             }
         }
+        .padding(.top, 7)
+        .padding(.bottom, 3)
     }
 }
 
@@ -1895,9 +1918,7 @@ struct MetricTile: View {
             }
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).fill(LinearGradient(colors: [Color.white.opacity(0.075), Color.white.opacity(0.012)], startPoint: .topLeading, endPoint: .bottomTrailing)).clipShape(RoundedRectangle(cornerRadius: 18)))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
+        .forgeGlassCard(cornerRadius: 18)
     }
 }
 
@@ -1912,7 +1933,7 @@ struct CompactMetric: View {
             Text(unit).font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15)).overlay(RoundedRectangle(cornerRadius: 15).stroke(ForgeColors.stroke.opacity(0.7), lineWidth: 1))
+        .padding(12).forgeGlassCard(cornerRadius: 15)
     }
 }
 
