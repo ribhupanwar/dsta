@@ -99,3 +99,17 @@ The current `ingestWhoop5Notification` implementation routes packet type 36 as `
 That behavior is an implementation assumption, not something proven by the static archive inventory. The official app's type names separately include `HelloResponsePacketRev3/Rev4`, a revision router, `StrapUnlockTokenService`, and `StrapHelloCompleteProviding`. This raises a concrete question: does command 145's response itself complete the current Gen5 session, or is there another revision-specific response/unlock step before stream activation? The available inventory cannot answer it because method bodies and response DTO layouts were not extracted.
 
 **Do not change the command 145 parser or send an unlock-token request based only on these names.** First correlate the full response frame from the strap with a known-good official-app session or recover the relevant parser/service implementation through permitted static analysis. Keep HR stream enable gated behind a clearly named, evidence-backed session-ready condition.
+
+
+## Notification/hello ordering race to investigate
+
+A fresh read of the current Swift implementation found that the first hello write is issued directly inside `didDiscoverCharacteristicsFor`, immediately after `setNotifyValue(true, ...)` has been requested for FD4B0003/0004/0005/0007. CoreBluetooth notification enablement completes asynchronously through `didUpdateNotificationStateFor`; PulseForge does not wait for those four vendor CCCD callbacks before writing the hello.
+
+After the hello write callback, PulseForge calls `setNotifyValue(true, ...)` for those same four characteristics again. Thus the current flow is:
+- request four vendor subscriptions;
+- immediately write hello without waiting for their enable callbacks;
+- after hello write acknowledgement, request the same subscriptions again.
+
+This is a concrete ordering/re-subscription behavior in our code. It may be intentional if the NOOP reference requires pre- and post-hello subscription, but the current static WHOOP inventory does not establish that. It is a high-priority explanation to test against a timestamped callback trace, especially given the intermittent “hello acknowledged / waiting for first sample” symptom. Do not remove either phase until the trace or a known-good official-app sequence establishes the required order.
+
+A safe next code change is to log each CCCD request and completion separately (per UUID and connection generation), plus the hello write request/callback and first response notification. This changes diagnostics only and will tell us whether notifications are actually enabled before or after the hello response.
