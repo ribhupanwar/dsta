@@ -74,6 +74,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopEventPacketCount = 0
     @Published private(set) var whoopLastEventID: Int?
     @Published private(set) var whoopLastEventFrameHex = "none"
+    @Published private(set) var whoopConnectionGeneration = 0
+    @Published private(set) var whoopSessionPhase = "Disconnected"
     @Published private(set) var heartRateUpdateCount = 0
     @Published private(set) var liveHeartRateSamples: [LiveHeartRateSample] = []
     @Published private(set) var workoutHeartRateSamples: [LiveHeartRateSample] = []
@@ -628,6 +630,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "Connectable: \(connectedDeviceSnapshot?.isConnectable.map(String.init) ?? "Unavailable")",
             "Status: \(statusText)",
             "WHOOP battery: \(whoopBatteryPercent.map { String(format: "%.1f%%", $0) } ?? "not received") · updated: \(whoopBatteryLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "never")",
+            "WHOOP connection generation: \(whoopConnectionGeneration) · session phase: \(whoopSessionPhase)",
             "WHOOP event packets: \(whoopEventPacketCount) · last event ID: \(whoopLastEventID.map(String.init) ?? "none") · last frame: \(whoopLastEventFrameHex)",
             "Latest BLE event: \(lastBLEEvent)",
             "Standard Heart Rate Measurement: \(isStandardHeartRateNotifying ? "subscribed" : "not subscribed")",
@@ -832,6 +835,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HelloSent = false
         whoop5HelloWritePending = false
         whoop5HelloWriteAcknowledged = false
+        whoopSessionPhase = "GATT session reset · awaiting discovery"
         whoop5PostHelloNotifyRetryAttempted.removeAll()
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
@@ -887,6 +891,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         pendingDescriptorCharacteristics.removeAll()
         connectedName = nil
         connectedDeviceSnapshot = nil
+        whoopSessionPhase = "Disconnected"
         if workoutIsRecording {
             if let workoutStartedAt {
                 lastWorkoutDurationSeconds = Date().timeIntervalSince(workoutStartedAt)
@@ -1014,6 +1019,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         peripheral.delegate = self
         connectedName = peripheral.name ?? "WHOOP candidate"
         statusText = "Connected · discovering GATT profile"
+        whoopConnectionGeneration += 1
+        whoopSessionPhase = "Connected · discovering GATT profile"
         hrTimingConnectionAt = Date()
         hrTimingEvents = ["connected +0.000s"]
         recordVendorTimeline("peripheral connected · \(peripheral.identifier.uuidString)")
@@ -1093,6 +1100,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return
         }
         pendingCharacteristicServices = Set(services.map { ObjectIdentifier($0) })
+        whoopSessionPhase = "Discovering characteristics · \(services.count) services"
         guard !services.isEmpty else {
             pendingCharacteristicServices.removeAll()
             pendingDescriptorCharacteristics.removeAll()
@@ -1320,6 +1328,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     return "COMMAND_RESPONSE · GET_HELLO success but body too short (\(b.count) bytes)"
                 }
                 recordVendorTimeline("GET_HELLO response accepted · sequence 1 · success · minimum body length met")
+                whoopSessionPhase = "GET_HELLO response parsed · requesting realtime HR"
                 sendRealtimeHrEnable(to: peripheral)
                 return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR enable requested"
             }
@@ -1378,6 +1387,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopLastEventFrameHex = b.map { String(format: "%02X", $0) }.joined(separator: " ")
             if eventID == 33 {
                 whoop5HRStreamConfirmed = true
+                whoopSessionPhase = "Realtime HR stream confirmed · generation \(whoopConnectionGeneration)"
                 recordVendorTimeline("WHOOP realtime HR active event 33 received")
                 lastBLEEvent = "WHOOP event 33 · BLE_REALTIME_HR_ON · stream activation confirmed"
                 statusText = "Connected · WHOOP realtime HR stream confirmed · waiting for sample"
@@ -1651,6 +1661,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         whoop5PendingWrites.append("CLIENT_HELLO")
         lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write requested · FD4B0002 · 16 bytes · all services discovered"
         recordVendorTimeline("CLIENT_HELLO write requested · FD4B0002 · 16 bytes · all service characteristics discovered")
+        whoopSessionPhase = "CLIENT_HELLO write pending · generation \(whoopConnectionGeneration)"
         statusText = "Connected · starting WHOOP 5.0 secure session"
         peripheral.writeValue(Data(hello), for: command, type: .withResponse)
     }
@@ -1711,6 +1722,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return
         }
         whoop5HelloWriteAcknowledged = true
+        whoopSessionPhase = "CLIENT_HELLO write acknowledged · awaiting strap response"
         lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write acknowledged by CoreBluetooth · FD4B0002"
         recordVendorTimeline("CLIENT_HELLO write callback · acknowledged")
         statusText = "Connected · WHOOP 5.0 hello write acknowledged · awaiting response"
