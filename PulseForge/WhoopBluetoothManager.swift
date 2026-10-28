@@ -1515,22 +1515,26 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · awaiting EVENT 33"
             }
             if command == 22 {
-                if result == 1 {
+                if result == 2 {
+                    whoopHistoricalOffloadStatus = "SEND_HISTORICAL_DATA pending · awaiting strap stream"
+                } else if result == 1 {
                     whoopHistoricalOffloadStatus = "SEND_HISTORICAL_DATA accepted · waiting for history frames"
                 } else {
                     whoop5HistoricalRequestSent = false
                     whoop5HistoricalOffloadActive = false
-                    whoopHistoricalOffloadStatus = "Historical request rejected · \(resultName)"
+                    whoopHistoricalOffloadStatus = "Historical request rejected · \\(resultName)"
                 }
-                return "COMMAND_RESPONSE · SEND_HISTORICAL_DATA(22) · \(resultName)"
+                return "COMMAND_RESPONSE · SEND_HISTORICAL_DATA(22) · \\(resultName)"
             }
             if command == 23 {
-                if result == 1 {
+                if result == 2 {
+                    whoopHistoricalOffloadStatus = "History ACK pending · strap has not confirmed trim yet"
+                } else if result == 1 {
                     recordVendorTimeline("HISTORICAL_DATA_RESULT(23) accepted · trim advanced")
                 } else {
-                    whoopHistoricalOffloadStatus = "History ACK response · \(resultName) · strap may replay chunk"
+                    whoopHistoricalOffloadStatus = "History ACK response · \\(resultName) · strap may replay chunk"
                 }
-                return "COMMAND_RESPONSE · HISTORICAL_DATA_RESULT(23) · \(resultName)"
+                return "COMMAND_RESPONSE · HISTORICAL_DATA_RESULT(23) · \\(resultName)"
             }
             return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
 
@@ -1927,48 +1931,36 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
     private func handleWhoop5HistoricalMetadata(_ frame: [UInt8],
                                                  peripheral: CBPeripheral) -> String {
-        guard frame.count > 10 else {
-            return "METADATA · truncated · CRC valid"
-        }
-        switch frame[10] {
-        case 1: // HISTORY_START
+        switch Gen5HistoricalMetadataDecoder.decode(frame) {
+        case .historyStart:
             whoop5HistoricalOffloadActive = true
             whoopHistoricalOffloadStatus = "Historical offload started · collecting type-47 records"
             recordVendorTimeline("HISTORY_START(1) received")
             return "METADATA · HISTORY_START · historical collection active"
 
-        case 2: // HISTORY_END
-            guard frame.count >= 29 else {
-                whoopHistoricalOffloadStatus = "HISTORY_END truncated · no ACK sent"
-                return "METADATA · HISTORY_END truncated · chunk not acknowledged"
-            }
-            let endData = Array(frame[21..<29])
-            let trim = UInt32(endData[0]) |
-                (UInt32(endData[1]) << 8) |
-                (UInt32(endData[2]) << 16) |
-                (UInt32(endData[3]) << 24)
+        case .historyEnd(let endData, let trim):
             do {
                 let persisted = try persistWhoop5HistoricalChunk(whoop5HistoricalChunkFrames)
                 whoop5HistoricalChunkFrames.removeAll(keepingCapacity: true)
                 if let deviceID = connectedPeripheral?.identifier.uuidString {
                     UserDefaults.standard.set(Int(trim),
-                        forKey: "pulseforge.whoop5.history.lastTrim.\(deviceID)")
+                        forKey: "pulseforge.whoop5.history.lastTrim.\\(deviceID)")
                 }
-                whoopHistoricalOffloadStatus = "Archived \(persisted) raw frame(s) · trim \(trim) · ACK requested"
-                recordVendorTimeline("HISTORY_END · \(persisted) raw type-47 frame(s) durable · trim=\(trim)")
+                whoopHistoricalOffloadStatus = "Archived \\(persisted) raw frame(s) · trim \\(trim) · ACK requested"
+                recordVendorTimeline("HISTORY_END · \\(persisted) raw type-47 frame(s) durable · trim=\\(trim)")
                 sendWhoop5HistoricalChunkAck(to: peripheral, endData: endData, trim: trim)
-                return "METADATA · HISTORY_END · \(persisted) raw frame(s) persisted · trim \(trim) · ACK requested"
+                return "METADATA · HISTORY_END · \\(persisted) raw frame(s) persisted · trim \\(trim) · ACK requested"
             } catch {
-                whoopHistoricalOffloadStatus = "Archive write failed · chunk NOT acknowledged · \(error.localizedDescription)"
-                recordVendorTimeline("HISTORY_END storage failure · ACK withheld · \(error.localizedDescription)")
+                whoopHistoricalOffloadStatus = "Archive write failed · chunk NOT acknowledged · \\(error.localizedDescription)"
+                recordVendorTimeline("HISTORY_END storage failure · ACK withheld · \\(error.localizedDescription)")
                 return "METADATA · HISTORY_END · storage failed · ACK withheld"
             }
 
-        case 3: // HISTORY_COMPLETE
+        case .historyComplete:
             do {
                 let persisted = try persistWhoop5HistoricalChunk(whoop5HistoricalChunkFrames)
                 whoop5HistoricalChunkFrames.removeAll(keepingCapacity: true)
-                whoop5HistoricalOffloadStatus = "Historical offload complete · \(persisted) trailing frame(s) archived"
+                whoopHistoricalOffloadStatus = "Historical offload complete · \\(persisted) trailing frame(s) archived"
             } catch {
                 whoopHistoricalOffloadStatus = "Offload ended · trailing archive failed · unacked data remains on strap"
             }
@@ -1977,8 +1969,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             recordVendorTimeline("HISTORY_COMPLETE(3) received")
             return "METADATA · HISTORY_COMPLETE · offload finished"
 
-        default:
-            return "METADATA · subtype \(frame[10]) · CRC valid"
+        case .other(let subtype):
+            return "METADATA · subtype \\(subtype) · CRC valid"
+
+        case .invalid:
+            whoopHistoricalOffloadStatus = "Malformed historical metadata · no ACK sent"
+            return "METADATA · malformed · no ACK sent"
         }
     }
 
