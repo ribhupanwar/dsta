@@ -69,6 +69,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopRealtimePacketCount = 0
     @Published private(set) var whoopCommandResponseCount = 0
     @Published private(set) var whoopLastPacketType = "None"
+    @Published private(set) var whoopBatteryPercent: Double?
+    @Published private(set) var whoopBatteryLastUpdatedAt: Date?
     @Published private(set) var heartRateUpdateCount = 0
     @Published private(set) var liveHeartRateSamples: [LiveHeartRateSample] = []
     @Published private(set) var workoutHeartRateSamples: [LiveHeartRateSample] = []
@@ -620,6 +622,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "Transmit power: \(connectedDeviceSnapshot?.transmitPower.map { "\($0) dBm" } ?? "Unavailable")",
             "Connectable: \(connectedDeviceSnapshot?.isConnectable.map(String.init) ?? "Unavailable")",
             "Status: \(statusText)",
+            "WHOOP battery: \(whoopBatteryPercent.map { String(format: "%.1f%%", $0) } ?? "not received") · updated: \(whoopBatteryLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "never")",
             "Latest BLE event: \(lastBLEEvent)",
             "Standard Heart Rate Measurement: \(isStandardHeartRateNotifying ? "subscribed" : "not subscribed")",
             "Latest WHOOP standard HR value: \(liveHeartRateBPM.map { "\($0) bpm" } ?? "None received")",
@@ -828,6 +831,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
         whoop5AutoIMUEnabled = false
+        whoopBatteryPercent = nil
+        whoopBatteryLastUpdatedAt = nil
         whoopIMUFrameCount = 0
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
@@ -1334,7 +1339,13 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             if eventID == 3, b.count > 22 {
                 let socRaw = Int(b[21]) | (Int(b[22]) << 8)
-                return "EVENT · BATTERY_LEVEL(3) · \(Double(socRaw) / 10.0)% · CRC valid"
+                let percentage = Double(socRaw) / 10.0
+                guard (0.0...100.0).contains(percentage) else {
+                    return "EVENT · BATTERY_LEVEL(3) · raw \(socRaw) · out of range · CRC valid"
+                }
+                whoopBatteryPercent = percentage
+                whoopBatteryLastUpdatedAt = Date()
+                return "EVENT · BATTERY_LEVEL(3) · \(String(format: "%.1f", percentage))% · UI value updated · CRC valid"
             }
             return "EVENT · id \(eventID) · CRC valid · not a realtime HR sample"
 
