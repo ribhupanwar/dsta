@@ -1185,13 +1185,16 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · \(resultName)"
             }
             if command == 145 {
+                recordVendorTimeline("GET_HELLO response · seq=\(echoedSequence) · result=\(resultName) · frame=\(b.count) bytes · CRC valid")
                 guard result == 1, echoedSequence == 1 else {
                     return "COMMAND_RESPONSE · GET_HELLO · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
                 }
                 // Gen5 HELLO revision-1 semantic body spans 104 bytes.
                 guard b.count >= 121 else {
+                    recordVendorTimeline("GET_HELLO response rejected · body too short · \(b.count) bytes")
                     return "COMMAND_RESPONSE · GET_HELLO success but body too short (\(b.count) bytes)"
                 }
+                recordVendorTimeline("GET_HELLO response accepted · sequence 1 · success · minimum body length met")
                 sendRealtimeHrEnable(to: peripheral)
                 return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR enable requested"
             }
@@ -1228,6 +1231,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let eventID = Int(b[10]) | (Int(b[11]) << 8)
             if eventID == 33 {
                 whoop5HRStreamConfirmed = true
+                recordVendorTimeline("WHOOP realtime HR active event 33 received")
                 lastBLEEvent = "WHOOP event 33 · BLE_REALTIME_HR_ON · stream activation confirmed"
                 statusText = "Connected · WHOOP realtime HR stream confirmed · waiting for sample"
                 return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid · realtime HR active; IMU activation withheld pending protocol verification"
@@ -1300,7 +1304,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x03, payload: [0x01])
         whoop5HRStreamEnableSent = true
         whoop5PendingWrites.append("REALTIME_HR_ON")
+        let frameHex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
         lastBLEEvent = "WHOOP realtime HR ON command requested · opcode 03 · sequence \(sequence)"
+        recordVendorTimeline("REALTIME_HR_ON write requested · FD4B0002 · seq=\(sequence) · \(frame.count) bytes · HEX: \(frameHex)")
         statusText = "Connected · requesting WHOOP live HR stream"
         peripheral.writeValue(frame, for: command, type: .withResponse)
     }
@@ -1470,11 +1476,13 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
         if kind == "REALTIME_HR_ON" {
             if let error {
+                recordVendorTimeline("REALTIME_HR_ON write callback · failed · \(error.localizedDescription)")
                 whoop5HRStreamEnableSent = false
                 lastBLEEvent = "WHOOP realtime HR ON write failed · \(error.localizedDescription)"
                 statusText = "Connected · live HR command failed"
                 return
             }
+            recordVendorTimeline("REALTIME_HR_ON write callback · acknowledged by CoreBluetooth")
             lastBLEEvent = "WHOOP realtime HR ON write acknowledged by CoreBluetooth · opcode 03"
             statusText = whoop5HRStreamConfirmed
                 ? "Connected · WHOOP realtime HR stream confirmed"
