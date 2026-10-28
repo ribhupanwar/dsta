@@ -1559,38 +1559,6 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         peripheral.writeValue(frame, for: command, type: .withResponse)
     }
 
-    /// Enable the R10/R11 realtime stage used by the known-good movement capture sequence.
-    private func sendWhoop5R10R11Enable(to peripheral: CBPeripheral) {
-        guard !whoop5AutoIMUStartRequested,
-              let command = whoop5CommandCharacteristic,
-              command.properties.contains(.write) else { return }
-        whoop5AutoIMUStartRequested = true
-        let sequence = whoop5NextCommandSequence
-        whoop5NextCommandSequence &+= 1
-        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x3F, payload: [0x01])
-        whoop5PendingWrites.append("SEND_R10_R11_ON")
-        let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
-        recordVendorTimeline("SEND_R10_R11_REALTIME_ON write requested · opcode 3F · seq=\(sequence) · HEX: \(hex)")
-        whoopIMUStatus = "R10/R11 realtime request sent · awaiting response"
-        peripheral.writeValue(frame, for: command, type: .withResponse)
-    }
-
-    /// Enable IMU mode only after the preceding realtime command was accepted.
-    /// The [revision=1, enabled=1] body is documented by the upstream movement-capture implementation.
-    private func sendWhoop5IMUModeEnable(to peripheral: CBPeripheral) {
-        guard !whoop5AutoIMUEnabled,
-              let command = whoop5CommandCharacteristic,
-              command.properties.contains(.write) else { return }
-        let sequence = whoop5NextCommandSequence
-        whoop5NextCommandSequence &+= 1
-        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x6A, payload: [0x01, 0x01])
-        whoop5PendingWrites.append("TOGGLE_IMU_MODE")
-        let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
-        recordVendorTimeline("TOGGLE_IMU_MODE_ON write requested · opcode 6A · seq=\(sequence) · payload=01 01 · HEX: \(hex)")
-        whoopIMUStatus = "IMU mode requested · awaiting command response"
-        peripheral.writeValue(frame, for: command, type: .withResponse)
-    }
-
     /// Gen5 outbound command envelope: CRC16-Modbus header + CRC32 padded inner.
     private func buildWhoop5CommandFrame(sequence: UInt8, opcode: UInt8, payload: [UInt8]) -> Data {
         var inner: [UInt8] = [0x23, sequence, opcode] + payload
@@ -1751,15 +1719,6 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
               !whoop5PendingWrites.isEmpty else { return }
         let kind = whoop5PendingWrites.removeFirst()
 
-        if kind == "SEND_R10_R11_ON" {
-            if let error {
-                whoop5AutoIMUStartRequested = false
-                whoopIMUStatus = "R10/R11 realtime write failed · \(error.localizedDescription)"
-            } else {
-                whoopIMUStatus = "R10/R11 realtime write acknowledged · awaiting strap response"
-            }
-            return
-        }
         if kind == "START_RAW_DATA_60S" {
             if let error {
                 whoop5AutoIMUStartRequested = false
@@ -1781,15 +1740,6 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             return
         }
-        if kind == "TOGGLE_IMU_MODE" {
-            if let error {
-                whoopIMUStatus = "IMU mode write failed · \(error.localizedDescription)"
-            } else {
-                whoopIMUStatus = "IMU mode write acknowledged · awaiting motion frames"
-            }
-            return
-        }
-
         if kind == "REALTIME_HR_ON" {
             if let error {
                 recordVendorTimeline("REALTIME_HR_ON write callback · failed · \(error.localizedDescription)")
