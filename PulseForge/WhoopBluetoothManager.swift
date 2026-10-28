@@ -972,8 +972,28 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        let wasRememberedDevice =
+            UserDefaults.standard.string(forKey: rememberedPeripheralKey) == peripheral.identifier.uuidString
         clearConnectionState()
-        statusText = error.map { "Disconnected: \($0.localizedDescription)" } ?? "Disconnected"
+
+        // An explicit in-app disconnect removes the remembered UUID before
+        // CoreBluetooth calls back. If the UUID is still saved, this was an
+        // unexpected link loss and the app should restore its background BLE
+        // session instead of silently remaining disconnected.
+        guard wasRememberedDevice, central.state == .poweredOn else {
+            statusText = error.map { "Disconnected: \($0.localizedDescription)" } ?? "Disconnected"
+            return
+        }
+
+        connectedPeripheral = peripheral
+        connectedDeviceSnapshot = nil
+        peripheral.delegate = self
+        connectedName = peripheral.name ?? "WHOOP"
+        isConnecting = true
+        resetGattSessionForReconnect()
+        lastBLEEvent = "Unexpected WHOOP disconnect · automatic reconnect requested"
+        statusText = "WHOOP disconnected · reconnecting automatically"
+        central.connect(peripheral, options: nil)
     }
 }
 
