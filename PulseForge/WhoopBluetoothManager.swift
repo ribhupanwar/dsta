@@ -316,6 +316,11 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             workoutWhoopIMUSamples = savedIMUSamples
         }
         lastWorkoutDurationSeconds = UserDefaults.standard.object(forKey: "pulseforge.whoop.lastWorkoutDuration") as? Double
+        lastWorkoutStartedAt = UserDefaults.standard.object(forKey: "pulseforge.whoop.lastWorkoutStartedAt") as? Date
+        if UserDefaults.standard.object(forKey: "pulseforge.whoop.lastWorkoutWasAutomatic") != nil {
+            lastWorkoutWasAutomatic = UserDefaults.standard.bool(forKey: "pulseforge.whoop.lastWorkoutWasAutomatic")
+        }
+        lastWorkoutWasInterrupted = UserDefaults.standard.bool(forKey: "pulseforge.whoop.lastWorkoutWasInterrupted")
         central = CBCentralManager(
             delegate: self,
             queue: .main,
