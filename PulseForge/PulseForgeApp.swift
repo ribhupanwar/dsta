@@ -249,6 +249,86 @@ struct LiveHeartRateChartCard: View {
     }
 }
 
+struct WhoopMotionCard: View {
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+
+    private var latestSample: WhoopIMUSample? { bluetooth.liveWhoopIMUSamples.last }
+
+    private var accelerationMagnitude: Double? {
+        guard let sample = latestSample else { return nil }
+        return sqrt(
+            sample.accelerationXG * sample.accelerationXG +
+            sample.accelerationYG * sample.accelerationYG +
+            sample.accelerationZG * sample.accelerationZG
+        )
+    }
+
+    private var rotationMagnitude: Double? {
+        guard let sample = latestSample else { return nil }
+        return sqrt(
+            sample.rotationXDPS * sample.rotationXDPS +
+            sample.rotationYDPS * sample.rotationYDPS +
+            sample.rotationZDPS * sample.rotationZDPS
+        )
+    }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label("WHOOP MOTION SENSOR", systemImage: "gyroscope")
+                        .font(.system(size: 9, weight: .bold)).tracking(0.9)
+                        .foregroundStyle(ForgeColors.muted)
+                    Spacer()
+                    Circle()
+                        .fill(bluetooth.whoopIMULastFrameAt.map { context.date.timeIntervalSince($0) < 10 } == true ? ForgeColors.lime : ForgeColors.muted)
+                        .frame(width: 7, height: 7)
+                    Text(bluetooth.whoopIMULastFrameAt.map { context.date.timeIntervalSince($0) < 10 } == true ? "LIVE" : "WAITING")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(ForgeColors.muted)
+                }
+                HStack(spacing: 10) {
+                    motionMetric("ACCELERATION", value: accelerationMagnitude.map { String(format: "%.3f", $0) } ?? "—", unit: "g")
+                    motionMetric("ROTATION", value: rotationMagnitude.map { String(format: "%.1f", $0) } ?? "—", unit: "°/s")
+                }
+                HStack {
+                    motionCount("FRAMES", value: bluetooth.whoopIMUFrameCount)
+                    motionCount("SAMPLES", value: bluetooth.whoopIMUSampleCount)
+                    motionCount("WORKOUT", value: bluetooth.workoutWhoopIMUSamples.count)
+                }
+                Text(bluetooth.whoopIMUStatus)
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                Text("Motion magnitudes are diagnostic only; sensor scale and activity classification are not yet calibrated.")
+                    .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+            }
+            .padding(16)
+            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
+        }
+    }
+
+    private func motionMetric(_ title: String, value: String, unit: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.system(size: 8, weight: .bold)).tracking(0.6).foregroundStyle(ForgeColors.muted)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(value).font(.system(size: 23, weight: .semibold, design: .rounded)).monospacedDigit()
+                Text(unit).font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(11)
+        .background(ForgeColors.track.opacity(0.45), in: RoundedRectangle(cornerRadius: 11))
+    }
+
+    private func motionCount(_ title: String, value: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 8, weight: .bold)).tracking(0.5).foregroundStyle(ForgeColors.muted)
+            Text(value.formatted()).font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 struct WorkoutRecordingCard: View {
     @ObservedObject var bluetooth: WhoopBluetoothManager
 
@@ -637,6 +717,7 @@ struct DeviceDashboard: View {
                     .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     }
                     LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE · LAST 60 SECONDS")
+                    WhoopMotionCard()
                     WorkoutRecordingCard(bluetooth: bluetooth)
                     if bluetooth.connectedName != nil {
                         Button { bluetooth.disconnect() } label: {
