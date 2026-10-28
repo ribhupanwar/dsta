@@ -925,6 +925,42 @@ struct JournalEntrySheet: View {
     }
 }
 
+struct WhoopBatteryCard: View {
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "battery.100percent")
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(bluetooth.whoopBatteryPercent == nil ? ForgeColors.muted : ForgeColors.lime)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("WHOOP BATTERY")
+                    .font(.system(size: 9, weight: .bold)).tracking(0.9)
+                    .foregroundStyle(ForgeColors.muted)
+                Text(bluetooth.whoopBatteryPercent.map { String(format: "%.1f%%", $0) } ?? "Waiting for battery event")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text(bluetooth.whoopBatteryLastUpdatedAt.map {
+                    "UPDATED · \($0.formatted(date: .omitted, time: .standard))"
+                } ?? "BATTERY LEVEL NOT RECEIVED")
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .foregroundStyle(ForgeColors.muted)
+            }
+            Spacer()
+            if let level = bluetooth.whoopBatteryPercent {
+                Text(level >= 20 ? "OK" : "LOW")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(level >= 20 ? ForgeColors.lime : .orange)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(ForgeColors.stroke, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct DeviceDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
@@ -973,6 +1009,7 @@ struct DeviceDashboard: View {
                     .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     }
                     LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE · LAST 60 SECONDS")
+                    WhoopBatteryCard()
                     WhoopMotionCard()
                     if bluetooth.connectedName != nil {
                         Button { bluetooth.disconnect() } label: {
