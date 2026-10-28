@@ -1025,7 +1025,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
             let timestamp = ISO8601DateFormatter().string(from: Date())
             whoopProtocolDiagnostics = ingestWhoop5Notification(data, channel: uuid, peripheral: peripheral)
-            if vendorNotificationHistory.first(where: { $0.contains("first vendor payload") }) == nil {
+            if vendorNotificationTimeline.first(where: { $0.contains("first vendor payload") }) == nil {
                 recordVendorTimeline("first vendor payload · \(uuid) · \(data.count) bytes")
             }
             vendorNotificationPayloads[uuid] = "\(data.count) bytes · \(hex.isEmpty ? "empty" : hex)"
