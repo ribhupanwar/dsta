@@ -1523,6 +1523,18 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 "FD4B0005-CCE1-4033-93CE-002D5875F58A",
                 "FD4B0007-CCE1-4033-93CE-002D5875F58A"].contains(uuid),
                item.properties.contains(.notify) {
+                let priorState = vendorNotificationStates[uuid] ?? ""
+                // The pre-hello request may still be awaiting CoreBluetooth's
+                // notification-state callback. Do not enqueue a duplicate CCCD
+                // operation; only retry channels that actually ended disabled
+                // or failed, and leave already-enabled channels untouched.
+                let requestAlreadyPending =
+                    priorState == "subscription requested" ||
+                    priorState == "post-hello subscription requested"
+                guard !item.isNotifying, !requestAlreadyPending else {
+                    recordVendorTimeline("post-hello notify skipped · \(uuid) · \(item.isNotifying ? "already enabled" : "request pending")")
+                    continue
+                }
                 vendorNotificationStates[uuid] = "post-hello subscription requested"
                 recordVendorTimeline("post-hello notify request · \(uuid)")
                 peripheral.setNotifyValue(true, for: item)
