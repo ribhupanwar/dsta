@@ -97,6 +97,11 @@ final class GPSRunStore: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     var distanceKilometres: Double { distanceMeters / 1000 }
 
+    func displayedElapsed(at date: Date) -> TimeInterval {
+        guard hasActiveRun, !isPaused, let activeSegmentStartedAt else { return elapsedSeconds }
+        return accumulatedActiveSeconds + max(0, date.timeIntervalSince(activeSegmentStartedAt))
+    }
+
     func startRun() {
         guard !hasActiveRun else { return }
         wantsToStart = true
