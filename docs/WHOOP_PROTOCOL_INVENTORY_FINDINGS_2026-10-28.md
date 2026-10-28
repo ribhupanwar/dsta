@@ -90,3 +90,12 @@ Instrument the existing manager with explicit per-connection handshake states an
 6. Do not send the realtime-HR enable command until its prerequisite state is established from an observed, validated protocol response.
 
 This is a diagnostic/state-correctness improvement, not a claim that the proprietary handshake has been fully decoded.
+
+
+## Cross-check against PulseForge's current inbound parser
+
+The current `ingestWhoop5Notification` implementation routes packet type 36 as `COMMAND_RESPONSE`. For command 145 it expects sequence echo 1 and result SUCCESS, checks that the complete frame is at least 121 bytes, then immediately calls `sendRealtimeHrEnable`. It does not expose a distinct parsed hello-response object or a separately validated strap-unlock-complete state.
+
+That behavior is an implementation assumption, not something proven by the static archive inventory. The official app's type names separately include `HelloResponsePacketRev3/Rev4`, a revision router, `StrapUnlockTokenService`, and `StrapHelloCompleteProviding`. This raises a concrete question: does command 145's response itself complete the current Gen5 session, or is there another revision-specific response/unlock step before stream activation? The available inventory cannot answer it because method bodies and response DTO layouts were not extracted.
+
+**Do not change the command 145 parser or send an unlock-token request based only on these names.** First correlate the full response frame from the strap with a known-good official-app session or recover the relevant parser/service implementation through permitted static analysis. Keep HR stream enable gated behind a clearly named, evidence-backed session-ready condition.
