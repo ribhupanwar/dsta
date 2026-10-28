@@ -367,6 +367,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var vendorNotificationStates: [String: String] = [:]
     private var vendorNotificationPayloads: [String: String] = [:]
     private var vendorNotificationHistory: [String] = []
+    private var vendorNotificationTimeline: [String] = []
     // Reassemble WHOOP frames independently for each FD4B notification channel.
     private var whoop5FragmentBuffers: [String: Data] = [:]
     private var whoop5ExpectedFrameLengths: [String: Int] = [:]
@@ -400,9 +401,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                           whoop5HelloSent ? "yes" : "no",
                           whoop5HelloWritePending ? "yes" : "no",
                           whoop5HRStreamEnableSent ? "yes" : "no")
-        vendorNotificationHistory.append("TIMELINE · " + line)
-        if vendorNotificationHistory.count > 80 {
-            vendorNotificationHistory.removeFirst(vendorNotificationHistory.count - 80)
+        vendorNotificationTimeline.append(line)
+        if vendorNotificationTimeline.count > 100 {
+            vendorNotificationTimeline.removeFirst(vendorNotificationTimeline.count - 100)
         }
     }
 
@@ -646,6 +647,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         lines.append("WHOOP vendor notification history (latest 40 events):")
         lines.append(contentsOf: vendorNotificationHistory.isEmpty ? ["  No vendor payload events captured"] : vendorNotificationHistory)
         lines.append("")
+        lines.append("WHOOP BLE connection timeline (latest 100 events):")
+        lines.append(contentsOf: vendorNotificationTimeline.isEmpty ? ["  No connection timeline events captured"] : vendorNotificationTimeline.map { "  \($0)" })
+        lines.append("")
         lines.append("WHOOP archive candidate-channel probe (passive notifications only):")
         lines.append(contentsOf: candidateNotificationStates.keys.sorted().map { "  \($0): \(candidateNotificationStates[$0] ?? "unknown")" })
         lines.append(contentsOf: candidateNotificationHistory.isEmpty ? ["  No candidate-channel payloads captured"] : candidateNotificationHistory)
@@ -778,6 +782,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         vendorNotificationStates.removeAll()
         vendorNotificationPayloads.removeAll()
         vendorNotificationHistory.removeAll()
+        vendorNotificationTimeline.removeAll()
         whoop5FragmentBuffers.removeAll()
         whoop5ExpectedFrameLengths.removeAll()
         candidateNotificationStates.removeAll()
@@ -854,6 +859,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         vendorNotificationStates.removeAll()
         vendorNotificationPayloads.removeAll()
         vendorNotificationHistory.removeAll()
+        vendorNotificationTimeline.removeAll()
         whoop5FragmentBuffers.removeAll()
         whoop5ExpectedFrameLengths.removeAll()
         candidateNotificationStates.removeAll()
@@ -945,6 +951,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         statusText = "Connected · discovering GATT profile"
         hrTimingConnectionAt = Date()
         hrTimingEvents = ["connected +0.000s"]
+        recordVendorTimeline("peripheral connected · \(peripheral.identifier.uuidString)")
         lastBLEEvent = "Connected · waiting for characteristic value"
         peripheral.discoverServices(nil)
     }
