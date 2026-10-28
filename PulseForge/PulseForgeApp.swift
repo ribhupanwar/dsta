@@ -361,6 +361,7 @@ struct WhoopMotionCard: View {
 
 struct WorkoutRecordingCard: View {
     @ObservedObject var bluetooth: WhoopBluetoothManager
+    @State private var expandedWorkoutID: UUID?
 
     private var averageBPM: Int? {
         guard !bluetooth.workoutHeartRateSamples.isEmpty else { return nil }
@@ -422,21 +423,58 @@ struct WorkoutRecordingCard: View {
                                 .foregroundStyle(ForgeColors.muted)
                         }
                         ForEach(Array(bluetooth.workoutHistory.prefix(5))) { session in
-                            HStack(spacing: 8) {
-                                Image(systemName: session.wasInterrupted ? "exclamationmark.circle" : "checkmark.circle")
-                                    .foregroundStyle(session.wasInterrupted ? ForgeColors.muted : ForgeColors.lime)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(session.startedAt.formatted(date: .abbreviated, time: .shortened))
-                                        .font(.system(size: 10, weight: .semibold))
-                                    Text("\(session.wasAutomatic ? "AUTO" : "MANUAL") · \(session.wasInterrupted ? "PARTIAL" : "SAVED") · \(session.heartRateSamples.count) HR SAMPLES")
-                                        .font(.system(size: 8, weight: .medium)).foregroundStyle(ForgeColors.muted)
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    expandedWorkoutID = expandedWorkoutID == session.id ? nil : session.id
                                 }
-                                Spacer()
-                                let seconds = max(0, Int(session.durationSeconds))
-                                Text(String(format: "%02d:%02d", seconds / 60, seconds % 60))
-                                    .font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: session.wasInterrupted ? "exclamationmark.circle" : "checkmark.circle")
+                                        .foregroundStyle(session.wasInterrupted ? ForgeColors.muted : ForgeColors.lime)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(session.startedAt.formatted(date: .abbreviated, time: .shortened))
+                                            .font(.system(size: 10, weight: .semibold))
+                                        Text("\(session.wasAutomatic ? "AUTO" : "MANUAL") · \(session.wasInterrupted ? "PARTIAL" : "SAVED") · \(session.heartRateSamples.count) HR SAMPLES")
+                                            .font(.system(size: 8, weight: .medium)).foregroundStyle(ForgeColors.muted)
+                                    }
+                                    Spacer()
+                                    let seconds = max(0, Int(session.durationSeconds))
+                                    Text(String(format: "%02d:%02d", seconds / 60, seconds % 60))
+                                        .font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
+                                    Image(systemName: expandedWorkoutID == session.id ? "chevron.up" : "chevron.down")
+                                        .font(.system(size: 9, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                                }
+                                .contentShape(Rectangle())
                             }
-                            .padding(.vertical, 5)
+                            .buttonStyle(.plain)
+                            if expandedWorkoutID == session.id {
+                                let values = session.heartRateSamples.map(\.bpm)
+                                HStack(spacing: 12) {
+                                    workoutStat("AVG", value: values.isEmpty ? nil : Int((Double(values.reduce(0, +)) / Double(values.count)).rounded()))
+                                    workoutStat("MIN", value: values.min())
+                                    workoutStat("MAX", value: values.max())
+                                }
+                                if session.heartRateSamples.count >= 2 {
+                                    Chart(session.heartRateSamples) { sample in
+                                        LineMark(x: .value("Time", sample.timestamp), y: .value("BPM", sample.bpm))
+                                            .foregroundStyle(ForgeColors.lime)
+                                        AreaMark(x: .value("Time", sample.timestamp), y: .value("BPM", sample.bpm))
+                                            .foregroundStyle(ForgeColors.lime.opacity(0.10))
+                                    }
+                                    .chartXAxis(.hidden)
+                                    .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
+                                    .frame(height: 105)
+                                } else {
+                                    Text("Not enough saved HR samples for a graph.")
+                                        .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                                }
+                                HStack {
+                                    Text("IMU SAMPLES · \(session.imuSamples.count)")
+                                    Spacer()
+                                    Text(session.wasInterrupted ? "PARTIAL SESSION" : "SESSION SAVED")
+                                }
+                                .font(.system(size: 8, weight: .semibold)).foregroundStyle(ForgeColors.muted)
+                            }
                         }
                     }
                     .padding(10)
