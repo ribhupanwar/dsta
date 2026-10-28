@@ -31,3 +31,19 @@ targets:
       path: PulseForge/PulseForge.entitlements
       properties:
         com.apple.developer.healthkit: true
+
+  PulseForgeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: PulseForgeTests
+    dependencies:
+      - target: PulseForge
+schemes:
+  PulseForge:
+    build:
+      targets:
+        PulseForge: all
+    test:
+      targets:
+        - PulseForgeTests
