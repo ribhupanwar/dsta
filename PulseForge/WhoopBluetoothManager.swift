@@ -464,6 +464,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         vendorNotificationStates.removeAll()
         vendorNotificationPayloads.removeAll()
         vendorNotificationHistory.removeAll()
+        whoop5FragmentBuffers.removeAll()
+        whoop5ExpectedFrameLengths.removeAll()
         candidateNotificationStates.removeAll()
         candidateNotificationHistory.removeAll()
         whoop5CommandCharacteristic = nil
@@ -513,6 +515,10 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         vendorNotificationStates.removeAll()
         vendorNotificationPayloads.removeAll()
         vendorNotificationHistory.removeAll()
+        whoop5FragmentBuffers.removeAll()
+        whoop5ExpectedFrameLengths.removeAll()
+        candidateNotificationStates.removeAll()
+        candidateNotificationHistory.removeAll()
         whoop5CommandCharacteristic = nil
         whoop5HelloSent = false
         whoop5HelloWritePending = false
