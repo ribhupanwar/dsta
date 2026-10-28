@@ -8,6 +8,7 @@ settings:
     SWIFT_VERSION: "5.9"
     IPHONEOS_DEPLOYMENT_TARGET: "18.0"
     CODE_SIGNING_ALLOWED: "NO"
+    INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "PulseForge uses GPS during an outdoor run to measure distance, pace and kilometre splits."
 targets:
   PulseForge:
     type: application
@@ -26,11 +27,6 @@ targets:
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "PulseForge uses Bluetooth to connect to your WHOOP-compatible wearable."
         INFOPLIST_KEY_UIUserInterfaceStyle: Dark
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.healthcare-fitness
-    info:
-      properties:
-        NSLocationWhenInUseUsageDescription: "PulseForge uses GPS during an outdoor run to measure distance, pace, kilometre splits and route."
-        UIBackgroundModes:
-          - location
     entitlements:
       path: PulseForge/PulseForge.entitlements
       properties:
