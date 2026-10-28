@@ -41,6 +41,7 @@ struct MainTabView: View {
     @EnvironmentObject private var insights: TrainingInsightsStore
     @State private var selected: ForgeTab = .today
     @StateObject private var bluetooth = WhoopBluetoothManager()
+    @StateObject private var gpsRun = GPSRunStore()
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -56,6 +57,7 @@ struct MainTabView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .environmentObject(bluetooth)
+            .environmentObject(gpsRun)
             ForgeTabBar(selected: $selected)
         }
         .ignoresSafeArea(.keyboard)
@@ -732,6 +734,130 @@ struct StrainDashboard: View {
         .refreshable { health.refresh(); insights.refresh() }
     }
 }
+
+struct GPSRunCard: View {
+    @EnvironmentObject private var run: GPSRunStore
+
+    private func paceText(_ seconds: Double?) -> String {
+        guard let seconds, seconds.isFinite, seconds > 0, seconds < 3600 else { return "--:--" }
+        let total = Int(seconds.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    private func durationText(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds))
+        return String(format: "%02d:%02d:%02d", total / 3600, (total / 60) % 60, total % 60)
+    }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let elapsed = run.displayedElapsed(at: context.date)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Label("OUTDOOR GPS RUN", systemImage: "location.fill")
+                        .font(.system(size: 9, weight: .bold)).tracking(0.9)
+                        .foregroundStyle(ForgeColors.muted)
+                    Spacer()
+                    Circle().fill(run.hasActiveRun ? ForgeColors.lime : ForgeColors.muted).frame(width: 7, height: 7)
+                    Text(run.isPaused ? "PAUSED" : (run.hasActiveRun ? "LIVE" : "READY"))
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(run.hasActiveRun ? ForgeColors.lime : ForgeColors.muted)
+                }
+
+                HStack(alignment: .lastTextBaseline, spacing: 6) {
+                    Text(String(format: "%.2f", run.distanceKilometres))
+                        .font(.system(size: 48, weight: .semibold, design: .rounded))
+                        .monospacedDigit().foregroundStyle(.white)
+                    Text("KM").font(.system(size: 11, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text("ELAPSED").font(.system(size: 8, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                        Text(durationText(elapsed))
+                            .font(.system(size: 18, weight: .medium, design: .rounded))
+                            .monospacedDigit()
+                    }
+                }
+
+                HStack(spacing: 9) {
+                    gpsMetric("CURRENT PACE", value: paceText(run.currentPaceSecondsPerKm), unit: "/KM")
+                    gpsMetric("AVG PACE", value: paceText(run.averagePaceSecondsPerKm), unit: "/KM")
+                    gpsMetric("KM SPLITS", value: "\(run.splits.count)", unit: "DONE")
+                }
+
+                HStack(spacing: 6) {
+                    Image(systemName: "location.circle").foregroundStyle(ForgeColors.lime)
+                    Text(run.locationStatus).font(.system(size: 10, weight: .medium)).foregroundStyle(ForgeColors.muted)
+                    Spacer()
+                    Text("\(run.routePointCount) PTS").font(.system(size: 8, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                }
+
+                if !run.splits.isEmpty {
+                    VStack(spacing: 7) {
+                        ForEach(run.splits.suffix(4)) { split in
+                            HStack {
+                                Text("KM \(split.kilometre)").font(.system(size: 10, weight: .semibold))
+                                Spacer()
+                                Text(paceText(split.paceSecondsPerKm) + " /KM")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .monospacedDigit().foregroundStyle(ForgeColors.lime)
+                            }
+                        }
+                    }
+                    .padding(11)
+                    .background(ForgeColors.track.opacity(0.6), in: RoundedRectangle(cornerRadius: 11))
+                }
+
+                if run.hasActiveRun {
+                    HStack(spacing: 9) {
+                        Button { run.pauseOrResume() } label: {
+                            Label(run.isPaused ? "RESUME" : "PAUSE",
+                                  systemImage: run.isPaused ? "play.fill" : "pause.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .frame(maxWidth: .infinity).padding(.vertical, 13)
+                                .foregroundStyle(.black)
+                                .background(ForgeColors.lime, in: Capsule())
+                        }
+                        Button { run.finishRun() } label: {
+                            Label("FINISH", systemImage: "stop.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .frame(maxWidth: .infinity).padding(.vertical, 13)
+                                .foregroundStyle(.white)
+                                .background(Color.white.opacity(0.12), in: Capsule())
+                        }
+                    }
+                } else {
+                    Button { run.startRun() } label: {
+                        Label("START OUTDOOR RUN", systemImage: "figure.run")
+                            .font(.system(size: 12, weight: .bold))
+                            .frame(maxWidth: .infinity).padding(.vertical, 14)
+                            .foregroundStyle(.black)
+                            .background(ForgeColors.lime, in: Capsule())
+                    }
+                }
+
+                Text(run.saveStatus)
+                    .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+            }
+            .padding(17)
+            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(ForgeColors.stroke, lineWidth: 1))
+        }
+    }
+
+    private func gpsMetric(_ title: String, value: String, unit: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 7, weight: .bold)).tracking(0.5).foregroundStyle(ForgeColors.muted)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value).font(.system(size: 19, weight: .semibold, design: .rounded)).monospacedDigit()
+                Text(unit).font(.system(size: 7, weight: .bold)).foregroundStyle(ForgeColors.muted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(9)
+        .background(ForgeColors.track.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
 struct RunningDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
@@ -742,6 +868,7 @@ struct RunningDashboard: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
                 HeaderView(eyebrow: "PERFORMANCE", title: "Running")
+                GPSRunCard()
                 WorkoutRecordingCard(bluetooth: bluetooth)
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
