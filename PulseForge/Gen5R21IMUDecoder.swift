@@ -38,16 +38,27 @@ enum Gen5R21IMUDecoder {
         let accelScale = 1.0 / 4096.0
         let gyroScale = 2000.0 / 32768.0
 
-        return (0..<pairedCount).map { index in
-            WhoopIMUSample(
-                timestamp: Date(timeIntervalSince1970: frameTimestamp + Double(index) / 100.0),
-                accelerationXG: Double(i16(20 + 2 * index)) * accelScale,
-                accelerationYG: Double(i16(220 + 2 * index)) * accelScale,
-                accelerationZG: Double(i16(420 + 2 * index)) * accelScale,
-                rotationXDPS: Double(i16(632 + 2 * index)) * gyroScale,
-                rotationYDPS: Double(i16(832 + 2 * index)) * gyroScale,
-                rotationZDPS: Double(i16(1032 + 2 * index)) * gyroScale
+        var decodedSamples: [WhoopIMUSample] = []
+        decodedSamples.reserveCapacity(pairedCount)
+        for index in 0..<pairedCount {
+            let sampleTimestamp = frameTimestamp + Double(index) / 100.0
+            let ax = Double(i16(20 + 2 * index)) * accelScale
+            let ay = Double(i16(220 + 2 * index)) * accelScale
+            let az = Double(i16(420 + 2 * index)) * accelScale
+            let gx = Double(i16(632 + 2 * index)) * gyroScale
+            let gy = Double(i16(832 + 2 * index)) * gyroScale
+            let gz = Double(i16(1032 + 2 * index)) * gyroScale
+            let sample = WhoopIMUSample(
+                timestamp: Date(timeIntervalSince1970: sampleTimestamp),
+                accelerationXG: ax,
+                accelerationYG: ay,
+                accelerationZG: az,
+                rotationXDPS: gx,
+                rotationYDPS: gy,
+                rotationZDPS: gz
             )
+            decodedSamples.append(sample)
         }
+        return decodedSamples
     }
 }
