@@ -284,10 +284,6 @@ final class GPSRunStore: NSObject, ObservableObject, CLLocationManagerDelegate {
             return
         }
 
-        let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .running
-        configuration.locationType = .outdoor
-
         // Request write access before creating the workout/route builders. Without this,
         // HealthKit can reject the workout or distance sample even when GPS recording worked.
         saveStatus = "Requesting Apple Health permission…"
