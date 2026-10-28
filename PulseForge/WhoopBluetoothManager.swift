@@ -1486,8 +1486,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 guard result == 1 else {
                     return "COMMAND_RESPONSE · REALTIME_HR_ON(3) · \(resultName) · bounded raw stream withheld"
                 }
-                sendWhoop5RawDataStart(to: peripheral, durationMilliseconds: 60_000)
-                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · bounded 60-second raw stream requested"
+                whoopIMUStatus = "HR active · awaiting WHOOP 5 R22 historical R21 IMU buffers (type 47 / inner 0x2F)"
+                recordVendorTimeline("IMU live raw commands 81/106 withheld · 5.0 firmware evidence shows accepted-but-inert; decode R22 R21 offload when present")
+                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · HR active; high-rate IMU awaits R22 offload"
             }
             return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
 
@@ -1538,21 +1539,50 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopIMUStatus = "Realtime IMU stream packet received · \(b.count) bytes · CRC valid · subtype decode pending"
             return "REALTIME_IMU_DATA_STREAM(51) · \(b.count) bytes · CRC valid · raw frame retained"
 
-        case 47: // HISTORICAL_DATA packet type; preserve raw until history subtype routing is implemented.
-            // WHOOP's audited parser is revision-aware (Rev10/11/20/21) and
-            // carries epoch, sequence, counts, ranges and sample-rate metadata.
-            // Until those fields are mapped, retain only packet-level diagnostics:
-            // never manufacture calibrated axes or timestamps from guessed offsets.
+        case 47: // HISTORICAL_DATA; Gen5 R21 offload buffers share the R21 body layout.
             whoopIMUFrameCount += 1
             whoopIMULastFrameAt = Date()
             whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
             let capturedAt = ISO8601DateFormatter().string(from: Date())
-            whoopIMURawFrameHistory.append("\(capturedAt) · \(whoopIMULastRawFrameHex)")
+            whoopIMURawFrameHistory.append("type=47 · \(capturedAt) · \(whoopIMULastRawFrameHex)")
             if whoopIMURawFrameHistory.count > 4 {
                 whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
             }
-            whoopIMUStatus = "Candidate raw-data frame observed · \(b.count) bytes · CRC valid · raw capture available · revision-aware decode pending"
-            return "CANDIDATE_RAW_DATA(0x2F) · \(b.count) bytes · CRC valid · axes not decoded"
+
+            // WHOOP 5 R22 can carry the same 1,244-byte R21 IMU body inside
+            // historical type 47 (inner type 0x2F, revision 21). This is the
+            // observed high-rate offload path; command ACKs alone do not prove
+            // that live raw streaming (0x2B) or IMU mode (106) is active.
+            if b.count == 1244, b[8] == 0x2F, b[9] == 21 {
+                do {
+                    let decoded = try Gen5R21IMUDecoder.decode(b)
+                    guard !decoded.isEmpty else {
+                        whoopIMUStatus = "Historical Gen5 R21 buffer valid · no paired samples"
+                        return "HISTORICAL_R21_IMU(0x2F) · no paired samples · CRC valid"
+                    }
+                    liveWhoopIMUSamples.append(contentsOf: decoded)
+                    if liveWhoopIMUSamples.count > 2000 {
+                        liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 2000)
+                    }
+                    if workoutIsRecording {
+                        workoutWhoopIMUSamples.append(contentsOf: decoded)
+                    }
+                    whoopIMUSampleCount += decoded.count
+                    if workoutIsRecording,
+                       workoutWhoopIMUSamples.count - lastWhoopIMUPersistedSampleCount >= 500 {
+                        persistWorkoutSession()
+                    }
+                    whoopIMUStatus = "Gen5 R21 offload decoded · \(decoded.count) paired samples · 100 Hz"
+                    recordVendorTimeline("HISTORICAL R21 IMU decoded · \(decoded.count) samples · type 47 · 100 Hz")
+                    return "HISTORICAL_R21_IMU(0x2F) · decoded \(decoded.count) samples · CRC valid"
+                } catch {
+                    whoopIMUStatus = "Historical Gen5 R21 candidate rejected · \(error) · raw retained"
+                    return "HISTORICAL_R21_IMU(0x2F) · decode rejected · \(error)"
+                }
+            }
+
+            whoopIMUStatus = "Historical WHOOP 5 frame retained · \(b.count) bytes · inner revision \(b.count > 9 ? Int(b[9]) : -1) · R21 decode not matched"
+            return "HISTORICAL_DATA(0x2F) · \(b.count) bytes · raw retained"
 
         case 40: // REALTIME_DATA; protocol inner[8] == complete-frame byte[16]
             whoopRealtimePacketCount += 1

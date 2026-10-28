@@ -2,10 +2,10 @@ import XCTest
 @testable import PulseForge
 
 final class Gen5R21IMUDecoderTests: XCTestCase {
-    private func makeFrame(accelCount: Int = 2, gyroCount: Int = 2) -> [UInt8] {
+    private func makeFrame(innerType: UInt8 = 0x2B, accelCount: Int = 2, gyroCount: Int = 2) -> [UInt8] {
         var frame = [UInt8](repeating: 0, count: 1244)
         let inner = 8
-        frame[inner] = 0x2B
+        frame[inner] = innerType
         frame[inner + 1] = 21
         let epoch: UInt32 = 1_700_000_000
         for i in 0..<4 { frame[inner + 7 + i] = UInt8((epoch >> (8 * i)) & 0xFF) }
@@ -40,6 +40,12 @@ final class Gen5R21IMUDecoderTests: XCTestCase {
         XCTAssertEqual(samples[0].rotationXDPS, 1000.0, accuracy: 0.000001)
         XCTAssertEqual(samples[0].rotationYDPS, -500.0, accuracy: 0.000001)
         XCTAssertEqual(samples[0].rotationZDPS, 2000.0 * 32767.0 / 32768.0, accuracy: 0.000001)
+    }
+
+    func testDecodesHistoricalR21BufferType47() throws {
+        let samples = try Gen5R21IMUDecoder.decode(makeFrame(innerType: 0x2F))
+        XCTAssertEqual(samples.count, 2)
+        XCTAssertEqual(samples[0].accelerationXG, 1.0, accuracy: 0.000001)
     }
 
     func testUsesHundredHertzSampleSpacing() throws {
