@@ -122,7 +122,7 @@ struct TodayDashboard: View {
                         ScoreRing(title: "STRAIN", value: nil, tint: Color(red: 0.98, green: 0.58, blue: 0.27))
                     }
                     .padding(.vertical, 8)
-                    Text("Recovery is a PulseForge estimate from HRV and resting HR. Sleep performance and WHOOP-style strain remain blank until their models are validated.")
+                    Text("Recovery status: \(insights.recoveryStatus). This is a PulseForge estimate from HRV and resting HR—not a WHOOP score.")
                         .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(18)
