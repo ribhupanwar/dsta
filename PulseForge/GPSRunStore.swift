@@ -85,6 +85,11 @@ final class GPSRunStore: NSObject, ObservableObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         manager.distanceFilter = 3
         manager.pausesLocationUpdatesAutomatically = false
+        // Keep foreground-started outdoor runs recording while the app is backgrounded
+        // or the iPhone is locked. The matching "location" background mode is declared
+        // in Info.plist; When In Use permission is sufficient for this foreground-started flow.
+        manager.allowsBackgroundLocationUpdates = true
+        manager.showsBackgroundLocationIndicator = true
         recentRuns = loadHistory()
     }
 
@@ -279,6 +284,28 @@ final class GPSRunStore: NSObject, ObservableObject, CLLocationManagerDelegate {
             return
         }
 
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = .running
+        configuration.locationType = .outdoor
+
+        // Request write access before creating the workout/route builders. Without this,
+        // HealthKit can reject the workout or distance sample even when GPS recording worked.
+        saveStatus = "Requesting Apple Health permission…"
+        healthStore.requestAuthorization(toShare: [HKObjectType.workoutType(), distanceType],
+                                         read: []) { [weak self] _, authorizationError in
+            guard let self else { return }
+            if let authorizationError {
+                DispatchQueue.main.async {
+                    self.saveStatus = "Apple Health permission failed · \(authorizationError.localizedDescription)"
+                }
+                return
+            }
+            self.buildAndSaveHealthWorkout(record, distanceType: distanceType)
+        }
+    }
+
+    private func buildAndSaveHealthWorkout(_ record: GPSRunRecord,
+                                           distanceType: HKQuantityType) {
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = .running
         configuration.locationType = .outdoor
