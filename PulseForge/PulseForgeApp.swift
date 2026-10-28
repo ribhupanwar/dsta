@@ -426,9 +426,15 @@ struct WhoopMotionCard: View {
                     motionCount("SAMPLES", value: bluetooth.whoopIMUSampleCount)
                     motionCount("WORKOUT", value: bluetooth.workoutWhoopIMUSamples.count)
                 }
+                HStack {
+                    motionCount("HIST FRAMES", value: bluetooth.whoopHistoricalIMUFrameCount)
+                    motionCount("HIST SAMPLES", value: bluetooth.whoopHistoricalIMUSampleCount)
+                }
                 Text(bluetooth.whoopIMUStatus)
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
-                Text("One-second signal variability is diagnostic only; sensor scale and activity classification are not yet calibrated.")
+                Text(bluetooth.whoopHistoricalOffloadStatus)
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                Text("Historical samples stay separate from live workout data; raw type-47 frames are archived before trim ACK.")
                     .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
             }
             .padding(16)
