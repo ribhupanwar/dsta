@@ -1168,16 +1168,27 @@ final class HealthDataStore: ObservableObject {
 
     func requestAccess() async {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        let readTypes: Set<HKObjectType> = [
-            HKObjectType.quantityType(forIdentifier: .heartRate)!,
-            HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!,
-            HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
-            HKObjectType.quantityType(forIdentifier: .respiratoryRate)!,
-            HKObjectType.quantityType(forIdentifier: .oxygenSaturation)!,
-            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
-            HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
-            HKObjectType.workoutType()
+        // HealthKit may not expose every optional quantity/category type on
+        // every OS/device configuration. Build the read set only from types
+        // that are actually available instead of force-unwrapping them.
+        var readTypes = Set<HKObjectType>()
+        let quantityIdentifiers: [HKQuantityTypeIdentifier] = [
+            .heartRate, .heartRateVariabilitySDNN, .restingHeartRate,
+            .respiratoryRate, .oxygenSaturation, .distanceWalkingRunning
         ]
+        for identifier in quantityIdentifiers {
+            if let type = HKObjectType.quantityType(forIdentifier: identifier) {
+                readTypes.insert(type)
+            }
+        }
+        if let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
+            readTypes.insert(sleepType)
+        }
+        readTypes.insert(HKObjectType.workoutType())
+        guard !readTypes.isEmpty else {
+            isAuthorized = false
+            return
+        }
         do {
             try await store.requestAuthorization(toShare: [], read: readTypes)
             isAuthorized = true
