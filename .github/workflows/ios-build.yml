@@ -1,9 +1,9 @@
-name: Build PulseForge iOS
+name: PulseForge iOS CI
 
 on:
   push:
     branches:
-      - whoop-native
+      - main
       - whoop-background-ble
   workflow_dispatch:
 
