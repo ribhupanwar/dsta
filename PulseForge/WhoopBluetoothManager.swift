@@ -601,6 +601,12 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
     }
 
     private func resetGattSessionForReconnect() {
+        // Never carry an HR baseline or candidate across BLE sessions.
+        // A quick reconnect must not stitch old samples into a new workout.
+        workoutDetectionSamples.removeAll()
+        workoutDetectionCandidateSince = nil
+        workoutDetectionCandidateBaselineBPM = nil
+        workoutRecoverySince = nil
         pendingCharacteristicServices.removeAll()
         pendingDescriptorCharacteristics.removeAll()
         discoveredProfile.removeAll()
@@ -638,6 +644,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
     }
 
     private func clearConnectionState() {
+        // A disconnect breaks detector continuity; discard the rolling baseline.
+        workoutDetectionSamples.removeAll()
         connectionTimeoutWorkItem?.cancel()
         connectionTimeoutWorkItem = nil
         pendingCharacteristicServices.removeAll()
