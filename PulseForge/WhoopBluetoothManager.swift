@@ -281,15 +281,54 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         workoutHistory.removeAll { $0.startedAt == startedAt }
         workoutHistory.insert(record, at: 0)
         if workoutHistory.count > 20 { workoutHistory = Array(workoutHistory.prefix(20)) }
-        if let data = try? JSONEncoder().encode(workoutHistory) {
-            UserDefaults.standard.set(data, forKey: "pulseforge.whoop.workoutHistory.v1")
+        saveWorkoutHistory()
+    }
+
+    private var workoutHistoryFileURL: URL? {
+        guard let supportDirectory = FileManager.default.urls(for: .applicationSupportDirectory,
+                                                               in: .userDomainMask).first else {
+            return nil
+        }
+        return supportDirectory
+            .appendingPathComponent("PulseForge", isDirectory: true)
+            .appendingPathComponent("workout-history-v1.json", isDirectory: false)
+    }
+
+    private func loadWorkoutHistory() -> [WorkoutSessionRecord] {
+        if let url = workoutHistoryFileURL,
+           let data = try? Data(contentsOf: url),
+           let records = try? JSONDecoder().decode([WorkoutSessionRecord].self, from: data) {
+            return records.sorted { $0.startedAt > $1.startedAt }
+        }
+        // One-time migration from the earlier UserDefaults-backed history.
+        if let data = UserDefaults.standard.data(forKey: "pulseforge.whoop.workoutHistory.v1"),
+           let records = try? JSONDecoder().decode([WorkoutSessionRecord].self, from: data) {
+            let migrated = Array(records.sorted { $0.startedAt > $1.startedAt }.prefix(20))
+            saveWorkoutHistory(migrated)
+            UserDefaults.standard.removeObject(forKey: "pulseforge.whoop.workoutHistory.v1")
+            return migrated
+        }
+        return []
+    }
+
+    private func saveWorkoutHistory(_ records: [WorkoutSessionRecord]? = nil) {
+        guard let url = workoutHistoryFileURL else { return }
+        let recordsToSave = records ?? workoutHistory
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONEncoder().encode(recordsToSave)
+            try data.write(to: url, options: .atomic)
+            UserDefaults.standard.removeObject(forKey: "pulseforge.whoop.workoutHistory.v1")
+        } catch {
+            statusText = "Workout history save failed · \(error.localizedDescription)"
         }
     }
 
     private func persistWorkoutSession() {
-        if let data = try? JSONEncoder().encode(workoutHistory) {
-            UserDefaults.standard.set(data, forKey: "pulseforge.whoop.workoutHistory.v1")
-        }
+        saveWorkoutHistory()
         if let data = try? JSONEncoder().encode(workoutHeartRateSamples) {
             UserDefaults.standard.set(data, forKey: "pulseforge.whoop.lastWorkoutSamples")
         }
@@ -379,10 +418,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             lastWorkoutWasAutomatic = UserDefaults.standard.bool(forKey: "pulseforge.whoop.lastWorkoutWasAutomatic")
         }
         lastWorkoutWasInterrupted = UserDefaults.standard.bool(forKey: "pulseforge.whoop.lastWorkoutWasInterrupted")
-        if let historyData = UserDefaults.standard.data(forKey: "pulseforge.whoop.workoutHistory.v1"),
-           let savedHistory = try? JSONDecoder().decode([WorkoutSessionRecord].self, from: historyData) {
-            workoutHistory = savedHistory.sorted { $0.startedAt > $1.startedAt }
-        }
+        workoutHistory = loadWorkoutHistory()
         if UserDefaults.standard.bool(forKey: "pulseforge.whoop.activeWorkout"),
            let interruptedStart = UserDefaults.standard.object(forKey: "pulseforge.whoop.activeWorkoutStartedAt") as? Date {
             lastWorkoutStartedAt = interruptedStart
