@@ -189,8 +189,14 @@ final class TrainingInsightsStore: ObservableObject {
                 completion(workouts.count, minutes > 0 ? minutes : nil, nil)
                 return
             }
-            self.loadWorkoutHeartRate(workouts, maxHR: maxHR) { load in
-                completion(workouts.count, minutes > 0 ? minutes : nil, load)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    completion(workouts.count, minutes > 0 ? minutes : nil, nil)
+                    return
+                }
+                self.loadWorkoutHeartRate(workouts, maxHR: maxHR) { load in
+                    completion(workouts.count, minutes > 0 ? minutes : nil, load)
+                }
             }
         }
         healthStore.execute(query)
