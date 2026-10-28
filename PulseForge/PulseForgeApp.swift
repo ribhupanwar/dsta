@@ -740,6 +740,25 @@ struct RunningDashboard: View {
             VStack(alignment: .leading, spacing: 20) {
                 HeaderView(eyebrow: "PERFORMANCE", title: "Running")
                 WorkoutRecordingCard(bluetooth: bluetooth)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        SectionHeader(title: "LAST 7 DAYS")
+                        Spacer()
+                        Text("\(health.weeklyRunCount) RUNS")
+                            .font(.system(size: 9, weight: .bold)).tracking(0.7)
+                            .foregroundStyle(ForgeColors.lime)
+                    }
+                    HStack(spacing: 10) {
+                        RunHighlight(value: health.weeklyRunDistanceKm.map { String(format: "%.1f", $0) } ?? "—",
+                                     unit: "KM", label: "WEEKLY DISTANCE")
+                        RunHighlight(value: health.weeklyRunDurationMinutes.map { String(format: "%.0f", $0) } ?? "—",
+                                     unit: "MIN", label: "RUN TIME")
+                        RunHighlight(value: String(health.weeklyRunCount), unit: "RUNS", label: "SESSIONS")
+                    }
+                    Text("Rolling 7-day total from completed running workouts in Apple Health.")
+                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                }
+                .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 VStack(alignment: .leading, spacing: 8) {
                     SectionHeader(title: "LATEST ACTIVITY")
                     Text(health.latestRunDate.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "No run synced")
@@ -1203,6 +1222,9 @@ final class HealthDataStore: ObservableObject {
     @Published private(set) var latestRunHeartRatePoints: [WorkoutHeartRatePoint] = []
     @Published private(set) var latestRunSplits: [RunSplit] = []
     @Published private(set) var latestRunDate: Date?
+    @Published private(set) var weeklyRunDistanceKm: Double?
+    @Published private(set) var weeklyRunDurationMinutes: Double?
+    @Published private(set) var weeklyRunCount = 0
     @Published private(set) var lastRefreshDate: Date?
     @Published private(set) var isRefreshing = false
     private let store = HKHealthStore()
@@ -1217,6 +1239,8 @@ final class HealthDataStore: ObservableObject {
         loadSleepDuration { group.leave() }
         group.enter()
         loadLatestRun { group.leave() }
+        group.enter()
+        loadWeeklyRunningSummary { group.leave() }
         group.notify(queue: .main) { [weak self] in
             guard let self else { return }
             self.lastRefreshDate = Date()
@@ -1319,6 +1343,34 @@ final class HealthDataStore: ObservableObject {
                 self?.coreSleepMinutes = (core + unspecified) > 0 ? core + unspecified : nil
                 self?.awakeMinutes = awake > 0 ? awake : nil
                 self?.sleepHours = asleep > 0 ? asleep / 60 : nil
+                completion()
+            }
+        }
+        store.execute(query)
+    }
+
+    /// Seven-day running volume, based on completed HealthKit running workouts.
+    /// Distance remains nil when workouts have no recorded distance; no estimate is substituted.
+    private func loadWeeklyRunningSummary(completion: @escaping () -> Void) {
+        let end = Date()
+        let start = Calendar.current.date(byAdding: .day, value: -6,
+                                          to: Calendar.current.startOfDay(for: end)) ?? end.addingTimeInterval(-7 * 86400)
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            HKQuery.predicateForWorkouts(with: .running),
+            HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+        ])
+        let query = HKSampleQuery(sampleType: HKObjectType.workoutType(),
+                                  predicate: predicate,
+                                  limit: HKObjectQueryNoLimit,
+                                  sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) { [weak self] _, samples, _ in
+            let workouts = samples as? [HKWorkout] ?? []
+            let distanceMeters = workouts.compactMap { $0.totalDistance?.doubleValue(for: HKUnit.meter()) }
+            let distanceKm = distanceMeters.isEmpty ? nil : distanceMeters.reduce(0, +) / 1000
+            let durationMinutes = workouts.reduce(0.0) { $0 + $1.duration / 60 }
+            Task { @MainActor in
+                self?.weeklyRunDistanceKm = distanceKm
+                self?.weeklyRunDurationMinutes = workouts.isEmpty ? nil : durationMinutes
+                self?.weeklyRunCount = workouts.count
                 completion()
             }
         }
