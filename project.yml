@@ -24,6 +24,11 @@ targets:
         INFOPLIST_KEY_NSHealthShareUsageDescription: "PulseForge reads your health data to show recovery, sleep, heart rate and training trends."
         INFOPLIST_KEY_NSHealthUpdateUsageDescription: "PulseForge can save supported workout data to Apple Health when you choose."
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "PulseForge uses Bluetooth to connect to your WHOOP-compatible wearable."
+    info:
+      properties:
+        NSLocationWhenInUseUsageDescription: "PulseForge uses GPS during an outdoor run to measure distance, pace, kilometre splits and route."
+        UIBackgroundModes:
+          - location
         INFOPLIST_KEY_UIUserInterfaceStyle: Dark
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.healthcare-fitness
     entitlements:
