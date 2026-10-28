@@ -48,7 +48,7 @@ struct MainTabView: View {
             ForgeColors.background.ignoresSafeArea()
             Group {
                 switch selected {
-                case .today: TodayDashboard()
+                case .today: WhoopStyleTodayDashboard()
                 case .sleep: SleepDashboard()
                 case .strain: StrainDashboard()
                 case .run: RunningDashboard()
