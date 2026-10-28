@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - whoop-background-ble
+      - integrate-pulseforge-into-main
   workflow_dispatch:
 
 concurrency:
