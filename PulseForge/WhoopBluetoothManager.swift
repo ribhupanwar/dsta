@@ -1172,6 +1172,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let echoedSequence = Int(b[11])
             let result = Int(b[12])
             let resultName = [0: "FAILURE", 1: "SUCCESS", 2: "PENDING", 3: "UNSUPPORTED"][result] ?? "UNKNOWN(\(result))"
+            recordVendorTimeline("COMMAND_RESPONSE · cmd=\(command) · seq=\(echoedSequence) · result=\(resultName) · frame=\(b.count) bytes · CRC valid")
             if command == 81 {
                 whoop5AutoIMUEnabled = false
                 whoopIMUStatus = result == 1
@@ -1185,7 +1186,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · \(resultName)"
             }
             if command == 145 {
-                recordVendorTimeline("GET_HELLO response · seq=\(echoedSequence) · result=\(resultName) · frame=\(b.count) bytes · CRC valid")
+                if result == 1 && echoedSequence == 1 {
+                    let responseHex = b.map { String(format: "%02X", $0) }.joined(separator: " ")
+                    recordVendorTimeline("GET_HELLO response raw HEX · \(responseHex)")
+                }
                 guard result == 1, echoedSequence == 1 else {
                     return "COMMAND_RESPONSE · GET_HELLO · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
                 }
