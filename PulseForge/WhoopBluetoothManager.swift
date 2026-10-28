@@ -1165,7 +1165,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         let type = Int(b[8])
         whoopLastPacketType = "\(type)"
         switch type {
-        case 36: // COMMAND_RESPONSE
+        case 36, 38: // COMMAND_RESPONSE; WHOOP 5.0 PUFFIN_COMMAND_RESPONSE (38) shares this layout.
             whoopCommandResponseCount += 1
             let command = Int(b[10])
             guard b.count > 12 else { return "COMMAND_RESPONSE · cmd \(command) · truncated" }
