@@ -1,0 +1,64 @@
+name: WHOOP activity detection archive audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [whoop-background-ble]
+    paths:
+      - ".github/workflows/whoop-activity-detection-audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout WHOOP archive with LFS
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Inspect activity-detection metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s Whoop.zip
+          unzip -tq Whoop.zip >/dev/null
+          mkdir -p activity-audit
+          {
+            echo "# WHOOP activity-detection archive audit"
+            echo
+            echo "Metadata and resource-name/string clues only; no executable code or proprietary assets are copied."
+            echo
+            echo "## Relevant archive paths"
+            unzip -Z1 Whoop.zip | grep -Ei 'ActivityDetection|ActivitySettings|ActivityViewController|WHPStartActivity|WHPActivityRecording|TrackActivity|Workout|Exercise' | head -400 || true
+            echo
+            echo "## Activity-detection strings from app executable"
+            unzip -p Whoop.zip Whoop | strings -a | grep -Ei 'auto.?detect|activity.?detect|workout.?detect|detect.*activity|detect.*workout|activity.*recogn|workout.*recogn|automatic.*activity|automatic.*workout|ActivityDetection|TrackActivity|HeartRateSampleStream|workout.?state|user-state/workout' | sort -u | head -500 || true
+            echo
+            echo "## Activity-related API route strings"
+            unzip -p Whoop.zip Whoop | strings -a | grep -Ei '/[^ ]*(activit|workout|exercise)[^ ]*' | sort -u | head -300 || true
+            echo
+            echo "## Activity-detection settings nib printable strings"
+            unzip -Z1 Whoop.zip | grep -E 'ActivityDetectionSettingsView\.nib|ActivitySettingsViewController\.nib|ActivitySettingsSelectionView\.nib' | while read -r f; do
+              echo "--- $f ---"
+              unzip -p Whoop.zip "$f" | strings -a | head -160 || true
+            done
+            echo
+            echo "## English activity-detection / workout localization keys and values"
+            unzip -Z1 Whoop.zip | grep -E 'LocalizedStrings/Coaching/en/(ActivitySettings|ActivityViewController|WHPStartActivity|WHPActivityRecordingTransition|ActivityListType|ActivityListTableViewType).*\.strings$' | while read -r f; do
+              echo "--- $f ---"
+              unzip -p Whoop.zip "$f" | strings -a | head -180 || true
+            done
+            echo
+            echo "## Relevant archive integrity"
+            unzip -tq Whoop.zip | tail -2
+          } > activity-audit/WHOOP-activity-detection-audit.md
+          test -s activity-audit/WHOOP-activity-detection-audit.md
+          cat activity-audit/WHOOP-activity-detection-audit.md
+      - name: Upload activity audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: WHOOP-activity-detection-audit
+          path: activity-audit/WHOOP-activity-detection-audit.md
+          if-no-files-found: error

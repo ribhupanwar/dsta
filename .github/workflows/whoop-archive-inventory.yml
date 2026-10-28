@@ -1,0 +1,367 @@
+name: WHOOP archive technical inventory
+
+on:
+  # Run this expensive archive scan manually, not on every source-code push.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout archive with Git LFS
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Create technical inventory (metadata only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s Whoop.zip
+          unzip -tq Whoop.zip >/dev/null
+          mkdir -p inventory
+          python3 - <<'PY'
+          import plistlib, json, zipfile, hashlib, re
+          from pathlib import Path
+          zpath = Path("Whoop.zip")
+          with zipfile.ZipFile(zpath) as z:
+              names = z.namelist()
+              info = plistlib.loads(z.read("Info.plist"))
+              keys = [
+                  "CFBundleIdentifier", "CFBundleDisplayName", "CFBundleShortVersionString",
+                  "CFBundleVersion", "MinimumOSVersion", "UIBackgroundModes",
+                  "UISupportedExternalAccessoryProtocols", "NSBluetoothAlwaysUsageDescription",
+                  "NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription",
+                  "UIRequiredDeviceCapabilities"
+              ]
+              metadata = {k: info.get(k) for k in keys if k in info}
+              groups = {
+                  "bluetooth_device": ["Bluetooth", "HelloPacket", "hrBroadcast", "Harvard", "DeviceStatus"],
+                  "health_sleep_recovery": ["HealthKit", "Sleep", "Recovery", "HRV", "RestingHeartRate"],
+                  "activity_training": ["Activity", "Workout", "Strain", "Run", "Exercise"],
+                  "journal_behavior": ["Journal", "Behavior", "Habit"],
+                  "ui_resources": [".nib", ".storyboardc", ".gif", ".png", ".car"]
+              }
+              inventory = {}
+              for group, terms in groups.items():
+                  inventory[group] = [n for n in names if any(t.lower() in n.lower() for t in terms)][:300]
+              binary_strings = []
+              candidate_ble_uuids = []
+              try:
+                  raw = z.read("Whoop")
+                  for token in [
+                      b"shouldDispatchNotificationSideEffects", b"GET_DATA_RANGE",
+                      b"SEND_HISTORICAL_DATA", b"historical_metadata", b"CBPeripheral",
+                      b"CBCharacteristic", b"CBUUID", b"CBService", b"didUpdateValueFor",
+                      b"didDiscoverServices", b"didDiscoverCharacteristicsFor",
+                      b"setNotifyValue", b"writeValue", b"scanForPeripherals",
+                      b"connectPeripheral", b"HelloPacketRev3", b"HelloPacketRev4",
+                      b"hrBroadcastBeat"
+                  ]:
+                      if token in raw:
+                          binary_strings.append(token.decode("ascii"))
+                  uuid_pattern = rb"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                  candidate_ble_uuids = sorted(set(x.decode("ascii").lower() for x in re.findall(uuid_pattern, raw)))
+                  printable_strings = [x.decode("ascii", "ignore") for x in re.findall(rb"[\x20-\x7e]{4,}", raw)]
+                  ble_terms = ["ble -", "whoopstrap", "whoopbatterypack", "heartrate", "heart_rate", "livehr", "historical", "get_data", "send_historical", "commandfromstrap", "memfault", "notify", "characteristic", "service", "packet", "hello"]
+                  ble_related_strings = sorted(set(s[:180] for s in printable_strings if len(s) <= 180 and any(t in s.lower() for t in ble_terms) and not any(t in s.lower() for t in ["password", "credential", "privatekey", "access_token", "refresh_token"])))[:600]
+                  protocol_symbol_terms = [
+                      "WhoopPacket", "WhoopStrapServices", "WhoopLiveHeartRate",
+                      "WhoopCoreBluetooth", "WhoopAsyncCoreBluetooth", "WhoopDeviceAPIs",
+                      "WhoopAsyncDeviceAPIs", "characteristicTypesToRead",
+                      "commandReadCharacteristic", "commandWriteCharacteristic",
+                      "dataReadCharacteristic", "eventReadCharacteristic",
+                      "RealtimeHeartRateData", "HistoricalPullServicing",
+                      "HeartRateBroadcastServicing", "HelloResponse", "HelloSending"
+                  ]
+                  protocol_symbol_strings = sorted(set(
+                      s[:240] for s in printable_strings
+                      if any(term.lower() in s.lower() for term in protocol_symbol_terms)
+                      and not any(t in s.lower() for t in ["password", "credential", "privatekey", "access_token", "refresh_token"])
+                  ))[:1800]
+                  uuid_contexts = []
+                  for idx, value in enumerate(printable_strings):
+                      if re.search(uuid_pattern, value.encode("ascii", "ignore")):
+                          nearby = printable_strings[max(0, idx - 2):min(len(printable_strings), idx + 3)]
+                          safe_nearby = [s[:140] for s in nearby if len(s) <= 140 and not any(t in s.lower() for t in ["password", "credential", "privatekey", "access_token", "refresh_token"])]
+                          uuid_contexts.append({"match": value[:140], "nearby_strings": safe_nearby})
+              except KeyError:
+                  pass
+              macho_export_strings = []
+              def read_uleb(data, pos, limit):
+                  value = 0
+                  shift = 0
+                  while pos < limit and shift <= 63:
+                      byte = data[pos]
+                      pos += 1
+                      value |= (byte & 0x7f) << shift
+                      if byte < 0x80:
+                          return value, pos
+                      shift += 7
+                  raise ValueError("invalid ULEB128")
+              def thin_macho_exports(data, base):
+                  if base + 32 > len(data):
+                      return []
+                  magic = data[base:base+4]
+                  if magic == b"\\xcf\\xfa\\xed\\xfe":
+                      endian = "<"
+                  elif magic == b"\\xfe\\xed\\xfa\\xcf":
+                      endian = ">"
+                  else:
+                      return []
+                  header = struct.unpack_from(endian + "IiiIIIII", data, base)
+                  ncmds = header[4]
+                  cursor = base + 32
+                  export_range = None
+                  for _ in range(min(ncmds, 20000)):
+                      if cursor + 8 > len(data):
+                          break
+                      cmd, cmdsize = struct.unpack_from(endian + "II", data, cursor)
+                      if cmdsize < 8 or cursor + cmdsize > len(data):
+                          break
+                      if cmd == 0x80000033 and cmdsize >= 16:
+                          off, size = struct.unpack_from(endian + "II", data, cursor + 8)
+                          export_range = (off, size)
+                      elif cmd == 0x80000022 and cmdsize >= 48:
+                          export_off, export_size = struct.unpack_from(endian + "II", data, cursor + 40)
+                          if export_size:
+                              export_range = (export_off, export_size)
+                      cursor += cmdsize
+                  if not export_range:
+                      return []
+                  off, size = export_range
+                  start = base + off
+                  end = start + size
+                  if size <= 0 or end > len(data):
+                      return []
+                  trie = data[start:end]
+                  found, visited = [], set()
+                  def walk(node_off, prefix, depth=0):
+                      if node_off >= len(trie) or node_off in visited or depth > 128 or len(visited) > 200000:
+                          return
+                      visited.add(node_off)
+                      pos = node_off
+                      terminal_size, pos = read_uleb(trie, pos, len(trie))
+                      terminal_end = pos + terminal_size
+                      if terminal_end > len(trie):
+                          return
+                      if terminal_size:
+                          flags, term_pos = read_uleb(trie, pos, terminal_end)
+                          if not (flags & 0x08):
+                              if flags & 0x10:
+                                  _, term_pos = read_uleb(trie, term_pos, terminal_end)
+                                  _, term_pos = read_uleb(trie, term_pos, terminal_end)
+                              else:
+                                  _, term_pos = read_uleb(trie, term_pos, terminal_end)
+                              low = prefix.lower()
+                              if any(t in low for t in ("whoop", "realtimehr", "historical", "hello", "characteristic", "packet", "heart_rate", "unlocktoken")):
+                                  found.append(prefix)
+                      pos = terminal_end
+                      if pos >= len(trie):
+                          return
+                      child_count = trie[pos]
+                      pos += 1
+                      for _ in range(child_count):
+                          nul = trie.find(b"\\0", pos)
+                          if nul < 0:
+                              return
+                          edge = trie[pos:nul].decode("utf-8", "ignore")
+                          child_off, pos = read_uleb(trie, nul + 1, len(trie))
+                          walk(child_off, prefix + edge, depth + 1)
+                  try:
+                      walk(0, "")
+                  except (ValueError, IndexError):
+                      return []
+                  return found
+              macho_symbol_strings = []
+              try:
+                  import struct, subprocess, shutil
+                  binary = z.read("Whoop")
+
+                  def thin_macho_symbols(data, base):
+                      if base + 32 > len(data):
+                          return []
+                      magic = data[base:base+4]
+                      if magic == b"\\xcf\\xfa\\xed\\xfe":
+                          endian = "<"
+                      elif magic == b"\\xfe\\xed\\xfa\\xcf":
+                          endian = ">"
+                      else:
+                          return []
+                      header = struct.unpack_from(endian + "IiiIIIII", data, base)
+                      ncmds = header[4]
+                      cursor = base + 32
+                      symtab = None
+                      for _ in range(min(ncmds, 20000)):
+                          if cursor + 8 > len(data):
+                              break
+                          cmd, cmdsize = struct.unpack_from(endian + "II", data, cursor)
+                          if cmdsize < 8 or cursor + cmdsize > len(data):
+                              break
+                          if cmd == 0x2 and cmdsize >= 24:
+                              symtab = struct.unpack_from(endian + "IIII", data, cursor + 8)
+                              break
+                          cursor += cmdsize
+                      if not symtab:
+                          return []
+                      symoff, nsyms, stroff, strsize = symtab
+                      if nsyms > 3000000 or stroff + strsize > len(data):
+                          return []
+                      # LC_SYMTAB offsets are relative to the thin Mach-O slice.
+                      symoff += base
+                      stroff += base
+                      if symoff + nsyms * 16 > len(data):
+                          return []
+                      strings = data[stroff:stroff+strsize]
+                      found = []
+                      for idx in range(nsyms):
+                          pos = symoff + idx * 16
+                          if pos + 16 > len(data):
+                              break
+                          strx = struct.unpack_from(endian + "I", data, pos)[0]
+                          if 0 < strx < len(strings):
+                              end = strings.find(b"\\0", strx)
+                              if end < 0:
+                                  end = len(strings)
+                              name = strings[strx:end].decode("utf-8", "ignore")
+                              low = name.lower()
+                              if any(term in low for term in (
+                                  "whoop", "realtimehr", "historicalpull", "helloresponse",
+                                  "characteristic", "packet", "heart rate", "heart_rate",
+                                  "unlocktoken", "commandread", "commandwrite", "dataread", "eventread"
+                              )):
+                                  found.append(name)
+                      return found
+
+                  slices = [0]
+                  magic = binary[:4]
+                  if magic in (b"\\xca\\xfe\\xba\\xbe", b"\\xbe\\xba\\xfe\\xca"):
+                      endian = ">" if magic == b"\\xca\\xfe\\xba\\xbe" else "<"
+                      count = struct.unpack_from(endian + "I", binary, 4)[0]
+                      slices = []
+                      for idx in range(min(count, 64)):
+                          off = 8 + idx * 20
+                          if off + 20 <= len(binary):
+                              slices.append(struct.unpack_from(endian + "IIIII", binary, off)[2])
+                  elif magic in (b"\\xca\\xfe\\xba\\xbf", b"\\xbf\\xba\\xfe\\xca"):
+                      endian = ">" if magic == b"\\xca\\xfe\\xba\\xbf" else "<"
+                      count = struct.unpack_from(endian + "I", binary, 4)[0]
+                      slices = []
+                      for idx in range(min(count, 64)):
+                          off = 8 + idx * 32
+                          if off + 32 <= len(binary):
+                              slices.append(struct.unpack_from(endian + "IIQQII", binary, off)[2])
+                  for base in slices:
+                      macho_symbol_strings.extend(thin_macho_symbols(binary, base))
+                      macho_export_strings.extend(thin_macho_exports(binary, base))
+                  macho_symbol_strings = sorted(set(macho_symbol_strings))[:5000]
+                  demangler = shutil.which("swift-demangle")
+                  if demangler and macho_symbol_strings:
+                      decoded = []
+                      for start in range(0, len(macho_symbol_strings), 100):
+                          chunk = macho_symbol_strings[start:start+100]
+                          result = subprocess.run([demangler, "--compact"], input="\\n".join(chunk),
+                                                  text=True, capture_output=True, timeout=30)
+                          if result.returncode == 0:
+                              decoded.extend(x for x in result.stdout.splitlines() if x.strip())
+                      if decoded:
+                          macho_symbol_strings = sorted(set(decoded))[:5000]
+              except Exception as exc:
+                  macho_symbol_strings = ["Symbol extraction unavailable: " + type(exc).__name__]
+
+              resource_meta = {}
+              for name in ["HelloPacketRev3", "HelloPacketRev4", "hrBroadcastBeat"]:
+                  if name in names:
+                      data = z.read(name)
+                      resource_meta[name] = {
+                          "bytes": len(data),
+                          "sha256": hashlib.sha256(data).hexdigest(),
+                          "hex": data.hex()
+                      }
+              macho_diagnostics = {
+                  "binary_bytes": len(binary) if "binary" in locals() else 0,
+                  "magic_hex": binary[:16].hex() if "binary" in locals() else None,
+                  "magic_ascii": repr(binary[:4]) if "binary" in locals() else None,
+                  "parsed_symbol_count": len(macho_symbol_strings),
+                  "extraction_status": macho_symbol_strings[0] if len(macho_symbol_strings) == 1 and macho_symbol_strings[0].startswith("Symbol extraction unavailable:") else ("symbols_found" if macho_symbol_strings else "no_matching_symbols")
+              }
+              def shape(value, depth=0):
+                  if depth >= 3:
+                      return type(value).__name__
+                  if isinstance(value, dict):
+                      return {str(k): shape(v, depth + 1) for k, v in list(value.items())[:60]}
+                  if isinstance(value, list):
+                      return [shape(value[0], depth + 1)] if value else []
+                  return type(value).__name__
+              dto_schemas = {}
+              json_resources = []
+              for name in names:
+                  if not name.lower().endswith(".json"):
+                      continue
+                  json_resources.append(name)
+                  low = name.lower()
+                  if not any(t in low for t in ["dto", "recovery", "sleep", "strain", "activity", "journal", "behavior"]):
+                      continue
+                  try:
+                      dto_schemas[name] = shape(json.loads(z.read(name)))
+                  except Exception:
+                      pass
+              report = {
+                  "archive": {"name": zpath.name, "bytes": zpath.stat().st_size, "valid_zip": True},
+                  "app_metadata": metadata,
+                  "resource_inventory": inventory,
+                  "binary_marker_presence": binary_strings,
+                  "candidate_ble_uuids_from_binary": candidate_ble_uuids,
+                  "uuid_string_contexts": uuid_contexts,
+                  "ble_related_strings": ble_related_strings,
+                  "protocol_symbol_strings": protocol_symbol_strings,
+                  "macho_symbol_strings": macho_symbol_strings,
+                  "macho_export_strings": sorted(set(macho_export_strings))[:5000],
+                  "protocol_resource_fingerprints": resource_meta,
+                  "macho_diagnostics": macho_diagnostics,
+                  "json_resource_files": json_resources,
+                  "dto_data_shapes": dto_schemas
+              }
+              Path("inventory/whoop-archive-inventory.json").write_text(json.dumps(report, indent=2))
+              lines = ["# WHOOP archive technical inventory", "",
+                       "This report contains metadata, resource names and marker presence only. It does not redistribute the app executable or proprietary assets.", "",
+                       "## App metadata", ""]
+              for k, v in metadata.items():
+                  lines.append(f"- **{k}:** {v}")
+              lines += ["", "## Binary marker presence", ""]
+              lines += [f"- {x}" for x in binary_strings] or ["- No selected markers found"]
+              lines += ["", "## Candidate BLE UUID strings (unverified)", ""]
+              lines += [f"- `{x}`" for x in candidate_ble_uuids] or ["- No UUID strings found"]
+              lines += ["", "## BLE-related strings from executable", ""]
+              lines += [f"- `{x}`" for x in ble_related_strings] or ["- No matching strings found"]
+              lines += ["", "## Protocol symbols and type names (extracted from executable)", ""]
+              lines += [f"- `{x}`" for x in protocol_symbol_strings] or ["- No matching symbols found"]
+              lines += ["", "## Mach-O symbol table (filtered BLE/protocol names)", ""]
+              lines += [f"- `{x}`" for x in macho_symbol_strings] or ["- No matching Mach-O symbols found"]
+              lines += ["", "## Mach-O exported BLE/protocol names", ""]
+              lines += [f"- `{x}`" for x in sorted(set(macho_export_strings))[:5000]] or ["- No matching exported names found"]
+              lines += ["", "## Nearby strings for UUID matches (unverified)", ""]
+              for item in uuid_contexts:
+                  lines += [f"- Match: `{item['match']}`", f"  - Context: {' | '.join(item['nearby_strings'])}"]
+              lines += ["", "## Protocol resource fingerprints", ""]
+              for k, v in resource_meta.items():
+                  lines.append(f"- **{k}:** {v['bytes']} bytes · SHA-256 `{v['sha256']}`")
+              lines += ["", "## DTO and data resource schema (field names and value types only)", ""]
+              for name, schema in dto_schemas.items():
+                  lines += [f"### `{name}`", "", "```json", json.dumps(schema, indent=2), "```", ""]
+              lines += ["", f"## JSON resources ({len(json_resources)})", ""]
+              lines += [f"- `{x}`" for x in json_resources]
+              for group, items in inventory.items():
+                  lines += ["", f"## {group.replace('_', ' ').title()} ({len(items)} listed)", ""]
+                  lines += [f"- `{x}`" for x in items] or ["- None found"]
+              Path("inventory/WHOOP-archive-inventory.md").write_text("\n".join(lines) + "\n")
+          PY
+      - name: Upload technical inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: WHOOP-archive-technical-inventory
+          path: inventory/
+          if-no-files-found: error
+          retention-days: 14
