@@ -45,3 +45,48 @@ This work is limited to analysis of the owner's lawfully obtained app archive an
 The inventory generator writes the complete resource hex into the JSON field `protocol_resource_fingerprints.<resource>.hex`. The prior statement that only hashes were available was incorrect. The already-downloaded artifact contains both 144-byte packets.
 
 The current PulseForge BLE manager sends a separate 16-byte `CLIENT_HELLO` frame to `FD4B0002` after characteristic discovery. The existence of 144-byte embedded resources does not prove that they should be written directly to this characteristic: they may be serialized payloads, templates, or inputs to a higher-level sender. The next analysis must trace the archive's `AsyncHelloSender`, revision selection, response parser, and unlock-token stage before changing the on-device write.
+
+
+## Byte-level comparison of the embedded hello resources
+
+The complete resource hex is present in the existing private Actions inventory artifact. A byte-level comparison gives these reproducible observations:
+
+| Offset (decimal) | Rev3 | Rev4 | Observation |
+|---:|---|---|---|
+| 0 | `AA` | `AA` | Same first byte |
+| 1 | `8C` | `8C` | Same second byte; 0x8C = 140 |
+| 2–3 | `00 4A` | `00 4A` | Same |
+| 4–8 | `24 91 23 01 01` | same | Same |
+| 9 | `03` | `04` | Explicit revision difference |
+| 10–22 | identical | identical | Shared bytes |
+| 23–30 | `3A 30 33 31 39 31 35 00` | `4A 30 34 31 39 31 35 31` | Revision-correlated printable field differs |
+| 32–85 (Rev3) / 33–86 (Rev4) | same ASCII hex-like string | same ASCII hex-like string | Shared 54-character value: `fbb0d9624eb0441809d61ab83fabea1b64f82e894d0df0d2fb7f65` |
+| final 4 bytes | `63 35 EF 67` | `63 35 EF 67` | Identical trailer |
+
+After the revision-specific bytes, the remaining serialized configuration-like region is highly similar but shifted by one byte due to the differing printable field length. This is a structural observation only; field meanings and integer endianness have not been established. The identical four-byte trailer is **not** labelled as a CRC: testing common CRC32 over the preceding bytes did not reproduce it.
+
+The resources begin with `AA 8C`, whereas PulseForge's currently hard-coded 16-byte command begins `AA 01 08 00`. They are therefore visibly different wire objects. We must not write either 144-byte resource to FD4B0002 simply because both names contain “Hello”.
+
+## Handshake implementation gap identified in PulseForge
+
+The current `WhoopBluetoothManager`:
+- discovers characteristics per service and requests notifications on FD4B0003/0004/0005/0007;
+- writes a fixed 16-byte `CLIENT_HELLO` frame as soon as FD4B0001 characteristics are discovered;
+- has flags for hello write pending, HR enable, HR stream confirmation, and pending writes;
+- parses an HR stream event and separately sends a locally framed opcode 0x03 command.
+
+The official archive's extracted type vocabulary contains `HelloResponsePacketRev3/Rev4`, `HelloResponsePacketRevRouter`, `AsyncHelloSender`, `AsyncHelloRetryService`, `StrapUnlockTokenService`, `StrapHelloCompleteProviding`, and `commandWriteCharacteristic` / `dataReadCharacteristic` / `eventReadCharacteristic`. This is enough to conclude that PulseForge's current “hello write acknowledged” must not be treated as “hello/session complete”. A CoreBluetooth write acknowledgement only confirms the local GATT write operation; the app must still observe and validate the strap response and any subsequent unlock/session-complete state.
+
+The inventory extraction did not recover Swift method bodies, protocol conformance implementations, or a proven mapping of FD4B UUIDs to command/data/event characteristics. Therefore, no change to the 16-byte hello, command opcodes, or unlock flow is justified yet.
+
+## Next concrete engineering change
+
+Instrument the existing manager with explicit per-connection handshake states and correlated trace events, without changing the packet bytes:
+1. Assign a monotonically increasing connection-generation ID on each successful connection.
+2. Reset all hello/stream/write state on disconnect and GATT service invalidation.
+3. Track discovery completion for all services before initiating exactly one hello attempt.
+4. Record the command characteristic properties, write type, exact outgoing frame hex, write callback/error, and the timestamp/UUID/hex of every notification against that generation.
+5. Keep distinct states for `helloWriteAcknowledged`, `helloResponseParsed`, `unlockComplete`, and `streamActive`; never infer the latter three from the write callback.
+6. Do not send the realtime-HR enable command until its prerequisite state is established from an observed, validated protocol response.
+
+This is a diagnostic/state-correctness improvement, not a claim that the proprietary handshake has been fully decoded.
