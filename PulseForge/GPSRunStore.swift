@@ -296,7 +296,9 @@ final class GPSRunStore: NSObject, ObservableObject, CLLocationManagerDelegate {
                 }
                 return
             }
-            self.buildAndSaveHealthWorkout(record, distanceType: distanceType)
+            DispatchQueue.main.async {
+                self.buildAndSaveHealthWorkout(record, distanceType: distanceType)
+            }
         }
     }
 
