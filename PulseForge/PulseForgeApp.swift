@@ -96,74 +96,136 @@ struct TodayDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+    @State private var showingRecovery = false
+
+    private var recoveryTint: Color { Color(red: 0.12, green: 0.82, blue: 0.62) }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)).uppercased())
-                            .font(.system(size: 10, weight: .bold)).tracking(1.5)
+                        Text("PULSEFORGE").font(.system(size: 12, weight: .bold)).tracking(2.1)
+                            .foregroundStyle(.white)
+                        Text("TODAY · " + Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()).uppercased())
+                            .font(.system(size: 9, weight: .semibold)).tracking(1)
                             .foregroundStyle(ForgeColors.muted)
-                        Text("Today").font(.system(size: 32, weight: .bold, design: .rounded))
-                            .tracking(-0.8)
                     }
                     Spacer()
-                    Image(systemName: "person.crop.circle")
-                        .font(.system(size: 27, weight: .light))
-                        .foregroundStyle(ForgeColors.muted)
+                    Image(systemName: "figure.run.circle").font(.system(size: 27, weight: .light))
+                        .foregroundStyle(Color(red: 0.24, green: 0.78, blue: 0.91))
                 }
-
-                VStack(alignment: .leading, spacing: 16) {
-                    SectionHeader(title: "YOUR SCORES")
-                    HStack(alignment: .top, spacing: 0) {
-                        ScoreRing(title: "RECOVERY", value: insights.recoveryScore, tint: Color(red: 0.25, green: 0.82, blue: 0.48))
-                        Spacer(minLength: 2)
-                        ScoreRing(title: "SLEEP", value: nil, tint: Color(red: 0.35, green: 0.62, blue: 0.96))
-                        Spacer(minLength: 2)
-                        ScoreRing(title: "STRAIN", value: nil, tint: Color(red: 0.98, green: 0.58, blue: 0.27))
+                VStack(spacing: 13) {
+                    ZStack {
+                        Circle().stroke(ForgeColors.track, lineWidth: 12)
+                        Circle().trim(from: 0, to: min(1, max(0, Double(insights.recoveryScore ?? 0) / 100)))
+                            .stroke(recoveryTint, style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .shadow(color: recoveryTint.opacity(0.25), radius: 8)
+                        VStack(spacing: 4) {
+                            Text("RECOVERY").font(.system(size: 10, weight: .bold)).tracking(1.3)
+                                .foregroundStyle(ForgeColors.muted)
+                            Text(insights.recoveryScore.map { "\($0)%" } ?? "—")
+                                .font(.system(size: 43, weight: .medium, design: .rounded)).monospacedDigit()
+                            Text(insights.recoveryStatus.uppercased())
+                                .font(.system(size: 9, weight: .bold)).tracking(0.8)
+                                .foregroundStyle(recoveryTint)
+                        }
                     }
-                    .padding(.vertical, 8)
-                    Text("Recovery status: \(insights.recoveryStatus). This is a PulseForge estimate from HRV and resting HR—not a WHOOP score.")
-                        .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                    .frame(width: 176, height: 176)
+                    Button { showingRecovery = true } label: {
+                        HStack(spacing: 5) {
+                            Text("RECOVERY DETAILS")
+                            Image(systemName: "chevron.right")
+                        }
+                        .font(.system(size: 9, weight: .bold)).tracking(0.9)
+                        .foregroundStyle(Color(red: 0.28, green: 0.78, blue: 0.92))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .padding(18)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 18)
                 .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 .overlay(RoundedRectangle(cornerRadius: 22).stroke(ForgeColors.stroke, lineWidth: 1))
 
-                VStack(alignment: .leading, spacing: 13) {
-                    SectionHeader(title: "HEALTH MONITOR", action: "View details")
+                HStack(spacing: 9) {
+                    CompactMetric(title: "HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
+                    CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
+                    CompactMetric(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                }
+                LiveHeartRateCard()
+                LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE HEART RATE")
+                VStack(alignment: .leading, spacing: 7) {
+                    Label("TODAY'S INSIGHT", systemImage: "sparkles")
+                        .font(.system(size: 10, weight: .bold)).tracking(0.8)
+                        .foregroundStyle(Color(red: 0.22, green: 0.78, blue: 0.9))
+                    Text(insights.recoveryStatus == "—" ? "Connect your health data to build a daily readiness insight." : "Your recovery estimate is based on the available HRV and resting-heart-rate baseline.")
+                        .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(15).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 17))
+                ConnectPrompt()
+                Text("Scores are shown only when supported by available measurements. PulseForge estimates are not WHOOP scores.")
+                    .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                    .padding(.bottom, 105)
+            }
+            .padding(.horizontal, 17).padding(.top, 14)
+        }
+        .refreshable { health.refresh(); insights.refresh() }
+        .sheet(isPresented: $showingRecovery) {
+            RecoveryDetailSheet()
+                .environmentObject(health)
+                .environmentObject(insights)
+                .preferredColorScheme(.dark)
+        }
+    }
+}
+
+struct RecoveryDetailSheet: View {
+    @EnvironmentObject private var health: HealthDataStore
+    @EnvironmentObject private var insights: TrainingInsightsStore
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack {
+                        Spacer()
+                        ZStack {
+                            Circle().stroke(ForgeColors.track, lineWidth: 12)
+                            Circle().trim(from: 0, to: min(1, max(0, Double(insights.recoveryScore ?? 0) / 100)))
+                                .stroke(Color(red: 0.12, green: 0.82, blue: 0.62), style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                            VStack(spacing: 3) {
+                                Text("RECOVERY").font(.system(size: 10, weight: .bold)).tracking(1)
+                                    .foregroundStyle(ForgeColors.muted)
+                                Text(insights.recoveryScore.map { "\($0)%" } ?? "—")
+                                    .font(.system(size: 38, weight: .medium, design: .rounded))
+                            }
+                        }
+                        .frame(width: 170, height: 170)
+                        Spacer()
+                    }
                     HStack(spacing: 10) {
                         CompactMetric(title: "HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
                         CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
-                        CompactMetric(title: "RESP. RATE", value: health.respiratoryRate.map { String(format: "%.1f", $0) } ?? "—", unit: "br/min")
-                    }
-                    HStack(spacing: 10) {
-                        CompactMetric(title: "BLOOD O₂", value: health.bloodOxygenPercent.map { String(format: "%.0f", $0) } ?? "—", unit: "%")
                         CompactMetric(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
-                        CompactMetric(title: "LIVE HR", value: bluetooth.freshHeartRateBPM.map(String.init) ?? "—", unit: "bpm")
                     }
+                    Text("Recovery trend and baseline history will appear as enough verified daily measurements are collected.")
+                        .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                 }
-
-                LiveHeartRateCard()
-                LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE HEART RATE")
-                ConnectPrompt()
-                JournalPrompt()
-                HStack {
-                    Text(health.lastRefreshDate.map { "DATA UPDATED · \($0.formatted(date: .omitted, time: .shortened))" } ?? "PULL DOWN TO REFRESH")
-                        .font(.system(size: 9, weight: .semibold)).tracking(0.6)
-                        .foregroundStyle(ForgeColors.muted)
-                    Spacer()
-                    if health.isRefreshing { ProgressView().tint(ForgeColors.lime).scaleEffect(0.8) }
-                }
-                Text("Unavailable scores stay blank until the underlying data and calculation are verified.")
-                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
-                    .padding(.bottom, 110)
+                .padding(18)
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 16)
+            .background(ForgeColors.background)
+            .navigationTitle("Recovery")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }.foregroundStyle(Color(red: 0.28, green: 0.78, blue: 0.92))
+                }
+            }
         }
-        .refreshable { health.refresh(); insights.refresh() }
     }
 }
 
@@ -1869,10 +1931,10 @@ struct ConnectPrompt: View {
 }
 
 enum ForgeColors {
-    static let background = Color(red: 0.025, green: 0.03, blue: 0.035)
-    static let card = Color(red: 0.075, green: 0.085, blue: 0.09)
-    static let track = Color(red: 0.16, green: 0.18, blue: 0.18)
-    static let stroke = Color.white.opacity(0.07)
-    static let muted = Color(red: 0.55, green: 0.59, blue: 0.59)
-    static let lime = Color(red: 0.72, green: 0.95, blue: 0.24)
+    static let background = Color(red: 0.018, green: 0.035, blue: 0.065)
+    static let card = Color(red: 0.035, green: 0.075, blue: 0.12)
+    static let track = Color(red: 0.08, green: 0.16, blue: 0.23)
+    static let stroke = Color(red: 0.12, green: 0.31, blue: 0.43).opacity(0.62)
+    static let muted = Color(red: 0.57, green: 0.68, blue: 0.77)
+    static let lime = Color(red: 0.12, green: 0.78, blue: 0.88)
 }
