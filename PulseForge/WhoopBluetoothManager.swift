@@ -1607,31 +1607,15 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 pendingDescriptorCharacteristics.insert(key)
                 peripheral.discoverDescriptors(for: characteristic)
             }
-            // WHOOP 5.0/MG requires its session hello on FD4B0002. The frame is
-            // transcribed in NOOP's DeviceFamily.whoop5ClientHello constant.
-            // Send once per connection, with response, after all characteristics
-            // (including notify channels) have been discovered/requested.
-            if service.uuid == whoop5ServiceUUID,
-               !whoop5HelloSent,
-               let command = whoop5CommandCharacteristic,
-               command.properties.contains(.write) {
-                let hello: [UInt8] = [
-                    0xAA, 0x01, 0x08, 0x00, 0x00, 0x01, 0xE6, 0x71,
-                    0x23, 0x01, 0x91, 0x01, 0x36, 0x3E, 0x5C, 0x8D
-                ]
-                whoop5HelloSent = true
-                whoop5HelloWritePending = true
-                whoop5PendingWrites.append("CLIENT_HELLO")
-                lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write requested · FD4B0002 · 16 bytes · with response"
-                recordVendorTimeline("CLIENT_HELLO write requested · FD4B0002 · 16 bytes")
-                statusText = "Connected · starting WHOOP 5.0 secure session"
-                peripheral.writeValue(Data(hello), for: command, type: .withResponse)
-            } else if service.uuid == whoop5ServiceUUID,
-                      whoop5CommandCharacteristic == nil {
-                lastBLEEvent = "WHOOP 5.0 command characteristic FD4B0002 not found"
-            }
         }
         pendingCharacteristicServices.remove(ObjectIdentifier(service))
+        if pendingCharacteristicServices.isEmpty {
+            // Do not start the WHOOP session while CoreBluetooth is still
+            // discovering characteristics on other GATT services. The old
+            // per-service trigger could send CLIENT_HELLO before the complete
+            // profile (including any companion service) was known.
+            startWhoopHelloAfterGattDiscovery(peripheral)
+        }
         if pendingCharacteristicServices.isEmpty && pendingDescriptorCharacteristics.isEmpty {
             updateGattDiscoveryCompletionStatus()
         } else if pendingCharacteristicServices.isEmpty {
@@ -1639,6 +1623,36 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         } else {
             statusText = "Inspecting characteristics · \(pendingCharacteristicServices.count) service(s) remaining"
         }
+    }
+
+    /// Starts exactly one existing CLIENT_HELLO only after every discovered
+    /// service has completed characteristic discovery. Packet bytes and write
+    /// type remain unchanged; this fixes the cross-service discovery race.
+    private func startWhoopHelloAfterGattDiscovery(_ peripheral: CBPeripheral) {
+        guard !whoop5HelloSent else { return }
+        guard let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else {
+            let hasWhoopService = discoveredProfile.contains {
+                $0.contains("Service · \(whoop5ServiceUUID.uuidString)")
+            }
+            if hasWhoopService {
+                lastBLEEvent = "WHOOP 5.0 command characteristic FD4B0002 not found after complete GATT discovery"
+                recordVendorTimeline("CLIENT_HELLO withheld · FD4B0002 unavailable after all services discovered")
+            }
+            return
+        }
+
+        let hello: [UInt8] = [
+            0xAA, 0x01, 0x08, 0x00, 0x00, 0x01, 0xE6, 0x71,
+            0x23, 0x01, 0x91, 0x01, 0x36, 0x3E, 0x5C, 0x8D
+        ]
+        whoop5HelloSent = true
+        whoop5HelloWritePending = true
+        whoop5PendingWrites.append("CLIENT_HELLO")
+        lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write requested · FD4B0002 · 16 bytes · all services discovered"
+        recordVendorTimeline("CLIENT_HELLO write requested · FD4B0002 · 16 bytes · all service characteristics discovered")
+        statusText = "Connected · starting WHOOP 5.0 secure session"
+        peripheral.writeValue(Data(hello), for: command, type: .withResponse)
     }
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier,
