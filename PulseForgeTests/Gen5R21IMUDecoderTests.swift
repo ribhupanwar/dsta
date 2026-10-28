@@ -53,6 +53,13 @@ final class Gen5R21IMUDecoderTests: XCTestCase {
         XCTAssertEqual(samples[1].timestamp.timeIntervalSince(samples[0].timestamp), 0.01, accuracy: 0.000001)
     }
 
+    func testUsesR21TimestampFractionAtFrameOffset19() throws {
+        var frame = makeFrame(innerType: 0x2F)
+        putU16(16_384, at: 19, in: &frame) // 0.5 seconds at 1/32768-second units
+        let samples = try Gen5R21IMUDecoder.decode(frame)
+        XCTAssertEqual(samples[0].timestamp.timeIntervalSince1970, 1_700_000_000.5, accuracy: 0.000001)
+    }
+
     func testPairsOnlyCommonAccelerometerAndGyroscopeSamples() throws {
         XCTAssertEqual(try Gen5R21IMUDecoder.decode(makeFrame(accelCount: 1, gyroCount: 2)).count, 1)
     }
