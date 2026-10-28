@@ -192,7 +192,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             return
         }
 
-        let sortedBaseline = baselineWindow.map(\\.bpm).sorted()
+        let sortedBaseline = baselineWindow.map(\.bpm).sorted()
         let baseline = sortedBaseline[sortedBaseline.count / 2]
         let startThreshold = max(100, baseline + 20)
 
