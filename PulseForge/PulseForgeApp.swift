@@ -401,6 +401,15 @@ struct WorkoutRecordingCard: View {
                     }
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
                 }
+                if let savedStart = bluetooth.lastWorkoutStartedAt {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("LAST SAVED SESSION · " + savedStart.formatted(date: .abbreviated, time: .shortened))
+                            .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
+                        Text("\(bluetooth.lastWorkoutWasAutomatic == true ? "AUTOMATIC" : "MANUAL") · \(bluetooth.lastWorkoutWasInterrupted ? "INTERRUPTED / PARTIAL" : "COMPLETED")")
+                            .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                            .foregroundStyle(bluetooth.lastWorkoutWasInterrupted ? ForgeColors.muted : ForgeColors.lime)
+                    }
+                }
                 HStack(spacing: 8) {
                     workoutStat("MIN", value: minBPM)
                     workoutStat("MAX", value: maxBPM)
