@@ -818,17 +818,16 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let result = Int(b[12])
             let resultName = [0: "FAILURE", 1: "SUCCESS", 2: "PENDING", 3: "UNSUPPORTED"][result] ?? "UNKNOWN(\(result))"
             if command == 81 {
-                if result == 1 {
-                    sendWhoopAutoIMUEnable(to: peripheral)
-                    return "COMMAND_RESPONSE · START_RAW_DATA(81) SUCCESS · requesting IMU mode"
-                }
-                whoopIMUStatus = "WHOOP rejected START_RAW_DATA · result \(resultName)"
-                return "COMMAND_RESPONSE · START_RAW_DATA(81) · result \(resultName)"
+                whoop5AutoIMUEnabled = false
+                whoopIMUStatus = result == 1
+                    ? "Raw-data command acknowledged · IMU mode not requested (wire format unverified)"
+                    : "Raw-data command rejected · \(resultName)"
+                return "COMMAND_RESPONSE · START_RAW_DATA(81) · \(resultName) · no follow-up command sent"
             }
             if command == 106 {
-                whoop5AutoIMUEnabled = result == 1
-                whoopIMUStatus = result == 1 ? "IMU mode accepted · awaiting motion frames" : "IMU mode rejected · \(resultName)"
-                return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · result \(resultName)"
+                whoop5AutoIMUEnabled = false
+                whoopIMUStatus = "IMU mode response observed · \(resultName) · stream parser remains diagnostic-only"
+                return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · \(resultName)"
             }
             if command == 145 {
                 guard result == 1, echoedSequence == 1 else {
@@ -843,71 +842,15 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
 
-        case 47: // WHOOP 5/MG raw six-axis IMU buffer (type 0x2F; NOOP hardware decoder)
-            // Exact 1244-byte frame layout: timestamp @15, accel count @24,
-            // accel columns @28/@228/@428, gyro count @630, gyro columns @640/@840/@1040.
-            guard b.count == 1244 else {
-                whoopIMUStatus = "IMU type 47 · unexpected length \(b.count) bytes"
-                return "RAW_IMU(0x2F) · unexpected length \(b.count) · CRC valid"
-            }
-            func u16(_ offset: Int) -> Int {
-                Int(b[offset]) | (Int(b[offset + 1]) << 8)
-            }
-            func i16(_ offset: Int) -> Int {
-                let value = u16(offset)
-                return value >= 32768 ? value - 65536 : value
-            }
-            func u32(_ offset: Int) -> UInt32 {
-                UInt32(b[offset]) | (UInt32(b[offset + 1]) << 8)
-                    | (UInt32(b[offset + 2]) << 16) | (UInt32(b[offset + 3]) << 24)
-            }
-            let accelCount = u16(24)
-            let gyroCount = u16(630)
-            guard accelCount == 100, gyroCount == 100 else {
-                whoopIMUStatus = "IMU layout not recognised · A:\(accelCount) G:\(gyroCount)"
-                return "RAW_IMU(0x2F) · invalid counts A:\(accelCount) G:\(gyroCount)"
-            }
-            // Decode six columnar channels into timestamped, retained samples.
-            // The packet carries 100 samples at 100 Hz; use receive time as the
-            // frame anchor so an unverified strap clock epoch is not presented as UTC.
-            let receivedAt = Date()
-            let axes = [28, 228, 428, 640, 840, 1040]
-            var decodedSamples: [WhoopIMUSample] = []
-            decodedSamples.reserveCapacity(100)
-            for index in 0..<100 {
-                let ax = Double(i16(axes[0] + index * 2)) / 4096.0
-                let ay = Double(i16(axes[1] + index * 2)) / 4096.0
-                let az = Double(i16(axes[2] + index * 2)) / 4096.0
-                let gx = Double(i16(axes[3] + index * 2)) * 2000.0 / 32768.0
-                let gy = Double(i16(axes[4] + index * 2)) * 2000.0 / 32768.0
-                let gz = Double(i16(axes[5] + index * 2)) * 2000.0 / 32768.0
-                guard [ax, ay, az, gx, gy, gz].allSatisfy({ $0.isFinite }) else {
-                    whoopIMUStatus = "IMU sample decode failed"
-                    return "RAW_IMU(0x2F) · invalid sample values"
-                }
-                let sampleTime = receivedAt.addingTimeInterval(Double(index - 99) / 100.0)
-                decodedSamples.append(WhoopIMUSample(
-                    timestamp: sampleTime,
-                    accelerationXG: ax, accelerationYG: ay, accelerationZG: az,
-                    rotationXDPS: gx, rotationYDPS: gy, rotationZDPS: gz
-                ))
-            }
-            let strapTimestamp = TimeInterval(u32(15))
+        case 47: // Candidate raw-data packet type; exact revision/layout not yet verified.
+            // WHOOP's audited parser is revision-aware (Rev10/11/20/21) and
+            // carries epoch, sequence, counts, ranges and sample-rate metadata.
+            // Until those fields are mapped, retain only packet-level diagnostics:
+            // never manufacture calibrated axes or timestamps from guessed offsets.
             whoopIMUFrameCount += 1
-            whoopIMUSampleCount += decodedSamples.count
-            liveWhoopIMUSamples.append(contentsOf: decodedSamples)
-            if liveWhoopIMUSamples.count > 3000 {
-                liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 3000)
-            }
-            if workoutIsRecording {
-                workoutWhoopIMUSamples.append(contentsOf: decodedSamples)
-                if workoutWhoopIMUSamples.count > 100_000 {
-                    workoutWhoopIMUSamples.removeFirst(workoutWhoopIMUSamples.count - 100_000)
-                }
-            }
-            whoopIMULastFrameAt = receivedAt
-            whoopIMUStatus = "Live motion active · \(whoopIMUFrameCount) one-second frames · \(liveWhoopIMUSamples.count) buffered samples"
-            return "RAW_IMU(0x2F) · 100 Hz six-axis · frame \(whoopIMUFrameCount) · CRC valid"
+            whoopIMULastFrameAt = Date()
+            whoopIMUStatus = "Candidate raw-data frame observed · \(b.count) bytes · revision-aware decode pending"
+            return "CANDIDATE_RAW_DATA(0x2F) · \(b.count) bytes · CRC valid · axes not decoded"
 
         case 40: // REALTIME_DATA; protocol inner[8] == complete-frame byte[16]
             whoopRealtimePacketCount += 1
@@ -926,8 +869,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoop5HRStreamConfirmed = true
                 lastBLEEvent = "WHOOP event 33 · BLE_REALTIME_HR_ON · stream activation confirmed"
                 statusText = "Connected · WHOOP realtime HR stream confirmed · waiting for sample"
-                startWhoopAutoIMUIfNeeded()
-                return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid · automatic IMU start requested"
+                return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid · realtime HR active; IMU activation withheld pending protocol verification"
             }
             if eventID == 34 {
                 whoop5HRStreamConfirmed = false
@@ -982,33 +924,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         return crc ^ 0xFFFFFFFF
     }
 
-    /// Start the hardware-verified WHOOP 5/MG IMU producer after live HR is confirmed.
-    /// Sequence: START_RAW_DATA (81) payload [01], then TOGGLE_IMU_MODE (106) [01,01].
-    private func startWhoopAutoIMUIfNeeded() {
-        guard !whoop5AutoIMUStartRequested,
-              let peripheral = connectedPeripheral,
-              let command = whoop5CommandCharacteristic,
-              command.properties.contains(.write) else { return }
-        whoop5AutoIMUStartRequested = true
-        whoopIMUStatus = "Requesting automatic WHOOP motion stream"
-        let sequence = whoop5NextCommandSequence
-        whoop5NextCommandSequence &+= 1
-        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x51, payload: [0x01])
-        whoop5PendingWrites.append("START_RAW_DATA")
-        lastBLEEvent = "Automatic IMU START_RAW_DATA requested · sequence \(sequence)"
-        peripheral.writeValue(frame, for: command, type: .withResponse)
-    }
-
-    private func sendWhoopAutoIMUEnable(to peripheral: CBPeripheral) {
-        guard let command = whoop5CommandCharacteristic,
-              command.properties.contains(.write) else { return }
-        let sequence = whoop5NextCommandSequence
-        whoop5NextCommandSequence &+= 1
-        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x6A, payload: [0x01, 0x01])
-        whoop5PendingWrites.append("TOGGLE_IMU_MODE")
-        lastBLEEvent = "Automatic IMU TOGGLE_IMU_MODE requested · sequence \(sequence)"
-        peripheral.writeValue(frame, for: command, type: .withResponse)
-    }
+    // Raw-data activation is intentionally not automated yet. The supplied
+    // WHOOP audit exposes revision-aware command/parser types, but not enough
+    // wire-level evidence to validate command payloads or activation ordering.
 
     /// Enable WHOOP 5.0 live HR (opcode 0x03, body [0x01]).
     /// This is separate from subscribing to 180D/2A37 and FD4B notify CCCDs.
