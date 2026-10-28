@@ -91,6 +91,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopIMULastFrameAt: Date?
     @Published private(set) var whoopIMUStatus = "Waiting for WHOOP motion stream"
     @Published private(set) var whoopIMULastRawFrameHex = "none"
+    private var whoopIMURawFrameHistory: [String] = []
     @Published private(set) var liveWhoopIMUSamples: [WhoopIMUSample] = []
     @Published private(set) var workoutWhoopIMUSamples: [WhoopIMUSample] = []
 
@@ -605,6 +606,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP latest IMU sample: \(liveWhoopIMUSamples.last.map { String(format: "A %.3f, %.3f, %.3f g · G %.1f, %.1f, %.1f dps", $0.accelerationXG, $0.accelerationYG, $0.accelerationZG, $0.rotationXDPS, $0.rotationYDPS, $0.rotationZDPS) } ?? "none")",
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP IMU last CRC-valid raw frame hex (type 47): \(whoopIMULastRawFrameHex)",
+            "WHOOP IMU recent CRC-valid raw frames (oldest first):",
+        ]
+        lines.append(contentsOf: whoopIMURawFrameHistory.isEmpty ? ["  none"] : whoopIMURawFrameHistory.map { "  \($0)" })
+        lines.append(contentsOf: [
             "WHOOP protocol diagnosis: \(whoopProtocolDiagnostics)",
             "WHOOP packet counts · realtime: \(whoopRealtimePacketCount) · command responses: \(whoopCommandResponseCount)",
             "WHOOP last packet type: \(whoopLastPacketType)",
@@ -765,6 +770,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
         whoopIMULastRawFrameHex = "none"
+        whoopIMURawFrameHistory.removeAll()
         liveWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoop5PendingWrites.removeAll()
@@ -1166,6 +1172,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopIMUFrameCount += 1
             whoopIMULastFrameAt = Date()
             whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
+            let capturedAt = ISO8601DateFormatter().string(from: Date())
+            whoopIMURawFrameHistory.append("\(capturedAt) · \(whoopIMULastRawFrameHex)")
+            if whoopIMURawFrameHistory.count > 4 {
+                whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
+            }
             whoopIMUStatus = "Candidate raw-data frame observed · \(b.count) bytes · CRC valid · raw capture available · revision-aware decode pending"
             return "CANDIDATE_RAW_DATA(0x2F) · \(b.count) bytes · CRC valid · axes not decoded"
 
