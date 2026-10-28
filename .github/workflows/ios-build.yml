@@ -158,7 +158,20 @@ jobs:
           run_xcodebuild "Simulator build" "$BUILD_LOG" "${COMMON[@]}" build || exit $?
 
           if [[ "$HAS_TESTS" == "true" ]]; then
-            run_xcodebuild "Unit tests" "$TEST_LOG" "${COMMON[@]}" test || exit $?
+            # xcodebuild test requires a concrete simulator, unlike the generic
+            # destination used for compile-only validation.
+            TEST_DESTINATION="$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          devices = [device for runtime in data.get("devices", {}).values() for device in runtime]
+          match = next((d for d in devices if d.get("isAvailable") and d.get("name", "").startswith("iPhone")), None)
+          if match is None:
+              raise SystemExit("No available iPhone Simulator device was found.")
+          print("platform=iOS Simulator,id=" + match["udid"])
+          ')"
+            echo "- Test simulator: $TEST_DESTINATION" >> "$GITHUB_STEP_SUMMARY"
+            TEST_COMMON=("$CONTAINER_FLAG" "$CONTAINER" -scheme "$SCHEME" -destination "$TEST_DESTINATION" -configuration Debug -derivedDataPath build CODE_SIGNING_ALLOWED=NO)
+            run_xcodebuild "Unit tests" "$TEST_LOG" "${TEST_COMMON[@]}" test || exit $?
           else
             echo "- Unit tests: skipped — no test target exists in the discovered Xcode project." >> "$GITHUB_STEP_SUMMARY"
             echo "No test target detected; build remains successful." > "$TEST_LOG"
