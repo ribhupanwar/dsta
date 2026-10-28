@@ -642,7 +642,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU frames: \(whoopIMUFrameCount) · samples: \(whoopIMUSampleCount) · live buffer: \(liveWhoopIMUSamples.count) · workout samples: \(workoutWhoopIMUSamples.count) · status: \(whoopIMUStatus)",
             "WHOOP latest IMU sample: \(liveWhoopIMUSamples.last.map { String(format: "A %.3f, %.3f, %.3f g · G %.1f, %.1f, %.1f dps", $0.accelerationXG, $0.accelerationYG, $0.accelerationZG, $0.rotationXDPS, $0.rotationYDPS, $0.rotationZDPS) } ?? "none")",
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
-            "WHOOP IMU last CRC-valid raw frame hex (type 47): \(whoopIMULastRawFrameHex)",
+            "WHOOP latest CRC-valid raw IMU frame hex (type 47/51): \(whoopIMULastRawFrameHex)",
             "WHOOP IMU recent CRC-valid raw frames (oldest first):",
         ]
         lines.append(contentsOf: whoopIMURawFrameHistory.isEmpty ? ["  none"] : whoopIMURawFrameHistory.map { "  \($0)" })
@@ -1272,9 +1272,21 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     : "Raw-data command rejected · \(resultName)"
                 return "COMMAND_RESPONSE · START_RAW_DATA(81) · \(resultName) · no follow-up command sent"
             }
+            if command == 63 {
+                guard result == 1 else {
+                    whoop5AutoIMUEnabled = false
+                    whoopIMUStatus = "R10/R11 realtime request rejected · \(resultName)"
+                    return "COMMAND_RESPONSE · SEND_R10_R11_REALTIME(63) · \(resultName)"
+                }
+                sendWhoop5IMUModeEnable(to: peripheral)
+                return "COMMAND_RESPONSE · SEND_R10_R11_REALTIME(63) SUCCESS · IMU mode request queued"
+            }
             if command == 106 {
-                whoop5AutoIMUEnabled = false
-                whoopIMUStatus = "IMU mode response observed · \(resultName) · stream parser remains diagnostic-only"
+                whoop5AutoIMUEnabled = result == 1
+                whoopIMUStatus = result == 1
+                    ? "IMU mode enabled · waiting for realtime IMU packets (type 51)"
+                    : "IMU mode request rejected · \(resultName)"
+                recordVendorTimeline("TOGGLE_IMU_MODE(106) response · \(resultName)")
                 return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · \(resultName)"
             }
             if command == 145 {
@@ -1294,9 +1306,28 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 sendRealtimeHrEnable(to: peripheral)
                 return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR enable requested"
             }
+            if command == 3 {
+                guard result == 1 else {
+                    return "COMMAND_RESPONSE · REALTIME_HR_ON(3) · \(resultName) · IMU start sequence withheld"
+                }
+                sendWhoop5R10R11Enable(to: peripheral)
+                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · R10/R11 realtime request sent"
+            }
             return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
 
-        case 47: // Candidate raw-data packet type; exact revision/layout not yet verified.
+        case 51: // REALTIME_IMU_DATA_STREAM; preserve verified frame bytes until subtype parser is ported.
+            whoopIMUFrameCount += 1
+            whoopIMULastFrameAt = Date()
+            whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
+            let capturedAt = ISO8601DateFormatter().string(from: Date())
+            whoopIMURawFrameHistory.append("type=51 · \(capturedAt) · \(whoopIMULastRawFrameHex)")
+            if whoopIMURawFrameHistory.count > 4 {
+                whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
+            }
+            whoopIMUStatus = "Realtime IMU stream packet received · \(b.count) bytes · CRC valid · subtype decode pending"
+            return "REALTIME_IMU_DATA_STREAM(51) · \(b.count) bytes · CRC valid · raw frame retained"
+
+        case 47: // HISTORICAL_DATA packet type; preserve raw until history subtype routing is implemented.
             // WHOOP's audited parser is revision-aware (Rev10/11/20/21) and
             // carries epoch, sequence, counts, ranges and sample-rate metadata.
             // Until those fields are mapped, retain only packet-level diagnostics:
@@ -1410,6 +1441,38 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         lastBLEEvent = "WHOOP realtime HR ON command requested · opcode 03 · sequence \(sequence)"
         recordVendorTimeline("REALTIME_HR_ON write requested · FD4B0002 · seq=\(sequence) · \(frame.count) bytes · HEX: \(frameHex)")
         statusText = "Connected · requesting WHOOP live HR stream"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    /// Enable the R10/R11 realtime stage used by the known-good movement capture sequence.
+    private func sendWhoop5R10R11Enable(to peripheral: CBPeripheral) {
+        guard !whoop5AutoIMUStartRequested,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        whoop5AutoIMUStartRequested = true
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x3F, payload: [0x01])
+        whoop5PendingWrites.append("SEND_R10_R11_ON")
+        let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
+        recordVendorTimeline("SEND_R10_R11_REALTIME_ON write requested · opcode 3F · seq=\(sequence) · HEX: \(hex)")
+        whoopIMUStatus = "R10/R11 realtime request sent · awaiting response"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    /// Enable IMU mode only after the preceding realtime command was accepted.
+    /// The [revision=1, enabled=1] body is documented by the upstream movement-capture implementation.
+    private func sendWhoop5IMUModeEnable(to peripheral: CBPeripheral) {
+        guard !whoop5AutoIMUEnabled,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x6A, payload: [0x01, 0x01])
+        whoop5PendingWrites.append("TOGGLE_IMU_MODE")
+        let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
+        recordVendorTimeline("TOGGLE_IMU_MODE_ON write requested · opcode 6A · seq=\(sequence) · payload=01 01 · HEX: \(hex)")
+        whoopIMUStatus = "IMU mode requested · awaiting command response"
         peripheral.writeValue(frame, for: command, type: .withResponse)
     }
 
@@ -1558,6 +1621,15 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
               !whoop5PendingWrites.isEmpty else { return }
         let kind = whoop5PendingWrites.removeFirst()
 
+        if kind == "SEND_R10_R11_ON" {
+            if let error {
+                whoop5AutoIMUStartRequested = false
+                whoopIMUStatus = "R10/R11 realtime write failed · \(error.localizedDescription)"
+            } else {
+                whoopIMUStatus = "R10/R11 realtime write acknowledged · awaiting strap response"
+            }
+            return
+        }
         if kind == "START_RAW_DATA" {
             if let error {
                 whoop5AutoIMUStartRequested = false
