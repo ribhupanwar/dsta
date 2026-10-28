@@ -2,57 +2,137 @@ name: Build PulseForge iOS
 
 on:
   push:
-    branches: [whoop-native, whoop-background-ble]
+    branches:
+      - whoop-native
+      - whoop-background-ble
   workflow_dispatch:
+
+concurrency:
+  group: pulseforge-ios-\${{ github.workflow }}-\${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Discover, build and test iOS app
     runs-on: macos-15
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - name: Install XcodeGen
-        run: brew install xcodegen
-      - name: Generate Xcode project
-        run: xcodegen generate
-      - name: Build unsigned iPhone app
-        run: |
-          xcodebuild -project PulseForge.xcodeproj -scheme PulseForge -sdk iphoneos -configuration Release -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
-      - name: Configure and verify Bluetooth central background mode
-        run: |
-          APP_INFO_PLIST="build/Build/Products/Release-iphoneos/PulseForge.app/Info.plist"
-          python3 - "$APP_INFO_PLIST" <<'PY'
-          import plistlib
-          import sys
+      - name: Check out source
+        uses: actions/checkout@v4
 
-          path = sys.argv[1]
-          with open(path, "rb") as source:
-              info = plistlib.load(source)
-          modes = info.get("UIBackgroundModes", [])
-          if isinstance(modes, str):
-              modes = [modes]
-          if "bluetooth-central" not in modes:
-              modes.append("bluetooth-central")
-          info["UIBackgroundModes"] = modes
-          with open(path, "wb") as destination:
-              plistlib.dump(info, destination)
-          if "bluetooth-central" not in info["UIBackgroundModes"]:
-              raise SystemExit("bluetooth-central background mode missing")
-          PY
-          plutil -lint "$APP_INFO_PLIST"
-          /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" "$APP_INFO_PLIST"
-      - name: Package unsigned IPA
+      - name: Install XcodeGen when needed
+        shell: bash
         run: |
-          mkdir -p package/Payload
-          cp -R build/Build/Products/Release-iphoneos/PulseForge.app package/Payload/
-          cd package
-          zip -qry ../PulseForge-unsigned.ipa Payload
-      - name: Upload IPA artifact
+          if [[ -f project.yml ]] && [[ ! -d PulseForge.xcodeproj ]] && [[ ! -d *.xcworkspace ]]; then
+            brew install xcodegen
+            xcodegen generate
+          fi
+
+      - name: Discover project, workspace, scheme and test targets
+        id: discover
+        shell: bash
+        run: |
+          set -euo pipefail
+          if compgen -G "*.xcworkspace" > /dev/null; then
+            CONTAINER="$(find . -maxdepth 2 -type d -name '*.xcworkspace' -print -quit)"
+            CONTAINER_FLAG="-workspace"
+            BASE="\${CONTAINER##*/}"
+            BASE="\${BASE%.xcworkspace}"
+          elif compgen -G "*.xcodeproj" > /dev/null; then
+            CONTAINER="$(find . -maxdepth 2 -type d -name '*.xcodeproj' -print -quit)"
+            CONTAINER_FLAG="-project"
+            BASE="\${CONTAINER##*/}"
+            BASE="\${BASE%.xcodeproj}"
+          else
+            echo "::error::No .xcworkspace or .xcodeproj found in the repository."
+            exit 1
+          fi
+
+          xcodebuild -list -json "$CONTAINER" > ci-xcode-list.json
+          SCHEME="$(python3 - "$BASE" ci-xcode-list.json <<'PY'
+          import json, sys
+          base, path = sys.argv[1:]
+          with open(path) as f:
+              data = json.load(f)
+          schemes = data.get("workspace", {}).get("schemes", [])
+          if not schemes:
+              raise SystemExit("No Xcode schemes were discovered.")
+          print(base if base in schemes else schemes[0])
+          PY
+          )"
+          HAS_TESTS="$(python3 - ci-xcode-list.json <<'PY'
+          import json, sys
+          with open(sys.argv[1]) as f:
+              data = json.load(f)
+          targets = data.get("project", {}).get("targets", [])
+          print("true" if any("test" in name.lower() for name in targets) else "false")
+          PY
+          )"
+
+          echo "container=$CONTAINER" >> "$GITHUB_OUTPUT"
+          echo "container_flag=$CONTAINER_FLAG" >> "$GITHUB_OUTPUT"
+          echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
+          echo "has_tests=$HAS_TESTS" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Xcode project discovery"
+            echo "- Container: $CONTAINER"
+            echo "- Scheme: $SCHEME"
+            echo "- Unit-test target detected: $HAS_TESTS"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build for iOS Simulator and run available unit tests
+        shell: bash
+        env:
+          CONTAINER: \${{ steps.discover.outputs.container }}
+          CONTAINER_FLAG: \${{ steps.discover.outputs.container_flag }}
+          SCHEME: \${{ steps.discover.outputs.scheme }}
+          HAS_TESTS: \${{ steps.discover.outputs.has_tests }}
+        run: |
+          set -uo pipefail
+          mkdir -p ci-logs
+          BUILD_LOG="ci-logs/build.log"
+          TEST_LOG="ci-logs/tests.log"
+
+          run_xcodebuild() {
+            local label="$1"
+            local logfile="$2"
+            shift 2
+            echo "### $label" >> "$GITHUB_STEP_SUMMARY"
+            set +e
+            xcodebuild "$@" 2>&1 | tee "$logfile"
+            local status=\${PIPESTATUS[0]}
+            set -e
+            if [[ $status -ne 0 ]]; then
+              {
+                echo
+                echo "$label failed (exit $status). First compiler/build errors:"
+                echo '---'
+                grep -E -m 20 'error:|fatal error:|BUILD FAILED|TEST FAILED' "$logfile" || tail -n 80 "$logfile"
+                echo '---'
+              } >> "$GITHUB_STEP_SUMMARY"
+              return "$status"
+            fi
+            echo "- $label: passed" >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          COMMON=("$CONTAINER_FLAG" "$CONTAINER" -scheme "$SCHEME" -destination "generic/platform=iOS Simulator" -configuration Debug -derivedDataPath build CODE_SIGNING_ALLOWED=NO)
+          run_xcodebuild "Simulator build" "$BUILD_LOG" "\${COMMON[@]}" build || exit $?
+
+          if [[ "$HAS_TESTS" == "true" ]]; then
+            run_xcodebuild "Unit tests" "$TEST_LOG" "\${COMMON[@]}" test || exit $?
+          else
+            echo "- Unit tests: skipped — no test target exists in the discovered Xcode project." >> "$GITHUB_STEP_SUMMARY"
+            echo "No test target detected; build remains successful." > "$TEST_LOG"
+          fi
+
+      - name: Upload full Xcode logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: PulseForge-unsigned-IPA
-          path: PulseForge-unsigned.ipa
-          if-no-files-found: error
-          retention-days: 7
+          name: pulseforge-xcode-logs
+          path: ci-logs/
+          if-no-files-found: warn
+          retention-days: 14
