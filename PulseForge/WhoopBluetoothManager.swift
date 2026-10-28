@@ -103,6 +103,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopIMULastRawFrameHex = "none"
     @Published private(set) var whoopHistoricalIMUFrameCount = 0
     @Published private(set) var whoopHistoricalIMUSampleCount = 0
+    @Published private(set) var whoopHistoricalLayout18FrameCount = 0
+    @Published private(set) var whoopHistoricalLayout21FrameCount = 0
+    @Published private(set) var whoopHistoricalIMUStreamFrameCount = 0
     @Published private(set) var whoopHistoricalOffloadStatus = "Historical IMU offload not requested"
     private var whoopIMURawFrameHistory: [String] = []
     @Published private(set) var liveWhoopIMUSamples: [WhoopIMUSample] = []
@@ -774,7 +777,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU frames: \(whoopIMUFrameCount) · samples: \(whoopIMUSampleCount) · live buffer: \(liveWhoopIMUSamples.count) · workout samples: \(workoutWhoopIMUSamples.count) · status: \(whoopIMUStatus)",
             "WHOOP latest IMU sample: \(liveWhoopIMUSamples.last.map { String(format: "A %.3f, %.3f, %.3f g · G %.1f, %.1f, %.1f dps", $0.accelerationXG, $0.accelerationYG, $0.accelerationZG, $0.rotationXDPS, $0.rotationYDPS, $0.rotationZDPS) } ?? "none")",
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
-            "WHOOP latest CRC-valid raw IMU frame hex (type 47/51): \(whoopIMULastRawFrameHex)",
+            "WHOOP historical layouts · v18 summary frames: \(whoopHistoricalLayout18FrameCount) · v21 six-axis candidates: \(whoopHistoricalLayout21FrameCount) · type-52 IMU stream packets: \(whoopHistoricalIMUStreamFrameCount)",
+            "WHOOP latest CRC-valid raw IMU frame hex (type 47/51/52): \(whoopIMULastRawFrameHex)",
             "WHOOP IMU recent CRC-valid raw frames (oldest first):",
         ]
         lines.append(contentsOf: whoopIMURawFrameHistory.isEmpty ? ["  none"] : whoopIMURawFrameHistory.map { "  \($0)" })
@@ -982,6 +986,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMURawFrameHistory.removeAll()
         whoopHistoricalIMUFrameCount = 0
         whoopHistoricalIMUSampleCount = 0
+        whoopHistoricalLayout18FrameCount = 0
+        whoopHistoricalLayout21FrameCount = 0
+        whoopHistoricalIMUStreamFrameCount = 0
         historicalWhoopIMUSamples.removeAll()
         whoop5HistoricalRequestSent = false
         whoop5HistoricalOffloadActive = false
@@ -1625,7 +1632,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopIMUStatus = "Realtime IMU stream packet received · \(b.count) bytes · CRC valid · subtype decode pending"
             return "REALTIME_IMU_DATA_STREAM(51) · \(b.count) bytes · CRC valid · raw frame retained"
 
-        case 47: // HISTORICAL_DATA; layout 21 (inner 0x2F) is the Gen5 six-axis IMU buffer.
+        case 47: // HISTORICAL_DATA; only layout 21 / 1244 bytes is six-axis IMU.
+            if b.count > 9 {
+                if b[9] == 18 { whoopHistoricalLayout18FrameCount += 1 }
+                if b[9] == 21 { whoopHistoricalLayout21FrameCount += 1 }
+            }
             whoopIMUFrameCount += 1
             whoopIMULastFrameAt = Date()
             whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
@@ -1663,8 +1674,25 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 }
             }
 
-            whoopIMUStatus = "Historical WHOOP 5 frame retained · \(b.count) bytes · layout \(b.count > 9 ? Int(b[9]) : -1) · raw retained"
-            return "HISTORICAL_DATA · \(b.count) bytes · raw retained"
+            whoopIMUStatus = "Historical WHOOP 5 record retained · \(b.count) bytes · layout \(b.count > 9 ? Int(b[9]) : -1) · not a v21 IMU buffer"
+            return "HISTORICAL_DATA(47) · \(b.count) bytes · layout \(b.count > 9 ? Int(b[9]) : -1) · raw retained"
+
+        case 52: // HISTORICAL_IMU_DATA_STREAM; NOOP names this type but has no verified field map.
+            whoopHistoricalIMUStreamFrameCount += 1
+            whoopIMUFrameCount += 1
+            whoopIMULastFrameAt = Date()
+            whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
+            let capturedAt = ISO8601DateFormatter().string(from: Date())
+            whoopIMURawFrameHistory.append("type=52 · \(capturedAt) · \(whoopIMULastRawFrameHex)")
+            if whoopIMURawFrameHistory.count > 4 {
+                whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
+            }
+            if whoop5HistoricalRequestSent || whoop5HistoricalOffloadActive {
+                whoop5HistoricalChunkFrames.append(b)
+            }
+            whoopIMUStatus = "Historical IMU stream packet type 52 · \(b.count) bytes · raw retained; decoder not yet verified"
+            recordVendorTimeline("HISTORICAL_IMU_DATA_STREAM(52) received · \(b.count) bytes · archived raw before trim ACK")
+            return "HISTORICAL_IMU_DATA_STREAM(52) · \(b.count) bytes · raw retained; decode pending"
 
         case 49: // METADATA: HISTORY_START / HISTORY_END / HISTORY_COMPLETE.
             return handleWhoop5HistoricalMetadata(b, peripheral: peripheral)
@@ -1972,15 +2000,15 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         guard frame.count >= 24 else {
             return device + ":" + frame.map { String(format: "%02X", $0) }.joined()
         }
-        let identity = Array(frame[9..<19]) + Array(frame.suffix(4))
+        let identity = [frame[8]] + Array(frame[9..<19]) + Array(frame.suffix(4))
         return device + ":" + identity.map { String(format: "%02X", $0) }.joined()
     }
 
-    /// Persist the raw type-47 frames before acknowledging their trim cursor. Unknown historical
-    /// layouts are retained byte-for-byte too; only R21 is decoded into motion samples.
+    /// Persist raw type-47 records and named type-52 historical IMU stream packets before
+    /// acknowledging their trim cursor. Unknown layouts remain byte-for-byte evidence.
     private func persistWhoop5HistoricalChunk(_ frames: [[UInt8]]) throws -> Int {
         let unique = frames.filter {
-            $0.count >= 12 && $0[8] == 47 &&
+            $0.count >= 12 && ($0[8] == 47 || $0[8] == 52) &&
             !whoop5HistoricalPersistedFrameKeys.contains(whoop5HistoricalFrameKey($0))
         }
         guard !unique.isEmpty else { return 0 }
@@ -2027,7 +2055,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         switch Gen5HistoricalMetadataDecoder.decode(frame) {
         case .historyStart:
             whoop5HistoricalOffloadActive = true
-            whoopHistoricalOffloadStatus = "Historical offload started · collecting type-47 records"
+            whoopHistoricalOffloadStatus = "Historical offload started · collecting type-47 and type-52 records"
             recordVendorTimeline("HISTORY_START(1) received")
             return "METADATA · HISTORY_START · historical collection active"
 
@@ -2040,7 +2068,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         forKey: "pulseforge.whoop5.history.lastTrim.\(deviceID)")
                 }
                 whoopHistoricalOffloadStatus = "Archived \(persisted) raw frame(s) · trim \(trim) · ACK requested"
-                recordVendorTimeline("HISTORY_END · \(persisted) raw type-47 frame(s) durable · trim=\(trim)")
+                recordVendorTimeline("HISTORY_END · \(persisted) raw type-47/type-52 frame(s) durable · trim=\(trim)")
                 sendWhoop5HistoricalChunkAck(to: peripheral, endData: endData, trim: trim)
                 return "METADATA · HISTORY_END · \(persisted) raw frame(s) persisted · trim \(trim) · ACK requested"
             } catch {
