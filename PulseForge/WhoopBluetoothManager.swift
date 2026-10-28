@@ -71,6 +71,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopLastPacketType = "None"
     @Published private(set) var whoopBatteryPercent: Double?
     @Published private(set) var whoopBatteryLastUpdatedAt: Date?
+    @Published private(set) var whoopEventPacketCount = 0
+    @Published private(set) var whoopLastEventID: Int?
+    @Published private(set) var whoopLastEventFrameHex = "none"
     @Published private(set) var heartRateUpdateCount = 0
     @Published private(set) var liveHeartRateSamples: [LiveHeartRateSample] = []
     @Published private(set) var workoutHeartRateSamples: [LiveHeartRateSample] = []
@@ -623,6 +626,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "Connectable: \(connectedDeviceSnapshot?.isConnectable.map(String.init) ?? "Unavailable")",
             "Status: \(statusText)",
             "WHOOP battery: \(whoopBatteryPercent.map { String(format: "%.1f%%", $0) } ?? "not received") · updated: \(whoopBatteryLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "never")",
+            "WHOOP event packets: \(whoopEventPacketCount) · last event ID: \(whoopLastEventID.map(String.init) ?? "none") · last frame: \(whoopLastEventFrameHex)",
             "Latest BLE event: \(lastBLEEvent)",
             "Standard Heart Rate Measurement: \(isStandardHeartRateNotifying ? "subscribed" : "not subscribed")",
             "Latest WHOOP standard HR value: \(liveHeartRateBPM.map { "\($0) bpm" } ?? "None received")",
@@ -833,6 +837,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5AutoIMUEnabled = false
         whoopBatteryPercent = nil
         whoopBatteryLastUpdatedAt = nil
+        whoopEventPacketCount = 0
+        whoopLastEventID = nil
+        whoopLastEventFrameHex = "none"
         whoopIMUFrameCount = 0
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
@@ -1364,6 +1371,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         case 48: // EVENT
             guard b.count >= 20 else { return "EVENT · truncated · CRC valid" }
             let eventID = Int(b[10]) | (Int(b[11]) << 8)
+            whoopEventPacketCount += 1
+            whoopLastEventID = eventID
+            whoopLastEventFrameHex = b.map { String(format: "%02X", $0) }.joined(separator: " ")
             if eventID == 33 {
                 whoop5HRStreamConfirmed = true
                 recordVendorTimeline("WHOOP realtime HR active event 33 received")
@@ -1376,7 +1386,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 lastBLEEvent = "WHOOP event 34 · BLE_REALTIME_HR_OFF"
                 return "EVENT · BLE_REALTIME_HR_OFF(34) · CRC valid"
             }
-            if eventID == 3, b.count > 22 {
+            if eventID == 3 {
+                guard b.count > 22 else {
+                    return "BATTERY_EVENT(3) · truncated frame · \(b.count) bytes · CRC valid · raw captured"
+                }
                 let socRaw = Int(b[21]) | (Int(b[22]) << 8)
                 let percentage = Double(socRaw) / 10.0
                 guard (0.0...100.0).contains(percentage) else {
