@@ -71,24 +71,48 @@ struct ForgeTabBar: View {
     @Binding var selected: ForgeTab
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 2) {
             ForEach(ForgeTab.allCases, id: \.self) { tab in
                 Button { selected = tab } label: {
-                    VStack(spacing: 5) {
-                        Image(systemName: tab.symbol).font(.system(size: 18, weight: .semibold))
-                        Text(tab.rawValue).font(.system(size: 10, weight: .semibold))
+                    VStack(spacing: 4) {
+                        Image(systemName: tab.symbol)
+                            .font(.system(size: 17, weight: .semibold))
+                        Text(tab.rawValue)
+                            .font(.system(size: 9, weight: .bold))
                     }
                     .foregroundStyle(selected == tab ? ForgeColors.lime : ForgeColors.muted)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 18)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) { Rectangle().fill(ForgeColors.stroke).frame(height: 1) }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background {
+            Capsule(style: .continuous)
+                .fill(.ultraThinMaterial)
+                .environment(\.colorScheme, .dark)
+                .overlay {
+                    Capsule(style: .continuous)
+                        .fill(LinearGradient(
+                            colors: [Color.white.opacity(0.13), Color.white.opacity(0.025), Color.cyan.opacity(0.035)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ))
+                }
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(colors: [Color.white.opacity(0.24), ForgeColors.stroke, Color.white.opacity(0.07)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 1
+                        )
+                }
+                .shadow(color: Color.cyan.opacity(0.10), radius: 16, y: 5)
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 5)
     }
 }
 
@@ -711,7 +735,7 @@ struct SleepDashboard: View {
                 }
                 Text("Sleep stages are read from Apple Health. Debt is the rolling shortfall against an 8-hour target across completed nights with recorded sleep.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
-                Spacer(minLength: 110)
+                Spacer(minLength: 82)
             }
             .padding(18).padding(.top, 16)
         }
@@ -1932,9 +1956,9 @@ struct ConnectPrompt: View {
 
 enum ForgeColors {
     static let background = Color(red: 0.018, green: 0.035, blue: 0.065)
-    static let card = Color(red: 0.035, green: 0.075, blue: 0.12)
+    static let card = Color(red: 0.035, green: 0.075, blue: 0.12).opacity(0.78)
     static let track = Color(red: 0.08, green: 0.16, blue: 0.23)
-    static let stroke = Color(red: 0.12, green: 0.31, blue: 0.43).opacity(0.62)
+    static let stroke = Color(red: 0.20, green: 0.55, blue: 0.70).opacity(0.48)
     static let muted = Color(red: 0.57, green: 0.68, blue: 0.77)
     static let lime = Color(red: 0.12, green: 0.78, blue: 0.88)
 }
