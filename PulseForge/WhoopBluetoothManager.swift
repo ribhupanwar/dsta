@@ -168,7 +168,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             workoutDetectionStatus = "Monitoring HR · baseline \(baseline) bpm · trigger \(startThreshold) bpm"
         }
     }
-\n    private func persistWorkoutSession() {
+
+    private func persistWorkoutSession() {
         if let data = try? JSONEncoder().encode(workoutHeartRateSamples) {
             UserDefaults.standard.set(data, forKey: "pulseforge.whoop.lastWorkoutSamples")
         }
