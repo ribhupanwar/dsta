@@ -438,6 +438,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        whoopBatteryPercent = UserDefaults.standard.object(forKey: "pulseforge.whoop.batteryPercent") as? Double
+        whoopBatteryLastUpdatedAt = UserDefaults.standard.object(forKey: "pulseforge.whoop.batteryUpdatedAt") as? Date
         if let data = UserDefaults.standard.data(forKey: "pulseforge.whoop.lastWorkoutSamples"),
            let savedSamples = try? JSONDecoder().decode([LiveHeartRateSample].self, from: data) {
             workoutHeartRateSamples = savedSamples
@@ -835,8 +837,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
         whoop5AutoIMUEnabled = false
-        whoopBatteryPercent = nil
-        whoopBatteryLastUpdatedAt = nil
+        // Keep the last known battery reading across BLE reconnects; WHOOP does not
+        // necessarily emit BATTERY_LEVEL on every connection.
         whoopEventPacketCount = 0
         whoopLastEventID = nil
         whoopLastEventFrameHex = "none"
@@ -1397,6 +1399,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 }
                 whoopBatteryPercent = percentage
                 whoopBatteryLastUpdatedAt = Date()
+                UserDefaults.standard.set(percentage, forKey: "pulseforge.whoop.batteryPercent")
+                UserDefaults.standard.set(whoopBatteryLastUpdatedAt, forKey: "pulseforge.whoop.batteryUpdatedAt")
                 return "EVENT · BATTERY_LEVEL(3) · \(String(format: "%.1f", percentage))% · UI value updated · CRC valid"
             }
             return "EVENT · id \(eventID) · CRC valid · not a realtime HR sample"
