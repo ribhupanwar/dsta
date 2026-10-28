@@ -471,6 +471,12 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         )
     }
 
+    private func cancelAutomaticReconnectScan() {
+        isAutomaticReconnectScan = false
+        automaticReconnectScanToken = UUID()
+        central.stopScan()
+    }
+
     func startScan() {
         guard connectedPeripheral == nil, !isConnecting else {
             statusText = "Disconnect the current band before scanning"
@@ -481,9 +487,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             return
         }
         scanTimeoutWorkItem?.cancel()
-        isAutomaticReconnectScan = false
-        automaticReconnectScanToken = UUID()
-        central.stopScan()
+        cancelAutomaticReconnectScan()
         devices.removeAll()
         discoveredProfile.removeAll()
         statusText = "Scanning nearby devices…"
@@ -503,6 +507,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     }
 
     func stopScan() {
+        cancelAutomaticReconnectScan()
         scanTimeoutWorkItem?.cancel()
         scanTimeoutWorkItem = nil
         central.stopScan()
@@ -514,7 +519,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         scanTimeoutWorkItem = nil
         connectionTimeoutWorkItem?.cancel()
         connectionTimeoutWorkItem = nil
-        central.stopScan()
+        cancelAutomaticReconnectScan()
         if let peripheral = connectedPeripheral {
             UserDefaults.standard.removeObject(forKey: rememberedPeripheralKey)
             pendingRestoredPeripheral = nil
@@ -539,7 +544,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         }
         scanTimeoutWorkItem?.cancel()
         scanTimeoutWorkItem = nil
-        central.stopScan()
+        cancelAutomaticReconnectScan()
         discoveredProfile.removeAll()
         connectedDeviceSnapshot = device
         connectedPeripheral = device.peripheral
@@ -700,11 +705,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         if central.state != .poweredOn {
             scanTimeoutWorkItem?.cancel()
             scanTimeoutWorkItem = nil
-            central.stopScan()
-            // A Bluetooth power transition ends the automatic restoration scan.
-            // Clear its guard so the next poweredOn callback can start a fresh scan.
-            isAutomaticReconnectScan = false
-            automaticReconnectScanToken = UUID()
+            cancelAutomaticReconnectScan()
+            scanTimeoutWorkItem?.cancel()
+            scanTimeoutWorkItem = nil
         }
         switch central.state {
         case .poweredOn:
@@ -947,9 +950,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         if let rememberedID = UserDefaults.standard.string(forKey: rememberedPeripheralKey),
            peripheral.identifier.uuidString == rememberedID,
            isAutomaticReconnectScan {
-            isAutomaticReconnectScan = false
-            automaticReconnectScanToken = UUID()
-            central.stopScan()
+            cancelAutomaticReconnectScan()
             connectedPeripheral = peripheral
             connectedDeviceSnapshot = nil
             peripheral.delegate = self
