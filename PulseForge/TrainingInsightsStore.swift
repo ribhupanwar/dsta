@@ -184,7 +184,7 @@ final class TrainingInsightsStore: ObservableObject {
             // A defensible cardiovascular load needs workout HR samples and a
             // user-measured max HR. Until both are available, leave it blank.
             guard let self,
-                  let maxHR = UserDefaults.standard.object(forKey: "pulseforge.running.maxHeartRate") as? Int,
+                  let maxHR = UserDefaults.standard.string(forKey: "pulseforge.running.maxHeartRate").flatMap(Int.init),
                   maxHR > 0 else {
                 completion(workouts.count, minutes > 0 ? minutes : nil, nil)
                 return
