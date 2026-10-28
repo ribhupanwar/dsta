@@ -184,7 +184,7 @@ struct TodayDashboard: View {
 struct RecoveryDetailSheet: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
-    @Environment(.sdismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
