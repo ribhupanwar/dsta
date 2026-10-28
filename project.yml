@@ -27,6 +27,10 @@ targets:
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "PulseForge uses Bluetooth to connect to your WHOOP-compatible wearable."
         INFOPLIST_KEY_UIUserInterfaceStyle: Dark
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.healthcare-fitness
+    info:
+      properties:
+        UIBackgroundModes:
+          - bluetooth-central
     entitlements:
       path: PulseForge/PulseForge.entitlements
       properties:
