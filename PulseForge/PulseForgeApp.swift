@@ -2033,7 +2033,7 @@ private struct ForgeGlassCardStyle: ViewModifier {
     }
 }
 
-private extension View {
+extension View {
     func forgeGlassCard(cornerRadius: CGFloat = 18) -> some View {
         modifier(ForgeGlassCardStyle(cornerRadius: cornerRadius))
     }
