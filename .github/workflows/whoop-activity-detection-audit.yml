@@ -55,6 +55,7 @@ jobs:
             unzip -tq Whoop.zip | tail -2
           } > activity-audit/WHOOP-activity-detection-audit.md
           test -s activity-audit/WHOOP-activity-detection-audit.md
+          cat activity-audit/WHOOP-activity-detection-audit.md
       - name: Upload activity audit report
         uses: actions/upload-artifact@v4
         with:
