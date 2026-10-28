@@ -1640,8 +1640,6 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 if b[9] == 18 { whoopHistoricalLayout18FrameCount += 1 }
                 if b[9] == 21 { whoopHistoricalLayout21FrameCount += 1 }
             }
-            whoopIMUFrameCount += 1
-            whoopIMULastFrameAt = Date()
             whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
             let capturedAt = ISO8601DateFormatter().string(from: Date())
             whoopIMURawFrameHistory.append("type=47 · \(capturedAt) · \(whoopIMULastRawFrameHex)")
@@ -1666,6 +1664,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         historicalWhoopIMUSamples.removeFirst(historicalWhoopIMUSamples.count - 5000)
                     }
                     whoopHistoricalIMUFrameCount += 1
+                    whoopIMUFrameCount += 1
                     whoopHistoricalIMUSampleCount += decoded.count
                     whoopIMUSampleCount += decoded.count
                     whoopIMUStatus = "Historical Gen5 R21 decoded · \(decoded.count) samples · 100 Hz"
@@ -1682,7 +1681,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
         case 52: // HISTORICAL_IMU_DATA_STREAM; NOOP names this type but has no verified field map.
             whoopHistoricalIMUStreamFrameCount += 1
-            whoopIMUFrameCount += 1
+            whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
             whoopIMULastFrameAt = Date()
             whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
             let capturedAt = ISO8601DateFormatter().string(from: Date())
