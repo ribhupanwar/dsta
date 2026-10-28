@@ -270,7 +270,7 @@ struct ScoreRing: View {
                     .stroke(tint, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Text(value.map(String.init) ?? "—")
-                    .font(.system(size: 25, weight: .medium, design: .rounded))
+                    .font(.system(size: 25, weight: .black, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.white)
             }
@@ -1818,9 +1818,9 @@ struct HeaderView: View {
     let title: String
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(eyebrow).font(.system(size: 10, weight: .bold)).tracking(1.7).foregroundStyle(ForgeColors.lime)
+            Text(eyebrow).font(.system(size: 10, weight: .black)).tracking(1.8).foregroundStyle(ForgeColors.muted)
             HStack {
-                Text(title).font(.system(size: 31, weight: .bold, design: .rounded)).tracking(-0.8)
+                Text(title).font(.system(size: 27, weight: .black, design: .rounded)).tracking(-0.5)
                 Spacer()
                 Image(systemName: "person.crop.circle").font(.system(size: 25, weight: .light)).foregroundStyle(ForgeColors.muted)
             }
@@ -1833,7 +1833,7 @@ struct SectionHeader: View {
     var action: String? = nil
     var body: some View {
         HStack {
-            Text(title).font(.system(size: 11, weight: .bold)).tracking(1.4)
+            Text(title).font(.system(size: 11, weight: .black)).tracking(1.35)
             Spacer()
             if let action { Text(action).font(.system(size: 11, weight: .semibold)).foregroundStyle(ForgeColors.lime) }
         }
@@ -1857,8 +1857,9 @@ struct MetricTile: View {
                 Text(unit).font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
             }
         }
-        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).fill(LinearGradient(colors: [Color.white.opacity(0.075), Color.white.opacity(0.012)], startPoint: .topLeading, endPoint: .bottomTrailing)).clipShape(RoundedRectangle(cornerRadius: 18)))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
     }
 }
@@ -1874,7 +1875,7 @@ struct CompactMetric: View {
             Text(unit).font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 15))
+        .padding(12).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15)).overlay(RoundedRectangle(cornerRadius: 15).stroke(ForgeColors.stroke.opacity(0.7), lineWidth: 1))
     }
 }
 
