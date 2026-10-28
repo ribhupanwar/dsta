@@ -85,8 +85,6 @@ final class GPSRunStore: NSObject, ObservableObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         manager.distanceFilter = 3
         manager.pausesLocationUpdatesAutomatically = false
-        manager.allowsBackgroundLocationUpdates = true
-        manager.showsBackgroundLocationIndicator = true
         recentRuns = loadHistory()
     }
 
