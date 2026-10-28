@@ -201,3 +201,44 @@ The implementation has therefore been made conservative:
 - The code reports that raw-data activation and decoding are withheld pending verified wire-format evidence.
 
 This intentionally reduces apparent IMU functionality but prevents fabricated sensor samples and speculative device commands. Restore raw-IMU streaming only after command bytes/revision routing and packet metadata offsets are established from a legitimate protocol trace or equivalent byte-level evidence, then validate on WHOOP 5.0 hardware.
+
+
+## Full archive inventory run (2026-10-28)
+
+The Git LFS checkout and metadata-only inventory workflow completed successfully on branch `whoop-background-ble`. The resulting report was generated from the 5.75.0 (738478) app archive. It records metadata, printable strings, resource names and fingerprints only; it does not copy or redistribute the executable or proprietary assets.
+
+### New verified implementation vocabulary
+
+The executable inventory independently surfaced these protocol-layer names and paths:
+
+- `WhoopPacket.RealtimeHeartRateData`, `WhoopStrapServices.RealtimeHeartRateData`, `RealtimeStreamServices`, and `HeartRateBroadcastServicing`.
+- `WhoopStrapServices.HistoricalPullServicing`, `HistoricalPullService.swift`, plus historical packet queue/processing, history-start, throughput and packet parse/failure diagnostics.
+- `WhoopPacket.TurnOnRawDataCollectionCommand/Response`, `WhoopStrapServices.RealtimeIMUData`, `IMUStreamServicing`, `RawDataStreamServicing`, and `RawDataCollectionServicing`.
+- GATT/pairing layers including `AsyncCharacteristicsSubscriber`, `AsyncPeripheralCharacteristicsDiscoverer`, `WhoopPeripheralDelegate`, `WhoopCentralManagerDelegate`, `AsyncHelloSender`, `HelloResponsePacketRev3/Rev4`, and `HelloResponsePacketRevRouter`.
+- Lazy-storage role names `commandReadCharacteristic`, `commandWriteCharacteristic`, `dataReadCharacteristic`, and `eventReadCharacteristic`.
+
+This corroborates the separation between handshake, GATT subscription, live-HR, historical-pull and raw-IMU state machines. The names do not reveal their method bodies or wire format.
+
+### Stronger UUID string-neighborhood evidence
+
+The new executable scan found the following nearby printable-string clusters:
+
+- `8A580001` and `59830001` occur beside BLE scan-manager log strings.
+- The `FD4B0001` UUID occurs in a cluster with `WhoopStrapCentralManagerQueue`; the `11500001` UUID occurs in the same broader cluster with `WhoopBatteryPackCentralManagerQueue` and pairing-result strings. This is useful evidence that FD4B is associated with the strap-side manager, but it is not a complete GATT characteristic map.
+- The `FD4B0002–0007` identifiers occur as a contiguous string cluster. PulseForge has already observed notifications on FD4B0003/0004/0005/0007, including a 36-byte FD4B0004 event in Build 89 and later intermittent HR delivery. The archive cluster is consistent with investigating this family, but it does not assign individual characteristic roles.
+- The `61080002–0007` cluster appears adjacent to FD4B identifiers and an “Invalid number of keys found, expected one” parser error. The `61080008/0009` identifiers occur near `[MEMFAULT] Data`, `memfaultFromStrap`, and `commandFromStrap`. Treat this as a distinct transport/diagnostic family; do not conflate it with the FD4B family or assign command/data/event roles based on adjacency alone.
+- `00001530/1531` appear beside Nordic DFU bootloader/firmware strings; `8EC90001` remains near Nordic DFU symbols. These are firmware-update clues, not live-HR evidence.
+
+### Important limits
+
+The inventory found CoreBluetooth API markers and Swift protocol/type names, but the filtered Mach-O symbol table and export trie yielded no matching exported BLE/protocol symbols. The binary is therefore not providing a usable symbol-to-UUID map through those tables. String adjacency remains corroborative evidence only.
+
+The archive also confirms two 144-byte hello resources (`HelloPacketRev3` and `HelloPacketRev4`), but this inventory pass does not establish when/how they are sent, the selected revision, or authentication semantics. Do not replay or synthesize hello/unlock exchanges from resource fingerprints.
+
+### PulseForge next actions
+
+1. Keep the known-good HR path and current passive/explicit GATT diagnostics; record parent service UUID, characteristic UUID, properties, subscription result, packet length and timestamps together.
+2. Use the FD4B/6108 family clusters to prioritize evidence collection, not to hard-code role assignments.
+3. Diagnose historical transfer independently: distinguish range request, metadata/start events, actual packet-body notifications, ordering, parse failures and completion. A metadata-only response is not a successful sync.
+4. Keep raw IMU activation and decoding withheld. The archive's revision-aware parser vocabulary reinforces that the earlier fixed type-47 layout/scales are not verified.
+5. Next useful evidence is a complete, timestamped WHOOP 5.0 discovery + notification/write trace correlated by exact UUID and connection/handshake state. No speculative command bytes should be sent.
