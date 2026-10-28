@@ -2,7 +2,7 @@ name: WHOOP archive technical inventory
 
 on:
   push:
-    branches: [whoop-native]
+    branches: [whoop-native, whoop-background-ble]
   workflow_dispatch:
 
 permissions:
