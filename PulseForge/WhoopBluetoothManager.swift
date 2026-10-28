@@ -344,12 +344,12 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                                  end: sample.timestamp)
             }
 
-        healthKitExportStatus = "Exporting workout and \\(heartRateSamples.count) HR samples to Apple Health…"
+        healthKitExportStatus = "Exporting workout and \(heartRateSamples.count) HR samples to Apple Health…"
         builder.beginCollection(withStart: record.startedAt) { [weak self] began, beginError in
             guard let self else { return }
             guard began else {
                 DispatchQueue.main.async {
-                    self.healthKitExportStatus = "Apple Health export failed · \\(beginError?.localizedDescription ?? "collection could not start")"
+                    self.healthKitExportStatus = "Apple Health export failed · \(beginError?.localizedDescription ?? "collection could not start")"
                 }
                 return
             }
@@ -357,7 +357,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                 builder.endCollection(withEnd: end) { ended, endError in
                     guard ended else {
                         DispatchQueue.main.async {
-                            self.healthKitExportStatus = "Apple Health export failed · \\(endError?.localizedDescription ?? "collection could not finish")"
+                            self.healthKitExportStatus = "Apple Health export failed · \(endError?.localizedDescription ?? "collection could not finish")"
                         }
                         return
                     }
@@ -366,9 +366,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                             if let workout {
                                 exportedIDs.insert(record.id.uuidString)
                                 UserDefaults.standard.set(Array(exportedIDs), forKey: exportedKey)
-                                self.healthKitExportStatus = "Saved to Apple Health · \\(heartRateSamples.count) HR samples"
+                                self.healthKitExportStatus = "Saved to Apple Health · \(heartRateSamples.count) HR samples"
                             } else {
-                                self.healthKitExportStatus = "Apple Health export failed · \\(finishError?.localizedDescription ?? "workout was not saved")"
+                                self.healthKitExportStatus = "Apple Health export failed · \(finishError?.localizedDescription ?? "workout was not saved")"
                             }
                         }
                     }
@@ -381,7 +381,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             builder.add(heartRateSamples) { added, addError in
                 guard added else {
                     DispatchQueue.main.async {
-                        self.healthKitExportStatus = "Workout HR export failed · \\(addError?.localizedDescription ?? "samples could not be added")"
+                        self.healthKitExportStatus = "Workout HR export failed · \(addError?.localizedDescription ?? "samples could not be added")"
                     }
                     return
                 }
@@ -1508,11 +1508,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     // Persist IMU in ~5-second batches at 100 Hz, not on every frame.
                     persistWorkoutSession()
                 }
-                whoopIMUStatus = "Gen5 R21 decoded · \\(decoded.count) paired samples · 100 Hz · accel/gyro scales applied"
-                return "GEN5_R21_IMU(0x2B) · decoded \\(decoded.count) samples · 100 Hz · CRC valid"
+                whoopIMUStatus = "Gen5 R21 decoded · \(decoded.count) paired samples · 100 Hz · accel/gyro scales applied"
+                return "GEN5_R21_IMU(0x2B) · decoded \(decoded.count) samples · 100 Hz · CRC valid"
             } catch {
-                whoopIMUStatus = "Gen5 R21 candidate rejected · \\(error) · raw retained"
-                return "GEN5_R21_IMU(0x2B) · decode rejected · \\(error)"
+                whoopIMUStatus = "Gen5 R21 candidate rejected · \(error) · raw retained"
+                return "GEN5_R21_IMU(0x2B) · decode rejected · \(error)"
             }
         case 51: // Existing REALTIME_IMU_DATA_STREAM path retained independently; do not conflate with Gen5 R21.
             whoopIMUFrameCount += 1
