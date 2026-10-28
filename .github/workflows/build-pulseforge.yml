@@ -57,7 +57,8 @@ jobs:
           base, path = sys.argv[1:]
           with open(path) as f:
               data = json.load(f)
-          schemes = data.get("workspace", {}).get("schemes", [])
+          container_data = data.get("workspace") or data.get("project") or {}
+          schemes = container_data.get("schemes", [])
           if not schemes:
               raise SystemExit("No Xcode schemes were discovered.")
           print(base if base in schemes else schemes[0])
