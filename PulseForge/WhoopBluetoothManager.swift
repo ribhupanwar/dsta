@@ -1330,12 +1330,14 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             if whoopIMURawFrameHistory.count > 4 {
                 whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
             }
-            guard b.count == 1232, b[0] == 0x2B, b[1] == 21, b[2] == 0x80 else {
+            // b includes the 8-byte transport header and 4-byte CRC; the
+            // documented R21 inner payload is b[8 ..< 1240].
+            guard b.count == 1244, b[8] == 0x2B, b[9] == 21, b[10] == 0x80 else {
                 whoopIMUStatus = "Gen5 R21 candidate received · \(b.count) bytes · header/length mismatch · raw retained"
                 return "GEN5_R21_IMU(0x2B) · candidate retained · header/length validation failed"
             }
-            let accelCount = Int(b[16]) | (Int(b[17]) << 8)
-            let gyroCount = Int(b[622]) | (Int(b[623]) << 8)
+            let accelCount = Int(b[24]) | (Int(b[25]) << 8)
+            let gyroCount = Int(b[630]) | (Int(b[631]) << 8)
             guard (1...100).contains(accelCount), (1...100).contains(gyroCount) else {
                 whoopIMUStatus = "Gen5 R21 frame rejected · invalid sample counts · raw retained"
                 return "GEN5_R21_IMU(0x2B) · invalid counts accel=\(accelCount) gyro=\(gyroCount)"
