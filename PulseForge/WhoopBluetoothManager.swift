@@ -92,7 +92,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             UserDefaults.standard.set(data, forKey: "pulseforge.whoop.lastWorkoutSamples")
         }
         if let data = try? JSONEncoder().encode(workoutWhoopIMUSamples) {
-            UserDefaults.standard.set(data, forKey: "pulseforge.whoop.lastWorkoutIMUSamples")
+            UserDefaults.standard.set(data, forKey: "pulseforge.whoop.lastVerifiedWorkoutIMUSamples")
         }
         if let duration = lastWorkoutDurationSeconds {
             UserDefaults.standard.set(duration, forKey: "pulseforge.whoop.lastWorkoutDuration")
@@ -152,7 +152,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
            let savedSamples = try? JSONDecoder().decode([LiveHeartRateSample].self, from: data) {
             workoutHeartRateSamples = savedSamples
         }
-        if let imuData = UserDefaults.standard.data(forKey: "pulseforge.whoop.lastWorkoutIMUSamples"),
+        if let imuData = UserDefaults.standard.data(forKey: "pulseforge.whoop.lastVerifiedWorkoutIMUSamples"),
            let savedIMUSamples = try? JSONDecoder().decode([WhoopIMUSample].self, from: imuData) {
             workoutWhoopIMUSamples = savedIMUSamples
         }
