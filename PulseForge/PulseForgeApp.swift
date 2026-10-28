@@ -925,39 +925,36 @@ struct JournalEntrySheet: View {
     }
 }
 
-struct WhoopBatteryCard: View {
+struct WhoopBatteryInline: View {
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
 
+    private var batterySymbol: String {
+        guard let level = bluetooth.whoopBatteryPercent else { return "battery.0percent" }
+        if level >= 75 { return "battery.100percent" }
+        if level >= 50 { return "battery.75percent" }
+        if level >= 25 { return "battery.50percent" }
+        return "battery.25percent"
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "battery.100percent")
-                .font(.system(size: 22, weight: .medium))
+        HStack(spacing: 7) {
+            Image(systemName: batterySymbol)
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(bluetooth.whoopBatteryPercent == nil ? ForgeColors.muted : ForgeColors.lime)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("WHOOP BATTERY")
-                    .font(.system(size: 9, weight: .bold)).tracking(0.9)
-                    .foregroundStyle(ForgeColors.muted)
-                Text(bluetooth.whoopBatteryPercent.map { String(format: "%.1f%%", $0) } ?? "Waiting for battery event")
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                Text(bluetooth.whoopBatteryLastUpdatedAt.map {
-                    "UPDATED · \($0.formatted(date: .omitted, time: .standard))"
-                } ?? "BATTERY LEVEL NOT RECEIVED")
-                    .font(.system(size: 8, weight: .medium, design: .monospaced))
-                    .foregroundStyle(ForgeColors.muted)
-            }
-            Spacer()
-            if let level = bluetooth.whoopBatteryPercent {
-                Text(level >= 20 ? "OK" : "LOW")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(level >= 20 ? ForgeColors.lime : .orange)
-            }
+            Text(bluetooth.whoopBatteryPercent.map { String(format: "%.0f%%", $0) } ?? "—")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+            Text("BATTERY")
+                .font(.system(size: 8, weight: .bold))
+                .tracking(0.7)
+                .foregroundStyle(ForgeColors.muted)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(ForgeColors.stroke, lineWidth: 1))
+        .padding(.horizontal, 11)
+        .padding(.vertical, 8)
+        .background(ForgeColors.track, in: Capsule())
         .accessibilityElement(children: .combine)
+        .accessibilityLabel("WHOOP battery \(bluetooth.whoopBatteryPercent.map { String(format: "%.0f percent", $0) } ?? "not received")")
     }
 }
 
@@ -969,6 +966,7 @@ struct DeviceDashboard: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HeaderView(eyebrow: "CONNECTED BAND", title: "WHOOP")
+                HStack { Spacer(); WhoopBatteryInline() }
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         Image(systemName: "waveform.path.ecg").font(.system(size: 24)).foregroundStyle(ForgeColors.lime)
@@ -1009,7 +1007,6 @@ struct DeviceDashboard: View {
                     .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     }
                     LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE · LAST 60 SECONDS")
-                    WhoopBatteryCard()
                     WhoopMotionCard()
                     if bluetooth.connectedName != nil {
                         Button { bluetooth.disconnect() } label: {
