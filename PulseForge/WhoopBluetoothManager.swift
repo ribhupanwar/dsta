@@ -616,7 +616,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP FD4B vendor notification subscriptions:",
             "",
             "GATT profile:"
-        ]
+        ])
         lines.append(contentsOf: vendorNotificationStates.keys.sorted().map { "  \($0): \(vendorNotificationStates[$0] ?? "unknown")" })
         lines.append(contentsOf: vendorNotificationPayloads.keys.sorted().map { "  Latest full payload \($0): \(vendorNotificationPayloads[$0] ?? "none")" })
         lines.append("")
