@@ -1,6 +1,7 @@
 import Foundation
 import CoreBluetooth
 import Combine
+import HealthKit
 
 struct DiscoveredWearable: Identifiable {
     let peripheral: CBPeripheral
@@ -88,6 +89,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var lastWorkoutWasAutomatic: Bool?
     @Published private(set) var lastWorkoutWasInterrupted = false
     @Published private(set) var workoutHistory: [WorkoutSessionRecord] = []
+    @Published private(set) var healthKitExportStatus = "Health export awaits Apple Health write permission"
+    private let healthKitStore = HKHealthStore()
     private var workoutDetectionSamples: [LiveHeartRateSample] = []
     private var workoutDetectionCandidateSince: Date?
     private var workoutDetectionCandidateBaselineBPM: Int?
@@ -300,6 +303,91 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         workoutHistory.insert(record, at: 0)
         if workoutHistory.count > 20 { workoutHistory = Array(workoutHistory.prefix(20)) }
         saveWorkoutHistory()
+        exportWorkoutToHealthKit(record)
+    }
+
+    /// Export completed WHOOP HR recordings as a HealthKit workout with its
+    /// timestamped HR samples. Local history remains the source of truth if
+    /// HealthKit sharing is unavailable or denied.
+    private func exportWorkoutToHealthKit(_ record: WorkoutSessionRecord) {
+        guard !record.wasInterrupted else {
+            healthKitExportStatus = "Partial session kept in PulseForge · not exported to Apple Health"
+            return
+        }
+        let exportedKey = "pulseforge.healthkit.exportedWorkoutIDs"
+        var exportedIDs = Set(UserDefaults.standard.stringArray(forKey: exportedKey) ?? [])
+        guard !exportedIDs.contains(record.id.uuidString) else {
+            healthKitExportStatus = "Workout already exported to Apple Health"
+            return
+        }
+        guard HKHealthStore.isHealthDataAvailable() else {
+            healthKitExportStatus = "Apple Health is unavailable on this device"
+            return
+        }
+
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = .other
+        configuration.locationType = .unknown
+        let builder = HKWorkoutBuilder(healthStore: healthKitStore,
+                                       configuration: configuration,
+                                       device: HKDevice.local())
+        let end = max(record.startedAt.addingTimeInterval(1),
+                      record.startedAt.addingTimeInterval(record.durationSeconds))
+        let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
+        let rateUnit = HKUnit.count().unitDivided(by: HKUnit.minute())
+        let heartRateSamples = record.heartRateSamples
+            .filter { $0.timestamp >= record.startedAt && $0.timestamp <= end }
+            .map { sample in
+                HKQuantitySample(type: heartRateType,
+                                 quantity: HKQuantity(unit: rateUnit, doubleValue: Double(sample.bpm)),
+                                 start: sample.timestamp,
+                                 end: sample.timestamp)
+            }
+
+        healthKitExportStatus = "Exporting workout and (heartRateSamples.count) HR samples to Apple Health…"
+        builder.beginCollection(withStart: record.startedAt) { [weak self] began, beginError in
+            guard let self else { return }
+            guard began else {
+                DispatchQueue.main.async {
+                    self.healthKitExportStatus = "Apple Health export failed · (beginError?.localizedDescription ?? "collection could not start")"
+                }
+                return
+            }
+            let finishCollection = {
+                builder.endCollection(withEnd: end) { ended, endError in
+                    guard ended else {
+                        DispatchQueue.main.async {
+                            self.healthKitExportStatus = "Apple Health export failed · (endError?.localizedDescription ?? "collection could not finish")"
+                        }
+                        return
+                    }
+                    builder.finishWorkout { workout, finishError in
+                        DispatchQueue.main.async {
+                            if let workout {
+                                exportedIDs.insert(record.id.uuidString)
+                                UserDefaults.standard.set(Array(exportedIDs), forKey: exportedKey)
+                                self.healthKitExportStatus = "Saved to Apple Health · (heartRateSamples.count) HR samples"
+                            } else {
+                                self.healthKitExportStatus = "Apple Health export failed · (finishError?.localizedDescription ?? "workout was not saved")"
+                            }
+                        }
+                    }
+                }
+            }
+            guard !heartRateSamples.isEmpty else {
+                finishCollection()
+                return
+            }
+            builder.add(heartRateSamples) { added, addError in
+                guard added else {
+                    DispatchQueue.main.async {
+                        self.healthKitExportStatus = "Workout HR export failed · (addError?.localizedDescription ?? "samples could not be added")"
+                    }
+                    return
+                }
+                finishCollection()
+            }
+        }
     }
 
     private var workoutHistoryFileURL: URL? {
