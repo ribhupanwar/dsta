@@ -184,3 +184,20 @@ PulseForge's current experimental type-47 decoder (1244-byte frame, 100 accel + 
 5. Only promote axis scaling or stillness/activity thresholds after they are validated against a known controlled movement and the official parser's field vocabulary.
 
 The audit provides protocol field names and parser architecture, not the missing byte offsets or a complete wire specification. No guessed command payloads or proprietary source code are copied into PulseForge.
+
+
+## PulseForge safety correction: raw IMU activation and decoding (2026-10-28)
+
+A code review found that the experimental implementation had promoted unverified assumptions into active behavior: it automatically sent START_RAW_DATA (opcode 0x51, payload [01]) and TOGGLE_IMU_MODE (opcode 0x6A, payload [01,01]) after the realtime-HR-on event, then treated every type-47 packet as a fixed 1244-byte, 100 Hz six-axis block with hard-coded offsets and scales.
+
+The supplied archive audit does not establish those command payloads, activation ordering, type-47 revision, offsets, or physical-unit scales. The audit instead identifies revision-specific raw-data parsers (Rev10/11/20/21) and metadata fields for timestamp epoch, metric sequence, subsequence, sample counts, accel/gyro ranges and sample rate.
+
+The implementation has therefore been made conservative:
+
+- Realtime-HR activation no longer automatically triggers raw-IMU commands.
+- A START_RAW_DATA response no longer automatically chains a TOGGLE_IMU_MODE write.
+- Candidate type-47 frames are counted and timestamped only as packet observations; no synthetic axis samples, 100 Hz timing, or calibrated g/dps values are generated.
+- The existing HR command path remains separate from raw-IMU activation.
+- The code reports that raw-data activation and decoding are withheld pending verified wire-format evidence.
+
+This intentionally reduces apparent IMU functionality but prevents fabricated sensor samples and speculative device commands. Restore raw-IMU streaming only after command bytes/revision routing and packet metadata offsets are established from a legitimate protocol trace or equivalent byte-level evidence, then validate on WHOOP 5.0 hardware.
