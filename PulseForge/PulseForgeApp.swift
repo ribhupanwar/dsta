@@ -6,11 +6,13 @@ import Charts
 @main
 struct PulseForgeApp: App {
     @StateObject private var health = HealthDataStore()
+    @StateObject private var insights = TrainingInsightsStore()
 
     var body: some Scene {
         WindowGroup {
             MainTabView()
                 .environmentObject(health)
+                .environmentObject(insights)
                 .preferredColorScheme(.dark)
         }
     }
@@ -35,6 +37,8 @@ enum ForgeTab: String, CaseIterable {
 }
 
 struct MainTabView: View {
+    @EnvironmentObject private var health: HealthDataStore
+    @EnvironmentObject private var insights: TrainingInsightsStore
     @State private var selected: ForgeTab = .today
     @StateObject private var bluetooth = WhoopBluetoothManager()
 
@@ -55,6 +59,9 @@ struct MainTabView: View {
             ForgeTabBar(selected: $selected)
         }
         .ignoresSafeArea(.keyboard)
+        .onChange(of: health.isAuthorized) { _, authorized in
+            if authorized { insights.refresh() }
+        }
     }
 }
 
@@ -85,6 +92,7 @@ struct ForgeTabBar: View {
 
 struct TodayDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
+    @EnvironmentObject private var insights: TrainingInsightsStore
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
 
     var body: some View {
@@ -107,7 +115,7 @@ struct TodayDashboard: View {
                 VStack(alignment: .leading, spacing: 16) {
                     SectionHeader(title: "YOUR SCORES")
                     HStack(alignment: .top, spacing: 0) {
-                        ScoreRing(title: "RECOVERY", value: nil, tint: Color(red: 0.25, green: 0.82, blue: 0.48))
+                        ScoreRing(title: "RECOVERY", value: insights.recoveryScore, tint: Color(red: 0.25, green: 0.82, blue: 0.48))
                         Spacer(minLength: 2)
                         ScoreRing(title: "SLEEP", value: nil, tint: Color(red: 0.35, green: 0.62, blue: 0.96))
                         Spacer(minLength: 2)
@@ -153,7 +161,7 @@ struct TodayDashboard: View {
             .padding(.horizontal, 18)
             .padding(.top, 16)
         }
-        .refreshable { health.refresh() }
+        .refreshable { health.refresh(); insights.refresh() }
     }
 }
 
@@ -593,6 +601,7 @@ struct WorkoutRecordingCard: View {
 
 struct SleepDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
+    @EnvironmentObject private var insights: TrainingInsightsStore
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -615,12 +624,12 @@ struct SleepDashboard: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("SLEEP NEED").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
-                            Text("—").font(.system(size: 23, weight: .semibold, design: .rounded))
+                            Text(String(format: "%.1f h", insights.sleepNeedHours)).font(.system(size: 23, weight: .semibold, design: .rounded))
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 4) {
                             Text("SLEEP DEBT").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
-                            Text("—").font(.system(size: 23, weight: .semibold, design: .rounded))
+                            Text(insights.sleepDebtHours.map { String(format: "%.1f h", $0) } ?? "—").font(.system(size: 23, weight: .semibold, design: .rounded))
                         }
                     }
                 }
@@ -639,11 +648,12 @@ struct SleepDashboard: View {
             }
             .padding(18).padding(.top, 16)
         }
-        .refreshable { health.refresh() }
+        .refreshable { health.refresh(); insights.refresh() }
     }
 }
 struct StrainDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
+    @EnvironmentObject private var insights: TrainingInsightsStore
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -670,9 +680,9 @@ struct StrainDashboard: View {
                 .padding(20).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 SectionHeader(title: "CARDIO LOAD")
                 HStack(spacing: 10) {
-                    CompactMetric(title: "CARDIO LOAD", value: "—", unit: "today")
-                    CompactMetric(title: "ACTIVITIES", value: health.latestRunDate == nil ? "0" : "1", unit: "synced run")
-                    CompactMetric(title: "AVG HR", value: health.latestRunAverageHeartRate.map(String.init) ?? "—", unit: "bpm")
+                    CompactMetric(title: "CARDIO LOAD", value: insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—", unit: "load pts")
+                    CompactMetric(title: "ACTIVITIES", value: String(insights.workoutCountToday), unit: "today")
+                    CompactMetric(title: "DURATION", value: insights.workoutMinutesToday.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
                 }
                 SectionHeader(title: "LATEST RUN")
                 VStack(spacing: 13) {
@@ -702,7 +712,7 @@ struct StrainDashboard: View {
             }
             .padding(18).padding(.top, 16)
         }
-        .refreshable { health.refresh() }
+        .refreshable { health.refresh(); insights.refresh() }
     }
 }
 struct RunningDashboard: View {
