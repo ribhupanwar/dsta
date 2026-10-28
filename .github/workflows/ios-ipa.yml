@@ -1,0 +1,99 @@
+name: PulseForge IPA Export
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "PulseForge/**"
+      - "project.yml"
+      - ".github/workflows/ios-ipa.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pulseforge-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  export-unsigned-ipa:
+    name: Archive and package unsigned IPA
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen generate
+
+      - name: Discover PulseForge scheme
+        id: discover
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -list -json -project PulseForge.xcodeproj > xcode-list.json
+          python3 - <<'PY'
+          import json
+          with open("xcode-list.json") as f:
+              data = json.load(f)
+          schemes = data.get("project", {}).get("schemes", [])
+          if "PulseForge" not in schemes:
+              raise SystemExit(f"PulseForge scheme missing; found: {schemes}")
+          print("PulseForge scheme verified.")
+          PY
+
+      - name: Archive for physical iOS devices (unsigned)
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project PulseForge.xcodeproj \
+            -scheme PulseForge \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/PulseForge.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee "$RUNNER_TEMP/pulseforge-archive.log"
+
+      - name: Package installable IPA container
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/PulseForge.xcarchive/Products/Applications/PulseForge.app"
+          test -d "$APP" || {
+            echo "::error::PulseForge.app missing from archive."
+            find "$RUNNER_TEMP/PulseForge.xcarchive/Products" -maxdepth 4 -print || true
+            exit 1
+          }
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          ditto "$APP" "$RUNNER_TEMP/ipa/Payload/PulseForge.app"
+          (
+            cd "$RUNNER_TEMP/ipa"
+            /usr/bin/zip -qry "$GITHUB_WORKSPACE/PulseForge-unsigned.ipa" Payload
+          )
+          test -s PulseForge-unsigned.ipa
+          shasum -a 256 PulseForge-unsigned.ipa | tee PulseForge-unsigned.ipa.sha256
+          {
+            echo "## Unsigned IPA created"
+            echo "- File: PulseForge-unsigned.ipa"
+            echo "- SHA-256: $(cut -d ' ' -f 1 PulseForge-unsigned.ipa.sha256)"
+            echo "- Bundle ID: com.ribhupanwar.pulseforge"
+            echo "- Signing: unsigned; install through SideStore/AltStore signing flow."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulseforge-unsigned-ipa
+          path: |
+            PulseForge-unsigned.ipa
+            PulseForge-unsigned.ipa.sha256
+          if-no-files-found: error
+          retention-days: 30

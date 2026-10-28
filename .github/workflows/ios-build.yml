@@ -6,6 +6,7 @@ on:
       - main
       - whoop-background-ble
       - integrate-pulseforge-into-main
+      - ci/unsigned-ipa-export
   workflow_dispatch:
 
 concurrency:
