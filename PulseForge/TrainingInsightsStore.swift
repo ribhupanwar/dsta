@@ -102,7 +102,7 @@ final class TrainingInsightsStore: ObservableObject {
             // Only completed prior nights contribute to debt; missing nights
             // are not silently treated as zero hours.
             let completedNights = minutesByNight.keys
-                .filter { $0 < today }
+                .filter { $0 <= today }
                 .sorted(by: >)
                 .prefix(7)
             let debtMinutes = completedNights.reduce(0.0) { partial, night in
