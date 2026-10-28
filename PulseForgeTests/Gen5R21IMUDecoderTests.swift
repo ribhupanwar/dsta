@@ -79,3 +79,41 @@ final class Gen5R21IMUDecoderTests: XCTestCase {
         XCTAssertThrowsError(try Gen5R21IMUDecoder.decode(makeFrame(accelCount: 101, gyroCount: 1)))
     }
 }
+
+
+final class Gen5HistoricalMetadataDecoderTests: XCTestCase {
+    func testDecodesHistoryStartFromMetadataTypeByte() {
+        var frame = [UInt8](repeating: 0, count: 32)
+        frame[8] = 49
+        frame[10] = 1
+        XCTAssertEqual(Gen5HistoricalMetadataDecoder.decode(frame), .historyStart)
+    }
+
+    func testDecodesHistoryEndAndEchoBytesAtAbsoluteOffsets21Through28() {
+        var frame = [UInt8](repeating: 0, count: 33)
+        frame[8] = 49
+        frame[10] = 2
+        let endData: [UInt8] = [0x41, 0x42, 0x43, 0x44, 0x51, 0x52, 0x53, 0x54]
+        for (index, byte) in endData.enumerated() {
+            frame[21 + index] = byte
+        }
+        XCTAssertEqual(
+            Gen5HistoricalMetadataDecoder.decode(frame),
+            .historyEnd(endData: endData, trim: 0x44434241)
+        )
+    }
+
+    func testRejectsTruncatedHistoryEndWithoutAnAckCursor() {
+        var frame = [UInt8](repeating: 0, count: 28)
+        frame[8] = 49
+        frame[10] = 2
+        XCTAssertEqual(Gen5HistoricalMetadataDecoder.decode(frame), .invalid)
+    }
+
+    func testDecodesHistoryComplete() {
+        var frame = [UInt8](repeating: 0, count: 16)
+        frame[8] = 49
+        frame[10] = 3
+        XCTAssertEqual(Gen5HistoricalMetadataDecoder.decode(frame), .historyComplete)
+    }
+}
