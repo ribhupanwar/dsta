@@ -690,6 +690,40 @@ struct WorkoutRecordingCard: View {
     }
 }
 
+struct WhoopSectionHero: View {
+    let eyebrow: String
+    let value: String
+    let detail: String
+    let symbol: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 16) {
+            ZStack {
+                Circle().stroke(ForgeColors.track, lineWidth: 9)
+                Circle().trim(from: 0, to: value == "—" ? 0 : 0.72)
+                    .stroke(tint, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: symbol)
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(tint)
+            }
+            .frame(width: 104, height: 104)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(eyebrow).font(.system(size: 10, weight: .black)).tracking(1.4).foregroundStyle(ForgeColors.muted)
+                Text(value).font(.system(size: 31, weight: .black, design: .rounded)).monospacedDigit()
+                Text(detail).font(.system(size: 11, weight: .semibold)).foregroundStyle(tint)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(17)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).fill(LinearGradient(colors: [Color.white.opacity(0.08), Color.white.opacity(0.012)], startPoint: .topLeading, endPoint: .bottomTrailing)).clipShape(RoundedRectangle(cornerRadius: 22)))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(ForgeColors.stroke, lineWidth: 1))
+    }
+}
+
 struct SleepDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
@@ -697,7 +731,8 @@ struct SleepDashboard: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 22) {
-                HeaderView(eyebrow: "SLEEP", title: "Sleep")
+                HeaderView(eyebrow: "TODAY · SLEEP", title: "Sleep")
+                WhoopSectionHero(eyebrow: "SLEEP PERFORMANCE", value: health.sleepHours.map { String(format: "%.1f h", $0) } ?? "—", detail: health.sleepHours == nil ? "WAITING FOR SLEEP DATA" : "TIME ASLEEP", symbol: "moon.zzz.fill", tint: Color(red: 0.48, green: 0.68, blue: 0.82))
                 VStack(alignment: .leading, spacing: 16) {
                     SectionHeader(title: "SLEEP PERFORMANCE")
                     HStack(spacing: 20) {
@@ -750,7 +785,8 @@ struct StrainDashboard: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 22) {
-                HeaderView(eyebrow: "CARDIOVASCULAR LOAD", title: "Strain")
+                HeaderView(eyebrow: "TODAY · STRAIN", title: "Strain")
+                WhoopSectionHero(eyebrow: "CARDIO LOAD", value: insights.cardioLoadPoints.map { String(format: "%.1f", $0) } ?? "—", detail: insights.cardioLoadPoints == nil ? "STRAIN SCORE NOT YET VERIFIED" : "CARDIO LOAD POINTS", symbol: "flame.fill", tint: Color(red: 0.98, green: 0.58, blue: 0.27))
                 VStack(alignment: .leading, spacing: 15) {
                     SectionHeader(title: "TODAY'S STRAIN")
                     HStack(spacing: 22) {
@@ -953,7 +989,8 @@ struct RunningDashboard: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
-                HeaderView(eyebrow: "PERFORMANCE", title: "Running")
+                HeaderView(eyebrow: "TODAY · ACTIVITY", title: "Running")
+                WhoopSectionHero(eyebrow: "LAST 7 DAYS", value: health.weeklyRunDistanceKm.map { String(format: "%.1f km", $0) } ?? "—", detail: "\(health.weeklyRunCount) RECORDED RUNS", symbol: "figure.run", tint: Color(red: 0.12, green: 0.61, blue: 0.95))
                 GPSRunCard()
                 WorkoutRecordingCard(bluetooth: bluetooth)
                 VStack(alignment: .leading, spacing: 12) {
