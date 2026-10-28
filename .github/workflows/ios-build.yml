@@ -8,6 +8,7 @@ on:
       - integrate-pulseforge-into-main
       - ci/unsigned-ipa-export
       - ui/reference-dashboard-redesign
+      - feature/whoop5-r21-history-offload
   workflow_dispatch:
 
 concurrency:
