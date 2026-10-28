@@ -4,6 +4,8 @@
 <dict>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>PulseForge uses GPS during an outdoor run to measure distance, pace and kilometre splits.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>PulseForge uses Bluetooth to connect to your WHOOP-compatible wearable and receive live sensor data.</string>
     <key>UIBackgroundModes</key>
     <array>
         <string>bluetooth-central</string>
