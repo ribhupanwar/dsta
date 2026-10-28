@@ -26,7 +26,7 @@ jobs:
       - name: Install XcodeGen when needed
         shell: bash
         run: |
-          if [[ -f project.yml ]] && [[ ! -d PulseForge.xcodeproj ]] && [[ ! -d *.xcworkspace ]]; then
+          if [[ -f project.yml ]] && ! compgen -G "*.xcodeproj" > /dev/null && ! compgen -G "*.xcworkspace" > /dev/null; then
             brew install xcodegen
             xcodegen generate
           fi
@@ -63,11 +63,25 @@ jobs:
           print(base if base in schemes else schemes[0])
           PY
           )"
-          HAS_TESTS="$(python3 - ci-xcode-list.json <<'PY'
-          import json, sys
-          with open(sys.argv[1]) as f:
+          HAS_TESTS="$(python3 - "$CONTAINER" "$CONTAINER_FLAG" ci-xcode-list.json <<'PY'
+          import glob, json, os, subprocess, sys
+          container, flag, listing = sys.argv[1:]
+          with open(listing) as f:
               data = json.load(f)
-          targets = data.get("project", {}).get("targets", [])
+          targets = list(data.get("project", {}).get("targets", []))
+          # Workspace listings expose projects rather than target names. Inspect
+          # each project inside the workspace so test targets are not missed.
+          if flag == "-workspace":
+              for project in glob.glob("**/*.xcodeproj", recursive=True):
+                  try:
+                      result = subprocess.run(
+                          ["xcodebuild", "-list", "-json", "-project", project],
+                          check=True, capture_output=True, text=True
+                      )
+                      project_data = json.loads(result.stdout)
+                      targets.extend(project_data.get("project", {}).get("targets", []))
+                  except (subprocess.CalledProcessError, json.JSONDecodeError):
+                      continue
           print("true" if any("test" in name.lower() for name in targets) else "false")
           PY
           )"
