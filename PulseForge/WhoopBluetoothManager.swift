@@ -1356,87 +1356,31 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
             }
 
-            // OpenStrap's Gen5 v21 decoder documents a 1232-byte inner record:
-            // header (13 bytes), accel block (100 samples/axis), gyro block
-            // (100 samples/axis). Both blocks are configured at 100 Hz.
-            // Offsets below are INNER-relative; b includes the 8-byte frame header.
-            guard b.count == 1244 else {
-                whoopIMUStatus = "Gen5 R21 candidate received · \(b.count) bytes · expected 1244 · raw retained"
-                return "GEN5_R21_IMU(0x2B) · invalid frame length \(b.count)"
+            do {
+                let decoded = try Gen5R21IMUDecoder.decode(b)
+                guard !decoded.isEmpty else {
+                    whoopIMUStatus = "Gen5 R21 frame valid · no paired samples · raw retained"
+                    return "GEN5_R21_IMU(0x2B) · no paired samples"
+                }
+                liveWhoopIMUSamples.append(contentsOf: decoded)
+                if liveWhoopIMUSamples.count > 2000 {
+                    liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 2000)
+                }
+                if workoutIsRecording {
+                    workoutWhoopIMUSamples.append(contentsOf: decoded)
+                }
+                whoopIMUSampleCount += decoded.count
+                if workoutIsRecording,
+                   workoutWhoopIMUSamples.count - lastWhoopIMUPersistedSampleCount >= 500 {
+                    // Persist IMU in ~5-second batches at 100 Hz, not on every frame.
+                    persistWorkoutSession()
+                }
+                whoopIMUStatus = "Gen5 R21 decoded · \\(decoded.count) paired samples · 100 Hz · accel/gyro scales applied"
+                return "GEN5_R21_IMU(0x2B) · decoded \\(decoded.count) samples · 100 Hz · CRC valid"
+            } catch {
+                whoopIMUStatus = "Gen5 R21 candidate rejected · \\(error) · raw retained"
+                return "GEN5_R21_IMU(0x2B) · decode rejected · \\(error)"
             }
-            let inner = Array(b[8..<1240])
-            guard inner.count == 1232, inner[0] == 0x2B, inner[1] == 21 else {
-                whoopIMUStatus = "Gen5 R21 candidate received · inner header mismatch · raw retained"
-                return "GEN5_R21_IMU(0x2B) · inner header/length mismatch"
-            }
-
-            func u16(_ offset: Int) -> Int {
-                Int(inner[offset]) | (Int(inner[offset + 1]) << 8)
-            }
-            func i16(_ offset: Int) -> Int16 {
-                Int16(bitPattern: UInt16(u16(offset)))
-            }
-            let accelCount = u16(16)
-            let gyroCount = u16(622)
-            guard (1...100).contains(accelCount), (1...100).contains(gyroCount) else {
-                whoopIMUStatus = "Gen5 R21 frame rejected · invalid sample counts · raw retained"
-                return "GEN5_R21_IMU(0x2B) · invalid counts accel=\(accelCount) gyro=\(gyroCount)"
-            }
-
-            // Pair only indices present in BOTH sensor blocks. Never read the
-            // unused tail of a partially filled block as fresh motion samples.
-            let pairedCount = min(accelCount, gyroCount)
-            let unixSeconds = Double(
-                UInt32(inner[7]) |
-                (UInt32(inner[8]) << 8) |
-                (UInt32(inner[9]) << 16) |
-                (UInt32(inner[10]) << 24)
-            )
-            let subsecondQ15 = Double(u16(11)) / 32768.0
-            let frameTimestamp = unixSeconds + subsecondQ15
-            let accelScale = 1.0 / 4096.0
-            let gyroScale = 2000.0 / 32768.0
-            var decoded: [WhoopIMUSample] = []
-            decoded.reserveCapacity(pairedCount)
-            for index in 0..<pairedCount {
-                let timestamp = Date(timeIntervalSince1970: frameTimestamp + Double(index) / 100.0)
-                let ax = Double(i16(20 + 2 * index)) * accelScale
-                let ay = Double(i16(220 + 2 * index)) * accelScale
-                let az = Double(i16(420 + 2 * index)) * accelScale
-                let gx = Double(i16(632 + 2 * index)) * gyroScale
-                let gy = Double(i16(832 + 2 * index)) * gyroScale
-                let gz = Double(i16(1032 + 2 * index)) * gyroScale
-                decoded.append(WhoopIMUSample(
-                    timestamp: timestamp,
-                    accelerationXG: ax,
-                    accelerationYG: ay,
-                    accelerationZG: az,
-                    rotationXDPS: gx,
-                    rotationYDPS: gy,
-                    rotationZDPS: gz
-                ))
-            }
-
-            guard !decoded.isEmpty else {
-                whoopIMUStatus = "Gen5 R21 frame valid · no paired samples · raw retained"
-                return "GEN5_R21_IMU(0x2B) · no paired samples"
-            }
-            liveWhoopIMUSamples.append(contentsOf: decoded)
-            if liveWhoopIMUSamples.count > 2000 {
-                liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 2000)
-            }
-            if workoutIsRecording {
-                workoutWhoopIMUSamples.append(contentsOf: decoded)
-            }
-            whoopIMUSampleCount += decoded.count
-            if workoutIsRecording,
-               workoutWhoopIMUSamples.count - lastWhoopIMUPersistedSampleCount >= 500 {
-                // Persist IMU in ~5-second batches at 100 Hz, not on every frame.
-                persistWorkoutSession()
-            }
-            let countNote = accelCount == gyroCount ? "" : " · paired=min(\(accelCount),\(gyroCount))"
-            whoopIMUStatus = "Gen5 R21 decoded · \(decoded.count) paired samples · 100 Hz · accel/gyro scales applied"
-            return "GEN5_R21_IMU(0x2B) · decoded \(decoded.count) samples · 100 Hz\(countNote) · CRC valid"
         case 51: // Existing REALTIME_IMU_DATA_STREAM path retained independently; do not conflate with Gen5 R21.
             whoopIMUFrameCount += 1
             whoopIMULastFrameAt = Date()
