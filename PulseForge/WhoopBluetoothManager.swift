@@ -480,6 +480,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5HelloWriteAcknowledged = false
     private var whoop5PostHelloNotifyRetryAttempted = Set<String>()
     private var whoop5HRStreamEnableSent = false
+    private var whoop5HRStallRecoveryWorkItem: DispatchWorkItem?
+    private var whoop5HRStallRecoveryAttempted = false
     private var whoop5HRStreamConfirmed = false
     private var whoop5AutoIMUStartRequested = false
     private var whoop5AutoIMUEnabled = false
@@ -945,6 +947,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HelloWriteAcknowledged = false
         whoopSessionPhase = "GATT session reset · awaiting discovery"
         whoop5PostHelloNotifyRetryAttempted.removeAll()
+        whoop5HRStallRecoveryWorkItem?.cancel()
+        whoop5HRStallRecoveryWorkItem = nil
+        whoop5HRStallRecoveryAttempted = false
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
@@ -1695,6 +1700,32 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         peripheral.writeValue(frame, for: command, type: .withResponse)
     }
 
+    /// A single bounded recovery for the WHOOP 5.0 HR stream if it goes silent
+    /// after producing data. Do not reconnect or loop retries; preserve the GATT session.
+    private func scheduleWhoop5HRStallRecovery(from sampleTime: Date) {
+        whoop5HRStallRecoveryWorkItem?.cancel()
+        guard !whoop5HRStallRecoveryAttempted else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self,
+                  let peripheral = self.connectedPeripheral,
+                  peripheral.state == .connected,
+                  self.connectedName != nil,
+                  self.whoop5HRStreamConfirmed,
+                  let lastSample = self.lastHeartRateAt,
+                  Date().timeIntervalSince(lastSample) >= 5 * 60,
+                  !self.whoop5PendingWrites.contains("REALTIME_HR_ON") else { return }
+            self.whoop5HRStallRecoveryAttempted = true
+            self.whoop5HRStreamEnableSent = false
+            self.recordVendorTimeline("HR stall recovery · no sample for 5 min · one REALTIME_HR_ON re-arm")
+            self.lastBLEEvent = "WHOOP HR stream silent for 5 min · one recovery request sent"
+            self.statusText = "Connected · recovering silent WHOOP HR stream"
+            self.sendRealtimeHrEnable(to: peripheral)
+        }
+        whoop5HRStallRecoveryWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5 * 60, execute: work)
+        recordVendorTimeline("HR stall watchdog scheduled · 5 min after latest sample")
+    }
+
     /// Enable WHOOP 5.0 live HR (opcode 0x03, body [0x01]).
     /// This is separate from subscribing to 180D/2A37 and FD4B notify CCCDs.
     private func sendRealtimeHrEnable(to peripheral: CBPeripheral) {
@@ -1732,6 +1763,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         let timestamp = Date()
         liveHeartRateBPM = bpm
         lastHeartRateAt = timestamp
+        scheduleWhoop5HRStallRecovery(from: timestamp)
         if hrTimingFirstSampleAt == nil {
             hrTimingFirstSampleAt = timestamp
             let elapsed = hrTimingConnectionAt.map { timestamp.timeIntervalSince($0) } ?? 0
