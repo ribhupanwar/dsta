@@ -90,6 +90,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopIMUSampleCount = 0
     @Published private(set) var whoopIMULastFrameAt: Date?
     @Published private(set) var whoopIMUStatus = "Waiting for WHOOP motion stream"
+    @Published private(set) var whoopIMULastRawFrameHex = "none"
     @Published private(set) var liveWhoopIMUSamples: [WhoopIMUSample] = []
     @Published private(set) var workoutWhoopIMUSamples: [WhoopIMUSample] = []
 
@@ -603,6 +604,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU frames: \(whoopIMUFrameCount) · samples: \(whoopIMUSampleCount) · live buffer: \(liveWhoopIMUSamples.count) · workout samples: \(workoutWhoopIMUSamples.count) · status: \(whoopIMUStatus)",
             "WHOOP latest IMU sample: \(liveWhoopIMUSamples.last.map { String(format: "A %.3f, %.3f, %.3f g · G %.1f, %.1f, %.1f dps", $0.accelerationXG, $0.accelerationYG, $0.accelerationZG, $0.rotationXDPS, $0.rotationYDPS, $0.rotationZDPS) } ?? "none")",
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
+            "WHOOP IMU last CRC-valid raw frame hex (type 47): \(whoopIMULastRawFrameHex)",
             "WHOOP protocol diagnosis: \(whoopProtocolDiagnostics)",
             "WHOOP packet counts · realtime: \(whoopRealtimePacketCount) · command responses: \(whoopCommandResponseCount)",
             "WHOOP last packet type: \(whoopLastPacketType)",
@@ -762,6 +764,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMUFrameCount = 0
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
+        whoopIMULastRawFrameHex = "none"
         liveWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoop5PendingWrites.removeAll()
@@ -1162,7 +1165,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             // never manufacture calibrated axes or timestamps from guessed offsets.
             whoopIMUFrameCount += 1
             whoopIMULastFrameAt = Date()
-            whoopIMUStatus = "Candidate raw-data frame observed · \(b.count) bytes · revision-aware decode pending"
+            whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
+            whoopIMUStatus = "Candidate raw-data frame observed · \(b.count) bytes · CRC valid · raw capture available · revision-aware decode pending"
             return "CANDIDATE_RAW_DATA(0x2F) · \(b.count) bytes · CRC valid · axes not decoded"
 
         case 40: // REALTIME_DATA; protocol inner[8] == complete-frame byte[16]
