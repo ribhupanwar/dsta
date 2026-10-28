@@ -52,7 +52,12 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var workoutHeartRateSamples: [LiveHeartRateSample] = []
     @Published private(set) var workoutStartedAt: Date?
     @Published private(set) var workoutIsRecording = false
+    @Published private(set) var workoutRecordingIsAutomatic = false
+    @Published private(set) var workoutDetectionStatus = "Waiting for live HR baseline"
     @Published private(set) var lastWorkoutDurationSeconds: TimeInterval?
+    private var workoutDetectionSamples: [LiveHeartRateSample] = []
+    private var workoutDetectionCandidateSince: Date?
+    private var workoutRecoverySince: Date?
     @Published private(set) var whoopIMUFrameCount = 0
     @Published private(set) var whoopIMUSampleCount = 0
     @Published private(set) var whoopIMULastFrameAt: Date?
@@ -67,13 +72,25 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     }
 
     func startWorkoutRecording() {
+        beginWorkoutRecording(automatic: false)
+    }
+
+    private func beginWorkoutRecording(automatic: Bool) {
         guard connectedName != nil, !workoutIsRecording else { return }
         workoutHeartRateSamples.removeAll()
         workoutWhoopIMUSamples.removeAll()
         workoutStartedAt = Date()
         lastWorkoutDurationSeconds = nil
+        workoutRecordingIsAutomatic = automatic
         workoutIsRecording = true
-        statusText = "Workout recording · waiting for HR samples"
+        workoutDetectionCandidateSince = nil
+        workoutRecoverySince = nil
+        workoutDetectionStatus = automatic
+            ? "Auto-detected from sustained elevated HR · HR-only"
+            : "Manual workout recording"
+        statusText = automatic
+            ? "Workout auto-detected · recording HR"
+            : "Workout recording · waiting for HR samples"
     }
 
     func stopWorkoutRecording() {
@@ -83,11 +100,75 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         }
         workoutIsRecording = false
         workoutStartedAt = nil
+        workoutDetectionStatus = workoutRecordingIsAutomatic
+            ? "Automatic workout saved · HR-only detection"
+            : "Manual workout saved"
+        workoutRecordingIsAutomatic = false
         persistWorkoutSession()
         statusText = "Workout saved on this iPhone · \(workoutHeartRateSamples.count) HR samples"
     }
 
-    private func persistWorkoutSession() {
+ 
+    // Conservative first-pass auto detection: sustained HR elevation relative to
+    // the user's recent baseline. This deliberately does not infer activity type
+    // or claim motion confirmation while WHOOP IMU decoding remains unverified.
+    private func evaluateAutomaticWorkoutDetection(bpm: Int, at timestamp: Date) {
+        let sample = LiveHeartRateSample(timestamp: timestamp, bpm: bpm)
+        workoutDetectionSamples.append(sample)
+        workoutDetectionSamples.removeAll { timestamp.timeIntervalSince($0.timestamp) > 15 * 60 }
+
+        guard connectedName != nil else {
+            workoutDetectionCandidateSince = nil
+            workoutRecoverySince = nil
+            workoutDetectionStatus = "Waiting for connected-band HR"
+            return
+        }
+
+        let baselineSamples = workoutDetectionSamples.filter {
+            timestamp.timeIntervalSince($0.timestamp) >= 5 * 60
+        }.map(\\.bpm).sorted()
+        guard baselineSamples.count >= 5 else {
+            workoutDetectionStatus = "Learning HR baseline · \\(baselineSamples.count)/5 samples"
+            return
+        }
+        let baseline = baselineSamples[baselineSamples.count / 2]
+        let startThreshold = max(100, baseline + 20)
+        let recoveryThreshold = baseline + 10
+
+        if workoutIsRecording {
+            guard workoutRecordingIsAutomatic else { return }
+            if bpm <= recoveryThreshold {
+                if workoutRecoverySince == nil { workoutRecoverySince = timestamp }
+                if let recoverySince = workoutRecoverySince,
+                   timestamp.timeIntervalSince(recoverySince) >= 8 * 60,
+                   let startedAt = workoutStartedAt,
+                   timestamp.timeIntervalSince(startedAt) >= 10 * 60 {
+                    stopWorkoutRecording()
+                } else {
+                    workoutDetectionStatus = "HR recovery observed · confirming 8 min"
+                }
+            } else {
+                workoutRecoverySince = nil
+                workoutDetectionStatus = "Recording · HR remains elevated · HR-only"
+            }
+            return
+        }
+
+        if bpm >= startThreshold {
+            if workoutDetectionCandidateSince == nil { workoutDetectionCandidateSince = timestamp }
+            if let candidateSince = workoutDetectionCandidateSince,
+               timestamp.timeIntervalSince(candidateSince) >= 5 * 60 {
+                beginWorkoutRecording(automatic: true)
+            } else {
+                let elapsed = workoutDetectionCandidateSince.map { Int(timestamp.timeIntervalSince($0)) } ?? 0
+                workoutDetectionStatus = "Possible workout · elevated HR \\(elapsed)/300 sec"
+            }
+        } else {
+            workoutDetectionCandidateSince = nil
+            workoutDetectionStatus = "Monitoring HR · baseline \\(baseline) bpm · trigger \\(startThreshold) bpm"
+        }
+    }
+\n    private func persistWorkoutSession() {
         if let data = try? JSONEncoder().encode(workoutHeartRateSamples) {
             UserDefaults.standard.set(data, forKey: "pulseforge.whoop.lastWorkoutSamples")
         }
@@ -980,6 +1061,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         if liveHeartRateSamples.count > 120 {
             liveHeartRateSamples.removeFirst(liveHeartRateSamples.count - 120)
         }
+        evaluateAutomaticWorkoutDetection(bpm: bpm, at: timestamp)
         if workoutIsRecording {
             workoutHeartRateSamples.append(sample)
             if workoutHeartRateSamples.count > 14_400 {
