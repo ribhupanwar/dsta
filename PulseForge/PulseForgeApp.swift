@@ -571,78 +571,145 @@ struct WorkoutRecordingCard: View {
 
 struct SleepDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                HeaderView(eyebrow: "SLEEP", title: "Recharge")
-                BigPlaceholderCard(title: "SLEEP PERFORMANCE", subtitle: "Connect a data source to see your sleep performance.", icon: "moon.stars.fill")
-                SectionHeader(title: "SLEEP BREAKDOWN")
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 22) {
+                HeaderView(eyebrow: "SLEEP", title: "Sleep")
+                VStack(alignment: .leading, spacing: 16) {
+                    SectionHeader(title: "SLEEP PERFORMANCE")
+                    HStack(spacing: 20) {
+                        ScoreRing(title: "PERFORMANCE", value: nil, tint: Color(red: 0.35, green: 0.62, blue: 0.96))
+                            .frame(width: 112)
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text(health.sleepHours.map { String(format: "%.1f h", $0) } ?? "—")
+                                .font(.system(size: 34, weight: .medium, design: .rounded)).monospacedDigit()
+                            Text("Time asleep").font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                            Text("Sleep score needs a verified sleep target and complete sleep data.")
+                                .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                        }
+                    }
+                    Divider().overlay(ForgeColors.stroke)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("SLEEP NEED").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                            Text("—").font(.system(size: 23, weight: .semibold, design: .rounded))
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("SLEEP DEBT").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                            Text("—").font(.system(size: 23, weight: .semibold, design: .rounded))
+                        }
+                    }
+                }
+                .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                SectionHeader(title: "SLEEP STAGES")
                 SleepStageBreakdown(deep: health.deepSleepMinutes, rem: health.remSleepMinutes, core: health.coreSleepMinutes, awake: health.awakeMinutes)
-                HStack(spacing: 12) {
-                    MetricTile(title: "SLEEP HOURS", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours", symbol: "bed.double.fill")
-                    MetricTile(title: "SLEEP DEBT", value: "—", unit: "minutes", symbol: "hourglass")
+                SectionHeader(title: "SLEEP SUMMARY")
+                HStack(spacing: 10) {
+                    CompactMetric(title: "TOTAL SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                    CompactMetric(title: "DEEP SLEEP", value: health.deepSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
+                    CompactMetric(title: "REM SLEEP", value: health.remSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
                 }
-                Text("Sleep stages and sleep need will populate from supported sensor data or Apple Health.")
-                    .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                Text("Sleep stages are read from Apple Health. Sleep need, debt and performance remain blank until a reliable baseline is available.")
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
-            .padding(20).padding(.top, 18)
+            .padding(18).padding(.top, 16)
         }
+        .refreshable { health.refresh() }
     }
 }
-
 struct StrainDashboard: View {
+    @EnvironmentObject private var health: HealthDataStore
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                HeaderView(eyebrow: "TRAINING LOAD", title: "Strain")
-                BigPlaceholderCard(title: "DAILY STRAIN", subtitle: "Your cardiovascular load will appear after a workout or wearable sync.", icon: "flame.fill")
-                SectionHeader(title: "TRAINING")
-                HStack(spacing: 12) {
-                    MetricTile(title: "CARDIO LOAD", value: "—", unit: "today", symbol: "waveform.path")
-                    MetricTile(title: "ACTIVITIES", value: "—", unit: "sessions", symbol: "figure.run")
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 22) {
+                HeaderView(eyebrow: "CARDIOVASCULAR LOAD", title: "Strain")
+                VStack(alignment: .leading, spacing: 15) {
+                    SectionHeader(title: "TODAY'S STRAIN")
+                    HStack(spacing: 22) {
+                        ZStack {
+                            Circle().stroke(ForgeColors.track, lineWidth: 9)
+                            Circle().trim(from: 0, to: 0)
+                                .stroke(Color(red: 0.98, green: 0.58, blue: 0.27), style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                            Text("—").font(.system(size: 39, weight: .light, design: .rounded))
+                        }
+                        .frame(width: 132, height: 132)
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("No strain score yet").font(.system(size: 18, weight: .semibold))
+                            Text("A verified workout and heart-rate load model are needed to calculate daily strain.")
+                                .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                        }
+                    }
                 }
-                SectionHeader(title: "RUNNING")
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack { Text("PACE").foregroundStyle(ForgeColors.muted); Spacer(); Text("— /km") }
-                    Divider().overlay(ForgeColors.stroke)
-                    HStack { Text("AVERAGE HR").foregroundStyle(ForgeColors.muted); Spacer(); Text("— bpm") }
-                    Divider().overlay(ForgeColors.stroke)
-                    HStack { Text("DISTANCE").foregroundStyle(ForgeColors.muted); Spacer(); Text("— km") }
+                .padding(20).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                SectionHeader(title: "CARDIO LOAD")
+                HStack(spacing: 10) {
+                    CompactMetric(title: "CARDIO LOAD", value: "—", unit: "today")
+                    CompactMetric(title: "ACTIVITIES", value: health.latestRunDate == nil ? "0" : "1", unit: "synced run")
+                    CompactMetric(title: "AVG HR", value: health.latestRunAverageHeartRate.map(String.init) ?? "—", unit: "bpm")
                 }
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                SectionHeader(title: "LATEST RUN")
+                VStack(spacing: 13) {
+                    HStack {
+                        Label("Distance", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                        Spacer()
+                        Text(health.latestRunDistanceKm.map { String(format: "%.2f km", $0) } ?? "—")
+                    }
+                    Divider().overlay(ForgeColors.stroke)
+                    HStack {
+                        Label("Average pace", systemImage: "speedometer")
+                        Spacer()
+                        Text(health.latestRunPaceMinutesPerKm.map { String(format: "%.2f min/km", $0) } ?? "—")
+                    }
+                    Divider().overlay(ForgeColors.stroke)
+                    HStack {
+                        Label("Duration", systemImage: "timer")
+                        Spacer()
+                        Text(health.latestRunDurationMinutes.map { String(format: "%.0f min", $0) } ?? "—")
+                    }
+                }
+                .font(.system(size: 13, weight: .medium))
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+                Text("Strain and cardio load are intentionally not estimated from incomplete data.")
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
-            .padding(20).padding(.top, 18)
+            .padding(18).padding(.top, 16)
         }
+        .refreshable { health.refresh() }
     }
 }
-
-
 struct RunningDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
     @AppStorage("pulseforge.running.maxHeartRate") private var maxHeartRate = 0
     @State private var maxHeartRateDraft = ""
+
     var body: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
-                HeaderView(eyebrow: "ENDURANCE", title: "Running")
+                HeaderView(eyebrow: "PERFORMANCE", title: "Running")
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("LAST RUN").font(.system(size: 10, weight: .bold)).tracking(1.5).foregroundStyle(ForgeColors.muted)
-                    Text(health.latestRunDate.map { "Run · \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "No activity synced").font(.system(size: 20, weight: .semibold))
-                    Text("Your distance, pace, heart-rate zones and splits will appear here after a workout sync.")
-                        .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                    SectionHeader(title: "LATEST ACTIVITY")
+                    Text(health.latestRunDate.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "No run synced")
+                        .font(.system(size: 17, weight: .semibold))
+                    Text("Your latest running workout from Apple Health.")
+                        .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                    HStack(spacing: 10) {
+                        RunHighlight(value: health.latestRunDistanceKm.map { String(format: "%.2f", $0) } ?? "—", unit: "KM", label: "DISTANCE")
+                        RunHighlight(value: health.latestRunPaceMinutesPerKm.map { String(format: "%.2f", $0) } ?? "—", unit: "MIN/KM", label: "AVG PACE")
+                        RunHighlight(value: health.latestRunDurationMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "MIN", label: "TIME")
+                    }
+                    .padding(.top, 8)
                 }
-                .padding(20).frame(maxWidth: .infinity, alignment: .leading)
-                .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 20))
+                .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 HStack(spacing: 10) {
-                    MetricTile(title: "DISTANCE", value: health.latestRunDistanceKm.map { String(format: "%.2f", $0) } ?? "—", unit: "km", symbol: "point.topleft.down.to.point.bottomright.curvepath")
-                    MetricTile(title: "AVG PACE", value: health.latestRunPaceMinutesPerKm.map { String(format: "%.2f", $0) } ?? "—", unit: "/km", symbol: "speedometer")
-                }
-                HStack(spacing: 10) {
-                    MetricTile(title: "AVG HEART RATE", value: health.latestRunAverageHeartRate.map(String.init) ?? "—", unit: "bpm", symbol: "heart.fill")
-                    MetricTile(title: "DURATION", value: health.latestRunDurationMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min", symbol: "timer")
+                    CompactMetric(title: "AVERAGE HR", value: health.latestRunAverageHeartRate.map(String.init) ?? "—", unit: "bpm")
+                    CompactMetric(title: "HR SAMPLES", value: health.latestRunHeartRateSampleCount.formatted(), unit: "points")
+                    CompactMetric(title: "SPLITS", value: health.latestRunSplits.count.formatted(), unit: "km")
                 }
                 SectionHeader(title: "HEART RATE")
                 WorkoutHeartRateChart(points: health.latestRunHeartRatePoints)
@@ -655,9 +722,8 @@ struct RunningDashboard: View {
                             .font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(ForgeColors.lime)
                     }
                     HStack(spacing: 10) {
-                        TextField("Enter measured max HR", text: $maxHeartRateDraft)
-                            .keyboardType(.numberPad)
-                            .font(.system(size: 13, design: .rounded))
+                        TextField("Measured max HR", text: $maxHeartRateDraft)
+                            .keyboardType(.numberPad).font(.system(size: 13, design: .rounded))
                             .padding(11).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 10))
                         Button("SAVE") {
                             if let value = Int(maxHeartRateDraft), (100...240).contains(value) {
@@ -669,25 +735,32 @@ struct RunningDashboard: View {
                         .padding(.horizontal, 15).padding(.vertical, 12)
                         .background(ForgeColors.lime, in: Capsule())
                     }
-                    Text("Use a measured maximum from a reliable test or clinician—not an age-based guess.")
+                    Text("Enter a measured maximum from a reliable test; zones are not calculated from an age-based estimate.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                     if maxHeartRate > 0 {
-                        ForEach(Array(heartRateZones(maxHR: maxHeartRate, points: health.latestRunHeartRatePoints).enumerated()), id: \.offset) { index, zone in
+                        ForEach(Array(heartRateZones(maxHR: maxHeartRate, points: health.latestRunHeartRatePoints).enumerated()), id: \.offset) { _, zone in
                             ZoneRow(name: zone.name, color: zone.color, minutes: zone.minutes)
                         }
                     } else {
-                        Text("Set your max HR to calculate time in each zone.")
+                        Text("Set your max HR to view time in each zone.")
                             .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                     }
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
                 SectionHeader(title: "PACE & SPLITS")
                 VStack(spacing: 12) {
-                    HStack { Text("KM"); Spacer(); Text("PACE"); Spacer(); Text("DISTANCE") }
-                        .font(.system(size: 9, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                    HStack {
+                        Text("KM")
+                        Spacer()
+                        Text("PACE")
+                        Spacer()
+                        Text("DISTANCE")
+                    }
+                    .font(.system(size: 9, weight: .bold)).foregroundStyle(ForgeColors.muted)
                     Divider().overlay(ForgeColors.stroke)
                     if health.latestRunSplits.isEmpty {
-                        Text("No distance split samples available").font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                        Text("No distance split samples available")
+                            .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
                         ForEach(health.latestRunSplits) { split in
@@ -703,16 +776,32 @@ struct RunningDashboard: View {
                     }
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
-                Text("Running metrics are kept blank until verified workout data is available; no sample performance is presented as real.")
-                    .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                Text("Only synced workout measurements are displayed.")
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
-            .padding(20).padding(.top, 18)
+            .padding(18).padding(.top, 16)
         }
         .refreshable { health.refresh() }
     }
 }
 
+struct RunHighlight: View {
+    let value: String
+    let unit: String
+    let label: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label).font(.system(size: 8, weight: .bold)).tracking(0.6).foregroundStyle(ForgeColors.muted)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value).font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
+                Text(unit).font(.system(size: 8, weight: .bold)).foregroundStyle(ForgeColors.muted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
 struct ZoneRow: View {
     let name: String
     let color: Color
