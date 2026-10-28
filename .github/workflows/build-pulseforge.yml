@@ -51,7 +51,7 @@ jobs:
             exit 1
           fi
 
-          xcodebuild -list -json "$CONTAINER" > ci-xcode-list.json
+          xcodebuild -list -json "$CONTAINER_FLAG" "$CONTAINER" > ci-xcode-list.json
           SCHEME="$(python3 - "$BASE" ci-xcode-list.json <<'PY'
           import json, sys
           base, path = sys.argv[1:]
