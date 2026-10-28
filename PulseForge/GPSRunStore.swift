@@ -85,11 +85,14 @@ final class GPSRunStore: NSObject, ObservableObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         manager.distanceFilter = 3
         manager.pausesLocationUpdatesAutomatically = false
-        // Keep foreground-started outdoor runs recording while the app is backgrounded
-        // or the iPhone is locked. The matching "location" background mode is declared
-        // in Info.plist; When In Use permission is sufficient for this foreground-started flow.
+        // Background location delivery is required on a physical iPhone so an
+        // outdoor run continues when the app is backgrounded or the screen locks.
+        // CoreLocation rejects this setting in the iOS Simulator test host, so
+        // keep simulator launches deterministic without changing device behavior.
+        #if !targetEnvironment(simulator)
         manager.allowsBackgroundLocationUpdates = true
         manager.showsBackgroundLocationIndicator = true
+        #endif
         recentRuns = loadHistory()
     }
 
