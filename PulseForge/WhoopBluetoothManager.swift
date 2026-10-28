@@ -101,6 +101,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoopIMURawFrameHistory: [String] = []
     @Published private(set) var liveWhoopIMUSamples: [WhoopIMUSample] = []
     @Published private(set) var workoutWhoopIMUSamples: [WhoopIMUSample] = []
+    private var lastWhoopIMUPersistedSampleCount = 0
 
     var freshHeartRateBPM: Int? {
         guard connectedName != nil, let lastHeartRateAt,
@@ -116,6 +117,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         guard connectedName != nil, !workoutIsRecording else { return }
         workoutHeartRateSamples.removeAll()
         workoutWhoopIMUSamples.removeAll()
+        lastWhoopIMUPersistedSampleCount = 0
         workoutStartedAt = Date()
         lastWorkoutStartedAt = workoutStartedAt
         lastWorkoutWasAutomatic = automatic
@@ -343,13 +345,14 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         }
     }
 
-    private func persistWorkoutSession() {
+    private func persistWorkoutSession(includeIMU: Bool = true) {
         saveWorkoutHistory()
         if let data = try? JSONEncoder().encode(workoutHeartRateSamples) {
             UserDefaults.standard.set(data, forKey: "pulseforge.whoop.lastWorkoutSamples")
         }
-        if let data = try? JSONEncoder().encode(workoutWhoopIMUSamples) {
+        if includeIMU, let data = try? JSONEncoder().encode(workoutWhoopIMUSamples) {
             UserDefaults.standard.set(data, forKey: "pulseforge.whoop.lastVerifiedWorkoutIMUSamples")
+            lastWhoopIMUPersistedSampleCount = workoutWhoopIMUSamples.count
         }
         if let duration = lastWorkoutDurationSeconds {
             UserDefaults.standard.set(duration, forKey: "pulseforge.whoop.lastWorkoutDuration")
@@ -1426,7 +1429,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 workoutWhoopIMUSamples.append(contentsOf: decoded)
             }
             whoopIMUSampleCount += decoded.count
-            if workoutIsRecording {
+            if workoutIsRecording,
+               workoutWhoopIMUSamples.count - lastWhoopIMUPersistedSampleCount >= 500 {
+                // Persist IMU in ~5-second batches at 100 Hz, not on every frame.
                 persistWorkoutSession()
             }
             let countNote = accelCount == gyroCount ? "" : " · paired=min(\(accelCount),\(gyroCount))"
@@ -1663,7 +1668,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             // Checkpoint periodically so an iOS process termination does not
             // discard the entire in-progress workout.
             if workoutHeartRateSamples.count.isMultiple(of: 10) {
-                persistWorkoutSession()
+                // HR checkpoints must not re-encode the growing 100 Hz IMU buffer.
+                persistWorkoutSession(includeIMU: false)
             }
         }
         heartRateUpdateCount += 1
