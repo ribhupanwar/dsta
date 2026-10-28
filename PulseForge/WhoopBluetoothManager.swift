@@ -497,6 +497,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5HRStreamConfirmed = false
     private var whoop5AutoIMUStartRequested = false
     private var whoop5AutoIMUEnabled = false
+    private var whoop5IMUModeEnablePending: Bool?
     private var whoop5RawStreamStopWorkItem: DispatchWorkItem?
     private var whoop5PendingWrites: [String] = []
     private var whoop5NextCommandSequence: UInt8 = 2
@@ -966,6 +967,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
         whoop5AutoIMUEnabled = false
+        whoop5IMUModeEnablePending = nil
         whoop5RawStreamStopWorkItem?.cancel()
         whoop5RawStreamStopWorkItem = nil
         // Keep the last known battery reading across BLE reconnects; WHOOP does not
@@ -1484,17 +1486,25 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     whoopIMUStatus = "TOGGLE_IMU_MODE pending · awaiting final response"
                     return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · PENDING"
                 }
+                let enabling = whoop5IMUModeEnablePending ?? !whoop5AutoIMUEnabled
+                whoop5IMUModeEnablePending = nil
                 if result == 1 {
-                    whoop5AutoIMUEnabled = true
-                    whoopIMUStatus = "Live IMU mode enabled · awaiting type-43 R21 frames"
-                    recordVendorTimeline("TOGGLE_IMU_MODE(106) ON accepted · waiting for type-43 IMU")
-                    scheduleWhoop5RawStreamStop(for: peripheral, after: 60)
+                    whoop5AutoIMUEnabled = enabling
+                    if enabling {
+                        whoopIMUStatus = "Live IMU mode enabled · awaiting type-43 R21 frames"
+                        recordVendorTimeline("TOGGLE_IMU_MODE(106) ON accepted · waiting for type-43 IMU")
+                        scheduleWhoop5RawStreamStop(for: peripheral, after: 60)
+                    } else {
+                        whoop5AutoIMUStartRequested = false
+                        whoopIMUStatus = "Live IMU mode disabled · bounded capture complete"
+                        recordVendorTimeline("TOGGLE_IMU_MODE(106) OFF accepted")
+                    }
                 } else {
-                    whoop5AutoIMUStartRequested = false
+                    if enabling { whoop5AutoIMUStartRequested = false }
                     whoopIMUStatus = "TOGGLE_IMU_MODE rejected · \(resultName)"
-                    recordVendorTimeline("TOGGLE_IMU_MODE(106) ON rejected · \(resultName)")
+                    recordVendorTimeline("TOGGLE_IMU_MODE(106) \(enabling ? "ON" : "OFF") rejected · \(resultName)")
                 }
-                return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · \(resultName)"
+                return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) \(enabling ? "ON" : "OFF") · \(resultName)"
             }
             if command == 82 {
                 if result == 2 {
@@ -1541,7 +1551,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopIMUStatus = "HR active · requesting bounded live motion capture"
                 recordVendorTimeline("REALTIME_HR_ON accepted · starting bounded raw IMU sequence independently of EVENT 33")
                 sendWhoop5RawDataStart(to: peripheral)
-                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · bounded raw IMU start requested"
+                sendWhoop5HistoricalDataRequest(to: peripheral)
+                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · live and historical motion requested"
             }
             if command == 22 {
                 if result == 2 {
@@ -1774,6 +1785,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         let frame = buildWhoop5CommandFrame(
             sequence: sequence, opcode: 0x6A, payload: [0x01, enabled ? 0x01 : 0x00]
         )
+        whoop5IMUModeEnablePending = enabled
         whoop5PendingWrites.append(enabled ? "TOGGLE_IMU_MODE_ON" : "TOGGLE_IMU_MODE_OFF")
         recordVendorTimeline("TOGGLE_IMU_MODE(106) \(enabled ? "ON" : "OFF") requested · seq=\(sequence)")
         peripheral.writeValue(frame, for: command, type: .withResponse)
