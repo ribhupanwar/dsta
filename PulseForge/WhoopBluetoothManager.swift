@@ -57,6 +57,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var lastWorkoutDurationSeconds: TimeInterval?
     private var workoutDetectionSamples: [LiveHeartRateSample] = []
     private var workoutDetectionCandidateSince: Date?
+    private var workoutDetectionCandidateBaselineBPM: Int?
     private var workoutRecoverySince: Date?
     private var workoutSessionBaselineBPM: Int?
     @Published private(set) var whoopIMUFrameCount = 0
@@ -86,6 +87,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         workoutSessionBaselineBPM = automatic ? baselineBPM : nil
         workoutIsRecording = true
         workoutDetectionCandidateSince = nil
+        workoutDetectionCandidateBaselineBPM = nil
         workoutRecoverySince = nil
         workoutDetectionStatus = automatic
             ? "Auto-detected from sustained elevated HR · HR-only"
@@ -107,6 +109,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             : "Manual workout saved"
         workoutRecordingIsAutomatic = false
         workoutSessionBaselineBPM = nil
+        workoutDetectionCandidateSince = nil
+        workoutDetectionCandidateBaselineBPM = nil
+        workoutRecoverySince = nil
         persistWorkoutSession()
         statusText = "Workout saved on this iPhone · \(workoutHeartRateSamples.count) HR samples"
     }
@@ -144,6 +149,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
 
         guard connectedName != nil else {
             workoutDetectionCandidateSince = nil
+            workoutDetectionCandidateBaselineBPM = nil
             workoutRecoverySince = nil
             workoutDetectionStatus = "Waiting for connected-band HR"
             return
@@ -193,26 +199,34 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         }
 
         let sortedBaseline = baselineWindow.map(\.bpm).sorted()
-        let baseline = sortedBaseline[sortedBaseline.count / 2]
+        let rollingBaseline = sortedBaseline[sortedBaseline.count / 2]
+
+        // Lock the baseline when a candidate begins. Elevated workout HR must
+        // never leak into its own baseline while the validation timer runs.
+        if workoutDetectionCandidateSince == nil {
+            workoutDetectionCandidateSince = timestamp
+            workoutDetectionCandidateBaselineBPM = rollingBaseline
+        }
+        let candidateSince = workoutDetectionCandidateSince ?? timestamp
+        let baseline = workoutDetectionCandidateBaselineBPM ?? rollingBaseline
         let startThreshold = max(100, baseline + 20)
 
         if bpm >= startThreshold {
-            if workoutDetectionCandidateSince == nil { workoutDetectionCandidateSince = timestamp }
-            let candidateSince = workoutDetectionCandidateSince ?? timestamp
             let elevatedSamples = workoutDetectionSamples.filter {
                 $0.timestamp >= candidateSince && $0.bpm >= startThreshold
             }.sorted { $0.timestamp < $1.timestamp }
             let elapsed = Int(timestamp.timeIntervalSince(candidateSince))
             if elapsed >= 5 * 60 &&
                 hasContinuousSamples(elevatedSamples, minimumCount: 4,
-                                     minimumSpan: 4 * 60, maximumGap: 2 *  60) {
+                                     minimumSpan: 4 * 60, maximumGap: 2 * 60) {
                 beginWorkoutRecording(automatic: true, baselineBPM: baseline)
             } else {
-                workoutDetectionStatus = "Possible workout · validating HR continuity · \\(min(elapsed, 300))/300 sec"
+                workoutDetectionStatus = "Possible workout · validating HR continuity · \(min(elapsed, 300))/300 sec"
             }
         } else {
             workoutDetectionCandidateSince = nil
-            workoutDetectionStatus = "Monitoring HR · baseline \\(baseline) bpm · trigger \\(startThreshold) bpm"
+            workoutDetectionCandidateBaselineBPM = nil
+            workoutDetectionStatus = "Monitoring HR · baseline \(rollingBaseline) bpm · trigger \(max(100, rollingBaseline + 20)) bpm"
         }
     }
 
