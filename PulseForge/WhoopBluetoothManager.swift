@@ -241,16 +241,23 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         let sortedBaseline = baselineWindow.map(\.bpm).sorted()
         let rollingBaseline = sortedBaseline[sortedBaseline.count / 2]
 
-        // Lock the baseline when a candidate begins. Elevated workout HR must
-        // never leak into its own baseline while the validation timer runs.
+        // Start the candidate clock on the first elevated-HR sample, not
+        // when the rolling baseline first becomes available. This prevents
+        // idle time from shortening the sustained-elevation validation period.
         if workoutDetectionCandidateSince == nil {
-            workoutDetectionCandidateSince = timestamp
-            workoutDetectionCandidateBaselineBPM = rollingBaseline
+            let initialThreshold = max(100, rollingBaseline + 20)
+            if bpm >= initialThreshold {
+                workoutDetectionCandidateSince = timestamp
+                workoutDetectionCandidateBaselineBPM = rollingBaseline
+            } else {
+                workoutDetectionStatus = "Monitoring HR · baseline \(rollingBaseline) bpm · trigger \(initialThreshold) bpm"
+                return
+            }
         }
+
         let candidateSince = workoutDetectionCandidateSince ?? timestamp
         let baseline = workoutDetectionCandidateBaselineBPM ?? rollingBaseline
         let startThreshold = max(100, baseline + 20)
-
         if bpm >= startThreshold {
             let elevatedSamples = workoutDetectionSamples.filter {
                 $0.timestamp >= candidateSince && $0.bpm >= startThreshold
