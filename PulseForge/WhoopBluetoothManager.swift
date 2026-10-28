@@ -22,6 +22,17 @@ struct LiveHeartRateSample: Identifiable, Codable {
     var id: TimeInterval { timestamp.timeIntervalSince1970 }
 }
 
+struct WhoopIMUSample: Identifiable, Codable {
+    let timestamp: Date
+    let accelerationXG: Double
+    let accelerationYG: Double
+    let accelerationZG: Double
+    let rotationXDPS: Double
+    let rotationYDPS: Double
+    let rotationZDPS: Double
+    var id: TimeInterval { timestamp.timeIntervalSince1970 }
+}
+
 final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var devices: [DiscoveredWearable] = []
     @Published private(set) var statusText = "Bluetooth is starting"
@@ -46,6 +57,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopIMUSampleCount = 0
     @Published private(set) var whoopIMULastFrameAt: Date?
     @Published private(set) var whoopIMUStatus = "Waiting for WHOOP motion stream"
+    @Published private(set) var liveWhoopIMUSamples: [WhoopIMUSample] = []
+    @Published private(set) var workoutWhoopIMUSamples: [WhoopIMUSample] = []
 
     var freshHeartRateBPM: Int? {
         guard connectedName != nil, let lastHeartRateAt,
@@ -56,6 +69,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     func startWorkoutRecording() {
         guard connectedName != nil, !workoutIsRecording else { return }
         workoutHeartRateSamples.removeAll()
+        workoutWhoopIMUSamples.removeAll()
         workoutStartedAt = Date()
         lastWorkoutDurationSeconds = nil
         workoutIsRecording = true
@@ -76,6 +90,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private func persistWorkoutSession() {
         if let data = try? JSONEncoder().encode(workoutHeartRateSamples) {
             UserDefaults.standard.set(data, forKey: "pulseforge.whoop.lastWorkoutSamples")
+        }
+        if let data = try? JSONEncoder().encode(workoutWhoopIMUSamples) {
+            UserDefaults.standard.set(data, forKey: "pulseforge.whoop.lastWorkoutIMUSamples")
         }
         if let duration = lastWorkoutDurationSeconds {
             UserDefaults.standard.set(duration, forKey: "pulseforge.whoop.lastWorkoutDuration")
@@ -134,6 +151,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         if let data = UserDefaults.standard.data(forKey: "pulseforge.whoop.lastWorkoutSamples"),
            let savedSamples = try? JSONDecoder().decode([LiveHeartRateSample].self, from: data) {
             workoutHeartRateSamples = savedSamples
+        }
+        if let imuData = UserDefaults.standard.data(forKey: "pulseforge.whoop.lastWorkoutIMUSamples"),
+           let savedIMUSamples = try? JSONDecoder().decode([WhoopIMUSample].self, from: imuData) {
+            workoutWhoopIMUSamples = savedIMUSamples
         }
         lastWorkoutDurationSeconds = UserDefaults.standard.object(forKey: "pulseforge.whoop.lastWorkoutDuration") as? Double
         central = CBCentralManager(
@@ -301,7 +322,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP realtime HR ON event confirmed: \(whoop5HRStreamConfirmed ? "yes" : "no")",
             "WHOOP automatic IMU request: \(whoop5AutoIMUStartRequested ? "yes" : "no")",
             "WHOOP automatic IMU enabled: \(whoop5AutoIMUEnabled ? "yes" : "no")",
-            "WHOOP IMU frames: \(whoopIMUFrameCount) · samples: \(whoopIMUSampleCount) · status: \(whoopIMUStatus)",
+            "WHOOP IMU frames: \(whoopIMUFrameCount) · samples: \(whoopIMUSampleCount) · live buffer: \(liveWhoopIMUSamples.count) · workout samples: \(workoutWhoopIMUSamples.count) · status: \(whoopIMUStatus)",
+            "WHOOP latest IMU sample: \(liveWhoopIMUSamples.last.map { String(format: "A %.3f, %.3f, %.3f g · G %.1f, %.1f, %.1f dps", $0.accelerationXG, $0.accelerationYG, $0.accelerationZG, $0.rotationXDPS, $0.rotationYDPS, $0.rotationZDPS) } ?? "none")",
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP protocol diagnosis: \(whoopProtocolDiagnostics)",
             "WHOOP packet counts · realtime: \(whoopRealtimePacketCount) · command responses: \(whoopCommandResponseCount)",
@@ -454,6 +476,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMUFrameCount = 0
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
+        liveWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoop5PendingWrites.removeAll()
         whoop5NextCommandSequence = 2
@@ -500,6 +523,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMUFrameCount = 0
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
+        liveWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoop5PendingWrites.removeAll()
         whoop5NextCommandSequence = 2
@@ -843,9 +867,13 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopIMUStatus = "IMU layout not recognised · A:\(accelCount) G:\(gyroCount)"
                 return "RAW_IMU(0x2F) · invalid counts A:\(accelCount) G:\(gyroCount)"
             }
-            // Decode and sanity-check the six columnar channels using WHOOP's documented scales.
-            // This avoids reporting an active stream based only on a matching packet length.
+            // Decode six columnar channels into timestamped, retained samples.
+            // The packet carries 100 samples at 100 Hz; use receive time as the
+            // frame anchor so an unverified strap clock epoch is not presented as UTC.
+            let receivedAt = Date()
             let axes = [28, 228, 428, 640, 840, 1040]
+            var decodedSamples: [WhoopIMUSample] = []
+            decodedSamples.reserveCapacity(100)
             for index in 0..<100 {
                 let ax = Double(i16(axes[0] + index * 2)) / 4096.0
                 let ay = Double(i16(axes[1] + index * 2)) / 4096.0
@@ -857,12 +885,28 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     whoopIMUStatus = "IMU sample decode failed"
                     return "RAW_IMU(0x2F) · invalid sample values"
                 }
+                let sampleTime = receivedAt.addingTimeInterval(Double(index - 99) / 100.0)
+                decodedSamples.append(WhoopIMUSample(
+                    timestamp: sampleTime,
+                    accelerationXG: ax, accelerationYG: ay, accelerationZG: az,
+                    rotationXDPS: gx, rotationYDPS: gy, rotationZDPS: gz
+                ))
             }
             let strapTimestamp = TimeInterval(u32(15))
             whoopIMUFrameCount += 1
-            whoopIMUSampleCount += accelCount
-            whoopIMULastFrameAt = strapTimestamp > 0 ? Date(timeIntervalSince1970: strapTimestamp) : Date()
-            whoopIMUStatus = "Live motion active · \(whoopIMUFrameCount) one-second frames"
+            whoopIMUSampleCount += decodedSamples.count
+            liveWhoopIMUSamples.append(contentsOf: decodedSamples)
+            if liveWhoopIMUSamples.count > 3000 {
+                liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 3000)
+            }
+            if workoutIsRecording {
+                workoutWhoopIMUSamples.append(contentsOf: decodedSamples)
+                if workoutWhoopIMUSamples.count > 100_000 {
+                    workoutWhoopIMUSamples.removeFirst(workoutWhoopIMUSamples.count - 100_000)
+                }
+            }
+            whoopIMULastFrameAt = receivedAt
+            whoopIMUStatus = "Live motion active · \(whoopIMUFrameCount) one-second frames · \(liveWhoopIMUSamples.count) buffered samples"
             return "RAW_IMU(0x2F) · 100 Hz six-axis · frame \(whoopIMUFrameCount) · CRC valid"
 
         case 40: // REALTIME_DATA; protocol inner[8] == complete-frame byte[16]
