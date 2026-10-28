@@ -62,3 +62,36 @@ enum Gen5R21IMUDecoder {
         return decodedSamples
     }
 }
+
+
+/// WHOOP 5 packet-49 historical-offload metadata. Offsets are complete-frame absolute:
+/// byte 10 is the metadata type; HISTORY_END echoes bytes 21...28 in command 23.
+enum Gen5HistoricalMetadata: Equatable {
+    case historyStart
+    case historyEnd(endData: [UInt8], trim: UInt32)
+    case historyComplete
+    case other(UInt8)
+    case invalid
+}
+
+enum Gen5HistoricalMetadataDecoder {
+    static func decode(_ frame: [UInt8]) -> Gen5HistoricalMetadata {
+        guard frame.count > 10, frame[8] == 49 else { return .invalid }
+        switch frame[10] {
+        case 1:
+            return .historyStart
+        case 2:
+            guard frame.count >= 29 else { return .invalid }
+            let endData = Array(frame[21..<29])
+            let trim = UInt32(endData[0]) |
+                (UInt32(endData[1]) << 8) |
+                (UInt32(endData[2]) << 16) |
+                (UInt32(endData[3]) << 24)
+            return .historyEnd(endData: endData, trim: trim)
+        case 3:
+            return .historyComplete
+        default:
+            return .other(frame[10])
+        }
+    }
+}
