@@ -654,6 +654,7 @@ struct SleepDashboard: View {
 struct StrainDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
+    @AppStorage("pulseforge.running.maxHeartRate") private var measuredMaxHeartRate = ""
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -678,6 +679,19 @@ struct StrainDashboard: View {
                     }
                 }
                 .padding(20).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                SectionHeader(title: "PERSONAL HEART-RATE SETUP")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Measured maximum heart rate (bpm)")
+                        .font(.system(size: 12, weight: .medium))
+                    TextField("Enter your measured max HR", text: $measuredMaxHeartRate)
+                        .keyboardType(.numberPad)
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .padding(12)
+                        .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 10))
+                    Text("Enter a value measured during a hard effort or clinical test. PulseForge will leave cardio load blank until this is set.")
+                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                }
+                .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
                 SectionHeader(title: "CARDIO LOAD")
                 HStack(spacing: 10) {
                     CompactMetric(title: "CARDIO LOAD", value: insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—", unit: "load pts")
