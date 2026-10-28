@@ -379,6 +379,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5CommandCharacteristic: CBCharacteristic?
     private var whoop5HelloSent = false
     private var whoop5HelloWritePending = false
+    private var whoop5HelloWriteAcknowledged = false
+    private var whoop5PostHelloNotifyRetryAttempted = Set<String>()
     private var whoop5HRStreamEnableSent = false
     private var whoop5HRStreamConfirmed = false
     private var whoop5AutoIMUStartRequested = false
@@ -790,6 +792,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5CommandCharacteristic = nil
         whoop5HelloSent = false
         whoop5HelloWritePending = false
+        whoop5HelloWriteAcknowledged = false
+        whoop5PostHelloNotifyRetryAttempted.removeAll()
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
@@ -867,6 +871,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5CommandCharacteristic = nil
         whoop5HelloSent = false
         whoop5HelloWritePending = false
+        whoop5HelloWriteAcknowledged = false
+        whoop5PostHelloNotifyRetryAttempted.removeAll()
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
@@ -1509,6 +1515,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             statusText = "Connected · WHOOP session handshake failed"
             return
         }
+        whoop5HelloWriteAcknowledged = true
         lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write acknowledged by CoreBluetooth · FD4B0002"
         recordVendorTimeline("CLIENT_HELLO write callback · acknowledged")
         statusText = "Connected · WHOOP 5.0 hello write acknowledged · awaiting response"
@@ -1535,6 +1542,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     recordVendorTimeline("post-hello notify skipped · \(uuid) · \(item.isNotifying ? "already enabled" : "request pending")")
                     continue
                 }
+                whoop5PostHelloNotifyRetryAttempted.insert(uuid)
                 vendorNotificationStates[uuid] = "post-hello subscription requested"
                 recordVendorTimeline("post-hello notify request · \(uuid)")
                 peripheral.setNotifyValue(true, for: item)
@@ -1557,6 +1565,21 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 ?? (characteristic.isNotifying ? "enabled" : "disabled")
             recordVendorTimeline("notify callback · \(uuid) · \(vendorNotificationStates[uuid] ?? "updated") · error=\(error?.localizedDescription ?? "none")")
             lastBLEEvent = "WHOOP vendor notification \(vendorNotificationStates[uuid] ?? "updated") · \(uuid)"
+            // If the pre-hello CCCD operation completes disabled after the
+            // hello write acknowledgement, retry that channel exactly once.
+            // If it completed before the acknowledgement, didWriteValueFor
+            // handles the retry instead. This closes the callback-order race
+            // without creating an unbounded notification retry loop.
+            if !characteristic.isNotifying,
+               (error != nil || vendorNotificationStates[uuid] == "disabled"),
+               whoop5HelloWriteAcknowledged,
+               !whoop5PostHelloNotifyRetryAttempted.contains(uuid),
+               characteristic.properties.contains(.notify) {
+                whoop5PostHelloNotifyRetryAttempted.insert(uuid)
+                vendorNotificationStates[uuid] = "post-hello subscription requested"
+                recordVendorTimeline("post-hello notify retry · \(uuid) · initial callback disabled/failed")
+                peripheral.setNotifyValue(true, for: characteristic)
+            }
             return
         }
         guard characteristic.service?.uuid == CBUUID(string: "180D"),
