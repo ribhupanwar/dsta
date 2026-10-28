@@ -994,6 +994,20 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         lastBLEEvent = "Unexpected WHOOP disconnect · automatic reconnect requested"
         statusText = "WHOOP disconnected · reconnecting automatically"
         central.connect(peripheral, options: nil)
+
+        // Do not leave the UI in a permanent reconnecting state if
+        // CoreBluetooth never delivers didConnect/didFailToConnect.
+        let reconnectTimeout = DispatchWorkItem { [weak self, weak peripheral] in
+            guard let self, let peripheral,
+                  self.connectedPeripheral?.identifier == peripheral.identifier,
+                  self.isConnecting else { return }
+            self.central.cancelPeripheralConnection(peripheral)
+            self.clearConnectionState()
+            self.statusText = "Automatic reconnect timed out · tap Scan to retry"
+            self.lastBLEEvent = "Automatic reconnect timed out before CoreBluetooth callback"
+        }
+        connectionTimeoutWorkItem = reconnectTimeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: reconnectTimeout)
     }
 }
 
