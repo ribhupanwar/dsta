@@ -390,6 +390,22 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var hrTimingFirstSampleAt: Date?
     private var hrTimingEvents: [String] = []
 
+    // Diagnostic-only timeline: records CoreBluetooth callback ordering without
+    // changing the WHOOP handshake, command payloads, or subscription policy.
+    private func recordVendorTimeline(_ event: String) {
+        let elapsed = hrTimingConnectionAt.map { Date().timeIntervalSince($0) } ?? 0
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let line = String(format: "%@ · +%.3fs · %@ · helloSent=%@ helloAckPending=%@ hrEnableSent=%@",
+                          stamp, elapsed, event,
+                          whoop5HelloSent ? "yes" : "no",
+                          whoop5HelloWritePending ? "yes" : "no",
+                          whoop5HRStreamEnableSent ? "yes" : "no")
+        vendorNotificationHistory.append("TIMELINE · " + line)
+        if vendorNotificationHistory.count > 80 {
+            vendorNotificationHistory.removeFirst(vendorNotificationHistory.count - 80)
+        }
+    }
+
     private var central: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
     private var connectedDeviceSnapshot: DiscoveredWearable?
@@ -1002,6 +1018,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
             let timestamp = ISO8601DateFormatter().string(from: Date())
             whoopProtocolDiagnostics = ingestWhoop5Notification(data, channel: uuid, peripheral: peripheral)
+            if vendorNotificationHistory.first(where: { $0.contains("first vendor payload") }) == nil {
+                recordVendorTimeline("first vendor payload · \(uuid) · \(data.count) bytes")
+            }
             vendorNotificationPayloads[uuid] = "\(data.count) bytes · \(hex.isEmpty ? "empty" : hex)"
             vendorNotificationHistory.append("\(timestamp) · \(uuid) · \(data.count) bytes · HEX: \(hex.isEmpty ? "empty" : hex) · \(whoopProtocolDiagnostics)")
             if vendorNotificationHistory.count > 40 {
@@ -1378,6 +1397,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                    fd4bNotifyUUIDs.contains(characteristicUUID),
                    characteristic.properties.contains(.notify) {
                     vendorNotificationStates[characteristicUUID] = "subscription requested"
+                    recordVendorTimeline("pre-hello notify request · \(characteristicUUID)")
                     peripheral.setNotifyValue(true, for: characteristic)
                 }
                 let key = ObjectIdentifier(characteristic)
@@ -1400,6 +1420,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoop5HelloWritePending = true
                 whoop5PendingWrites.append("CLIENT_HELLO")
                 lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write requested · FD4B0002 · 16 bytes · with response"
+                recordVendorTimeline("CLIENT_HELLO write requested · FD4B0002 · 16 bytes")
                 statusText = "Connected · starting WHOOP 5.0 secure session"
                 peripheral.writeValue(Data(hello), for: command, type: .withResponse)
             } else if service.uuid == whoop5ServiceUUID,
@@ -1462,6 +1483,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return
         }
         lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write acknowledged by CoreBluetooth · FD4B0002"
+        recordVendorTimeline("CLIENT_HELLO write callback · acknowledged")
         statusText = "Connected · WHOOP 5.0 hello write acknowledged · awaiting response"
         // Re-arm vendor notifications after the command write callback, matching
         // the NOOP post-hello sequence. The callback confirms the write operation,
@@ -1475,6 +1497,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 "FD4B0007-CCE1-4033-93CE-002D5875F58A"].contains(uuid),
                item.properties.contains(.notify) {
                 vendorNotificationStates[uuid] = "post-hello subscription requested"
+                recordVendorTimeline("post-hello notify request · \(uuid)")
                 peripheral.setNotifyValue(true, for: item)
             }
         }
@@ -1493,6 +1516,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let uuid = characteristic.uuid.uuidString.uppercased()
             vendorNotificationStates[uuid] = error.map { "failed · \($0.localizedDescription)" }
                 ?? (characteristic.isNotifying ? "enabled" : "disabled")
+            recordVendorTimeline("notify callback · \(uuid) · \(vendorNotificationStates[uuid] ?? "updated") · error=\(error?.localizedDescription ?? "none")")
             lastBLEEvent = "WHOOP vendor notification \(vendorNotificationStates[uuid] ?? "updated") · \(uuid)"
             return
         }
