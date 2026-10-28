@@ -1273,6 +1273,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "COMMAND_RESPONSE · START_RAW_DATA(81) · \(resultName) · no follow-up command sent"
             }
             if command == 63 {
+                if result == 2 {
+                    whoopIMUStatus = "R10/R11 realtime request pending · awaiting final response"
+                    return "COMMAND_RESPONSE · SEND_R10_R11_REALTIME(63) · PENDING"
+                }
                 guard result == 1 else {
                     whoop5AutoIMUEnabled = false
                     whoopIMUStatus = "R10/R11 realtime request rejected · \(resultName)"
@@ -1282,6 +1286,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "COMMAND_RESPONSE · SEND_R10_R11_REALTIME(63) SUCCESS · IMU mode request queued"
             }
             if command == 106 {
+                if result == 2 {
+                    whoopIMUStatus = "IMU mode request pending · awaiting final response"
+                    return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · PENDING"
+                }
                 whoop5AutoIMUEnabled = result == 1
                 whoopIMUStatus = result == 1
                     ? "IMU mode enabled · waiting for realtime IMU packets (type 51)"
