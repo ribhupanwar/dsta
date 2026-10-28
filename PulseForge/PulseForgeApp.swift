@@ -685,6 +685,7 @@ struct StrainDashboard: View {
 }
 struct RunningDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
     @AppStorage("pulseforge.running.maxHeartRate") private var maxHeartRate = 0
     @State private var maxHeartRateDraft = ""
 
@@ -692,6 +693,7 @@ struct RunningDashboard: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
                 HeaderView(eyebrow: "PERFORMANCE", title: "Running")
+                WorkoutRecordingCard(bluetooth: bluetooth)
                 VStack(alignment: .leading, spacing: 8) {
                     SectionHeader(title: "LATEST ACTIVITY")
                     Text(health.latestRunDate.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "No run synced")
@@ -950,7 +952,6 @@ struct DeviceDashboard: View {
                     }
                     LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE · LAST 60 SECONDS")
                     WhoopMotionCard()
-                    WorkoutRecordingCard(bluetooth: bluetooth)
                     if bluetooth.connectedName != nil {
                         Button { bluetooth.disconnect() } label: {
                             Label("DISCONNECT BAND", systemImage: "xmark.circle")
