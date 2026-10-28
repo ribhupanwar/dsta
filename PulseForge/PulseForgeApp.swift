@@ -272,6 +272,32 @@ struct WhoopMotionCard: View {
         )
     }
 
+    private var recentSamples: [WhoopIMUSample] {
+        Array(bluetooth.liveWhoopIMUSamples.suffix(100))
+    }
+
+    private var accelerationVariability: Double? {
+        let magnitudes = recentSamples.map {
+            sqrt($0.accelerationXG * $0.accelerationXG +
+                 $0.accelerationYG * $0.accelerationYG +
+                 $0.accelerationZG * $0.accelerationZG)
+        }
+        guard magnitudes.count >= 2 else { return nil }
+        let mean = magnitudes.reduce(0, +) / Double(magnitudes.count)
+        let variance = magnitudes.reduce(0) { $0 + pow($1 - mean, 2) } / Double(magnitudes.count)
+        return sqrt(variance)
+    }
+
+    private var meanRotation: Double? {
+        let magnitudes = recentSamples.map {
+            sqrt($0.rotationXDPS * $0.rotationXDPS +
+                 $0.rotationYDPS * $0.rotationYDPS +
+                 $0.rotationZDPS * $0.rotationZDPS)
+        }
+        guard !magnitudes.isEmpty else { return nil }
+        return magnitudes.reduce(0, +) / Double(magnitudes.count)
+    }
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
@@ -291,6 +317,10 @@ struct WhoopMotionCard: View {
                     motionMetric("ACCELERATION", value: accelerationMagnitude.map { String(format: "%.3f", $0) } ?? "—", unit: "g")
                     motionMetric("ROTATION", value: rotationMagnitude.map { String(format: "%.1f", $0) } ?? "—", unit: "°/s")
                 }
+                HStack(spacing: 10) {
+                    motionMetric("ACCEL VARIABILITY", value: accelerationVariability.map { String(format: "%.4f", $0) } ?? "—", unit: "g · 1s")
+                    motionMetric("MEAN GYRO", value: meanRotation.map { String(format: "%.1f", $0) } ?? "—", unit: "°/s · 1s")
+                }
                 HStack {
                     motionCount("FRAMES", value: bluetooth.whoopIMUFrameCount)
                     motionCount("SAMPLES", value: bluetooth.whoopIMUSampleCount)
@@ -298,7 +328,7 @@ struct WhoopMotionCard: View {
                 }
                 Text(bluetooth.whoopIMUStatus)
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
-                Text("Motion magnitudes are diagnostic only; sensor scale and activity classification are not yet calibrated.")
+                Text("One-second signal variability is diagnostic only; sensor scale and activity classification are not yet calibrated.")
                     .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
             }
             .padding(16)
