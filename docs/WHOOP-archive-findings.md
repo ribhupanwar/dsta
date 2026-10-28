@@ -154,3 +154,33 @@ The follow-up inventory also inspected the Mach-O export trie exposed through `L
 3. Treat hello/unlock as a separate pairing state machine; do not send guessed handshake packets.
 4. Implement live-HR and historical transfer only after packet framing, revision selection, validation and sequencing are independently understood.
 5. Hardware validation on WHOOP 5.0 remains mandatory before marking either stream functional.
+
+
+## Realtime IMU / raw-data parser evidence (2026-10-28)
+
+A focused review of the supplied `whoop_stream_audit.txt` surfaced a substantially richer raw-data protocol vocabulary than the earlier inventory:
+
+- `WhoopPacket.TurnOnRawDataCollectionCommand` and `TurnOnRawDataCollectionResponse`
+- `WhoopStrapServices.RealtimeIMUData`, `IMUStreamServicing`, `RawDataStreamServicing`, `RealtimeStreamServicing`, and `RawDataCollectionServicing`
+- `TurnOnRawDataCollectionCommandPacket`, `TurnOnRawDataCollectionCommandPacketRev2`, and a revision router
+- `TurnOnRawDataCollectionResponsePacketRev1/Rev2` and a response revision router
+- `RawDataPacketRev10`, `Rev11`, `Rev20`, and `Rev21`, each with separate parsing-error families
+- `IMUPacketParsingError` cases for packet type, revision, timestamp epoch, metric-packet sequence, subsequence, accel/gyro reading counts, accel/gyro ranges, IMU sample rate, XYZ axes, reserved fields, and padding
+- A demangled realtime/historical IMU data initializer signature that includes flags, timestamp epoch, metric sequence, subsequence, accel range, gyro range, IMU sample rate, and separate accel/gyro XYZ arrays
+- `HarvardRawDataPart1/Part2`, `MaverickRawImuData`, and `ToggleHistoricalIMUData` identifiers
+
+### Interpretation and implementation consequence
+
+This evidence indicates that WHOOP raw IMU parsing is revision-aware and carries explicit metadata for timing, sequencing, ranges, sample counts and sample rate. It is not safe to infer a universal fixed 100 Hz layout or physical-unit scale from a single packet length/count pattern.
+
+PulseForge's current experimental type-47 decoder (1244-byte frame, 100 accel + 100 gyro samples, fixed column offsets, accel /4096 g and gyro ×2000/32768 dps) must therefore remain **provisional and unverified**. Those offsets and scale constants have not been established by the symbol inventory. Do not use its output as calibrated activity classification or as proof of the official raw-data format.
+
+### Next protocol work
+
+1. Capture the complete raw type-47 frame metadata from a real WHOOP 5.0 session without changing command behavior.
+2. Identify packet revision, timestamp epoch, sequence/subsequence, accel/gyro counts, ranges and sample rate before decoding axes.
+3. Compare multiple consecutive frames for stable sequence/timestamp progression and count consistency.
+4. Keep raw-data collection activation separate from IMU parsing and from realtime-HR activation.
+5. Only promote axis scaling or stillness/activity thresholds after they are validated against a known controlled movement and the official parser's field vocabulary.
+
+The audit provides protocol field names and parser architecture, not the missing byte offsets or a complete wire specification. No guessed command payloads or proprietary source code are copied into PulseForge.
