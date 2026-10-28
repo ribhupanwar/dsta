@@ -33,6 +33,28 @@ struct WhoopIMUSample: Identifiable, Codable {
     var id: TimeInterval { timestamp.timeIntervalSince1970 }
 }
 
+struct WorkoutSessionRecord: Identifiable, Codable {
+    let id: UUID
+    let startedAt: Date
+    let durationSeconds: TimeInterval
+    let wasAutomatic: Bool
+    let wasInterrupted: Bool
+    let heartRateSamples: [LiveHeartRateSample]
+    let imuSamples: [WhoopIMUSample]
+
+    init(startedAt: Date, durationSeconds: TimeInterval, wasAutomatic: Bool,
+         wasInterrupted: Bool, heartRateSamples: [LiveHeartRateSample],
+         imuSamples: [WhoopIMUSample]) {
+        self.id = UUID()
+        self.startedAt = startedAt
+        self.durationSeconds = max(0, durationSeconds)
+        self.wasAutomatic = wasAutomatic
+        self.wasInterrupted = wasInterrupted
+        self.heartRateSamples = heartRateSamples
+        self.imuSamples = imuSamples
+    }
+}
+
 final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var devices: [DiscoveredWearable] = []
     @Published private(set) var statusText = "Bluetooth is starting"
@@ -58,6 +80,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var lastWorkoutStartedAt: Date?
     @Published private(set) var lastWorkoutWasAutomatic: Bool?
     @Published private(set) var lastWorkoutWasInterrupted = false
+    @Published private(set) var workoutHistory: [WorkoutSessionRecord] = []
     private var workoutDetectionSamples: [LiveHeartRateSample] = []
     private var workoutDetectionCandidateSince: Date?
     private var workoutDetectionCandidateBaselineBPM: Int?
@@ -110,6 +133,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         if let workoutStartedAt {
             lastWorkoutDurationSeconds = Date().timeIntervalSince(workoutStartedAt)
             lastWorkoutStartedAt = workoutStartedAt
+            archiveCurrentWorkout(startedAt: workoutStartedAt,
+                                  duration: lastWorkoutDurationSeconds ?? 0,
+                                  automatic: workoutRecordingIsAutomatic,
+                                  interrupted: false)
         }
         lastWorkoutWasAutomatic = workoutRecordingIsAutomatic
         lastWorkoutWasInterrupted = false
@@ -241,7 +268,28 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         }
     }
 
+    private func archiveCurrentWorkout(startedAt: Date, duration: TimeInterval,
+                                        automatic: Bool, interrupted: Bool) {
+        let record = WorkoutSessionRecord(
+            startedAt: startedAt,
+            durationSeconds: duration,
+            wasAutomatic: automatic,
+            wasInterrupted: interrupted,
+            heartRateSamples: workoutHeartRateSamples,
+            imuSamples: workoutWhoopIMUSamples
+        )
+        workoutHistory.removeAll { $0.startedAt == startedAt }
+        workoutHistory.insert(record, at: 0)
+        if workoutHistory.count > 20 { workoutHistory = Array(workoutHistory.prefix(20)) }
+        if let data = try? JSONEncoder().encode(workoutHistory) {
+            UserDefaults.standard.set(data, forKey: "pulseforge.whoop.workoutHistory.v1")
+        }
+    }
+
     private func persistWorkoutSession() {
+        if let data = try? JSONEncoder().encode(workoutHistory) {
+            UserDefaults.standard.set(data, forKey: "pulseforge.whoop.workoutHistory.v1")
+        }
         if let data = try? JSONEncoder().encode(workoutHeartRateSamples) {
             UserDefaults.standard.set(data, forKey: "pulseforge.whoop.lastWorkoutSamples")
         }
@@ -331,12 +379,20 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             lastWorkoutWasAutomatic = UserDefaults.standard.bool(forKey: "pulseforge.whoop.lastWorkoutWasAutomatic")
         }
         lastWorkoutWasInterrupted = UserDefaults.standard.bool(forKey: "pulseforge.whoop.lastWorkoutWasInterrupted")
+        if let historyData = UserDefaults.standard.data(forKey: "pulseforge.whoop.workoutHistory.v1"),
+           let savedHistory = try? JSONDecoder().decode([WorkoutSessionRecord].self, from: historyData) {
+            workoutHistory = savedHistory.sorted { $0.startedAt > $1.startedAt }
+        }
         if UserDefaults.standard.bool(forKey: "pulseforge.whoop.activeWorkout"),
            let interruptedStart = UserDefaults.standard.object(forKey: "pulseforge.whoop.activeWorkoutStartedAt") as? Date {
             lastWorkoutStartedAt = interruptedStart
             lastWorkoutWasAutomatic = UserDefaults.standard.bool(forKey: "pulseforge.whoop.activeWorkoutWasAutomatic")
             lastWorkoutDurationSeconds = max(0, Date().timeIntervalSince(interruptedStart))
             lastWorkoutWasInterrupted = true
+            archiveCurrentWorkout(startedAt: interruptedStart,
+                                  duration: lastWorkoutDurationSeconds ?? 0,
+                                  automatic: lastWorkoutWasAutomatic ?? false,
+                                  interrupted: true)
             workoutIsRecording = false
             workoutStartedAt = nil
             workoutRecordingIsAutomatic = false
@@ -702,6 +758,10 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
             }
             lastWorkoutWasAutomatic = workoutRecordingIsAutomatic
             lastWorkoutWasInterrupted = true
+            archiveCurrentWorkout(startedAt: workoutStartedAt ?? Date(),
+                                  duration: lastWorkoutDurationSeconds ?? 0,
+                                  automatic: workoutRecordingIsAutomatic,
+                                  interrupted: true)
             // Preserve the partial session, but never leave the UI claiming that
             // a workout is still recording after its HR source has disconnected.
             workoutIsRecording = false
