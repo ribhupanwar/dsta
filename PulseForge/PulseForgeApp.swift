@@ -21,7 +21,7 @@ enum ForgeTab: String, CaseIterable {
     case sleep = "Sleep"
     case strain = "Strain"
     case run = "Run"
-    case device = "Device"
+    case device = "WHOOP"
 
     var symbol: String {
         switch self {
@@ -908,7 +908,7 @@ struct DeviceDashboard: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                HeaderView(eyebrow: "CONNECTIONS", title: "Your device")
+                HeaderView(eyebrow: "CONNECTED BAND", title: "WHOOP")
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         Image(systemName: "waveform.path.ecg").font(.system(size: 24)).foregroundStyle(ForgeColors.lime)
@@ -917,7 +917,7 @@ struct DeviceDashboard: View {
                             .font(.system(size: 9, weight: .bold)).tracking(1)
                             .foregroundStyle(bluetooth.connectedName == nil ? ForgeColors.muted : ForgeColors.lime)
                     }
-                    Text(bluetooth.connectedName ?? (bluetooth.isConnecting ? "Connecting to band…" : "WHOOP-compatible band"))
+                    Text(bluetooth.connectedName ?? (bluetooth.isConnecting ? "Connecting to WHOOP…" : "WHOOP 5.0"))
                         .font(.system(size: 19, weight: .semibold))
                     Text(bluetooth.statusText)
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
