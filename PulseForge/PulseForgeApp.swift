@@ -576,6 +576,9 @@ struct WorkoutRecordingCard: View {
                         : "Recording WHOOP heart-rate samples locally on this iPhone.")
                      : "Automatic detection monitors sustained HR elevation; manual start remains available.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                Text(bluetooth.healthKitExportStatus)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(ForgeColors.muted)
                 Text("AUTO-DETECTION · " + bluetooth.workoutDetectionStatus.uppercased())
                     .font(.system(size: 8, weight: .semibold)).tracking(0.5)
                     .foregroundStyle(ForgeColors.muted)
@@ -1271,8 +1274,13 @@ final class HealthDataStore: ObservableObject {
             isAuthorized = false
             return
         }
+        var shareTypes = Set<HKSampleType>()
+        shareTypes.insert(HKObjectType.workoutType())
+        if let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate) {
+            shareTypes.insert(heartRateType)
+        }
         do {
-            try await store.requestAuthorization(toShare: [], read: readTypes)
+            try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
             isAuthorized = true
             refresh()
         } catch {
