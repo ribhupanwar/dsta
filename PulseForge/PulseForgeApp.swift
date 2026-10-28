@@ -122,7 +122,7 @@ struct TodayDashboard: View {
                         ScoreRing(title: "STRAIN", value: nil, tint: Color(red: 0.98, green: 0.58, blue: 0.27))
                     }
                     .padding(.vertical, 8)
-                    Text("Scores will appear when the required WHOOP and sleep data is available.")
+                    Text("Recovery is a PulseForge estimate from HRV and resting HR. Sleep performance and WHOOP-style strain remain blank until their models are validated.")
                         .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(18)
@@ -642,7 +642,7 @@ struct SleepDashboard: View {
                     CompactMetric(title: "DEEP SLEEP", value: health.deepSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
                     CompactMetric(title: "REM SLEEP", value: health.remSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
                 }
-                Text("Sleep stages are read from Apple Health. Sleep need, debt and performance remain blank until a reliable baseline is available.")
+                Text("Sleep stages are read from Apple Health. Debt is the rolling shortfall against an 8-hour target across completed nights with recorded sleep.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
@@ -706,7 +706,7 @@ struct StrainDashboard: View {
                 }
                 .font(.system(size: 13, weight: .medium))
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
-                Text("Strain and cardio load are intentionally not estimated from incomplete data.")
+                Text("Cardio-load points use workout HR samples and your saved measured max HR. WHOOP-style strain remains blank until its model is validated.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
