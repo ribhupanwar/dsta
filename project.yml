@@ -29,6 +29,10 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.healthcare-fitness
     info:
       path: PulseForge/Info.plist
+      properties:
+        UIBackgroundModes:
+          - bluetooth-central
+          - location
     entitlements:
       path: PulseForge/PulseForge.entitlements
       properties:
