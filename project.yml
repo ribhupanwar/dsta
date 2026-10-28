@@ -14,6 +14,10 @@ targets:
     platform: iOS
     sources:
       - path: PulseForge
+    info:
+      properties:
+        UIBackgroundModes:
+          - bluetooth-central
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ribhupanwar.pulseforge
