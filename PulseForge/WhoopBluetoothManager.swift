@@ -126,9 +126,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
 
         let baselineSamples = workoutDetectionSamples.filter {
             timestamp.timeIntervalSince($0.timestamp) >= 5 * 60
-        }.map(\\.bpm).sorted()
+        }.map(\.bpm).sorted()
         guard baselineSamples.count >= 5 else {
-            workoutDetectionStatus = "Learning HR baseline · \\(baselineSamples.count)/5 samples"
+            workoutDetectionStatus = "Learning HR baseline · \(baselineSamples.count)/5 samples"
             return
         }
         let baseline = baselineSamples[baselineSamples.count / 2]
@@ -161,11 +161,11 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                 beginWorkoutRecording(automatic: true)
             } else {
                 let elapsed = workoutDetectionCandidateSince.map { Int(timestamp.timeIntervalSince($0)) } ?? 0
-                workoutDetectionStatus = "Possible workout · elevated HR \\(elapsed)/300 sec"
+                workoutDetectionStatus = "Possible workout · elevated HR \(elapsed)/300 sec"
             }
         } else {
             workoutDetectionCandidateSince = nil
-            workoutDetectionStatus = "Monitoring HR · baseline \\(baseline) bpm · trigger \\(startThreshold) bpm"
+            workoutDetectionStatus = "Monitoring HR · baseline \(baseline) bpm · trigger \(startThreshold) bpm"
         }
     }
 \n    private func persistWorkoutSession() {
