@@ -392,6 +392,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5HRStreamConfirmed = false
     private var whoop5AutoIMUStartRequested = false
     private var whoop5AutoIMUEnabled = false
+    private var whoop5RawStreamStopWorkItem: DispatchWorkItem?
     private var whoop5PendingWrites: [String] = []
     private var whoop5NextCommandSequence: UInt8 = 2
     private var hrTimingConnectionAt: Date?
@@ -841,6 +842,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
         whoop5AutoIMUEnabled = false
+        whoop5RawStreamStopWorkItem?.cancel()
+        whoop5RawStreamStopWorkItem = nil
         // Keep the last known battery reading across BLE reconnects; WHOOP does not
         // necessarily emit BATTERY_LEVEL on every connection.
         whoopEventPacketCount = 0
@@ -941,6 +944,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
         whoop5AutoIMUEnabled = false
+        whoop5RawStreamStopWorkItem?.cancel()
+        whoop5RawStreamStopWorkItem = nil
         whoopIMUFrameCount = 0
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
@@ -1288,11 +1293,28 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     return "COMMAND_RESPONSE · START_RAW_DATA(81) · PENDING"
                 }
                 whoop5AutoIMUEnabled = result == 1
-                whoopIMUStatus = result == 1
-                    ? "Bounded raw stream accepted · waiting for Gen5 R21 packets (type 43)"
-                    : "START_RAW_DATA rejected · \(resultName)"
+                if result == 1 {
+                    whoopIMUStatus = "Bounded raw stream accepted · waiting for Gen5 R21 packets (type 43)"
+                    scheduleWhoop5RawStreamStop(for: peripheral, after: 60)
+                } else {
+                    whoop5AutoIMUStartRequested = false
+                    whoopIMUStatus = "START_RAW_DATA rejected · \(resultName)"
+                }
                 recordVendorTimeline("START_RAW_DATA(81) response · \(resultName)")
                 return "COMMAND_RESPONSE · START_RAW_DATA(81) · \(resultName)"
+            }
+            if command == 82 {
+                if result == 2 {
+                    whoopIMUStatus = "STOP_RAW_DATA pending · awaiting final response"
+                    return "COMMAND_RESPONSE · STOP_RAW_DATA(82) · PENDING"
+                }
+                whoop5AutoIMUEnabled = false
+                whoop5AutoIMUStartRequested = false
+                whoopIMUStatus = result == 1
+                    ? "Bounded raw stream stopped · awaiting next session"
+                    : "STOP_RAW_DATA rejected · \(resultName)"
+                recordVendorTimeline("STOP_RAW_DATA(82) response · \(resultName)")
+                return "COMMAND_RESPONSE · STOP_RAW_DATA(82) · \(resultName)"
             }
             if command == 145 {
                 if result == 1 && echoedSequence == 1 {
@@ -1487,6 +1509,35 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
         recordVendorTimeline("START_RAW_DATA write requested · opcode 51 · revision 2 · duration=\(durationMilliseconds)ms · seq=\(sequence) · HEX: \(hex)")
         whoopIMUStatus = "Bounded 60-second Gen5 raw stream requested · awaiting command response"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    /// Schedule an explicit STOP_RAW_DATA (0x52) after the bounded stream.
+    /// This is a safety stop even though START_RAW_DATA carries its own duration.
+    private func scheduleWhoop5RawStreamStop(for peripheral: CBPeripheral, after seconds: TimeInterval) {
+        whoop5RawStreamStopWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self, weak peripheral] in
+            guard let self, let peripheral,
+                  self.connectedPeripheral?.identifier == peripheral.identifier,
+                  self.whoop5AutoIMUEnabled else { return }
+            self.sendWhoop5RawDataStop(to: peripheral)
+        }
+        whoop5RawStreamStopWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+        recordVendorTimeline("STOP_RAW_DATA safety stop scheduled · after \(Int(seconds))s")
+    }
+
+    /// Stop Gen5 raw streaming (STOP_RAW_DATA = 0x52, body [0x01]).
+    private func sendWhoop5RawDataStop(to peripheral: CBPeripheral) {
+        guard whoop5AutoIMUEnabled,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x52, payload: [0x01])
+        whoop5PendingWrites.append("STOP_RAW_DATA_60S")
+        recordVendorTimeline("STOP_RAW_DATA write requested · opcode 52 · revision 1 · seq=\(sequence)")
+        whoopIMUStatus = "60-second raw stream elapsed · STOP_RAW_DATA requested"
         peripheral.writeValue(frame, for: command, type: .withResponse)
     }
 
@@ -1709,13 +1760,25 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             return
         }
-        if kind == "START_RAW_DATA" {
+        if kind == "START_RAW_DATA_60S" {
             if let error {
                 whoop5AutoIMUStartRequested = false
                 whoopIMUStatus = "START_RAW_DATA write failed · \(error.localizedDescription)"
-                return
+                recordVendorTimeline("START_RAW_DATA write callback · failed · \(error.localizedDescription)")
+            } else {
+                whoopIMUStatus = "START_RAW_DATA write acknowledged · awaiting strap response"
+                recordVendorTimeline("START_RAW_DATA write callback · acknowledged by CoreBluetooth")
             }
-            whoopIMUStatus = "START_RAW_DATA write acknowledged · awaiting strap response"
+            return
+        }
+        if kind == "STOP_RAW_DATA_60S" {
+            if let error {
+                whoopIMUStatus = "STOP_RAW_DATA write failed · \(error.localizedDescription)"
+                recordVendorTimeline("STOP_RAW_DATA write callback · failed · \(error.localizedDescription)")
+            } else {
+                whoopIMUStatus = "STOP_RAW_DATA write acknowledged · awaiting strap response"
+                recordVendorTimeline("STOP_RAW_DATA write callback · acknowledged by CoreBluetooth")
+            }
             return
         }
         if kind == "TOGGLE_IMU_MODE" {
