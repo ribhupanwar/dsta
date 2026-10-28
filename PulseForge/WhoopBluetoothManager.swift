@@ -415,6 +415,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var pendingRestoredPeripheral: CBPeripheral?
     private let rememberedPeripheralKey = "pulseforge.whoop.lastPeripheralUUID"
     private var isAutomaticReconnectScan = false
+    private var automaticReconnectScanToken = UUID()
     private var scanTimeoutWorkItem: DispatchWorkItem?
     private var connectionTimeoutWorkItem: DispatchWorkItem?
     private var pendingCharacteristicServices = Set<ObjectIdentifier>()
@@ -480,6 +481,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             return
         }
         scanTimeoutWorkItem?.cancel()
+        isAutomaticReconnectScan = false
+        automaticReconnectScanToken = UUID()
         central.stopScan()
         devices.removeAll()
         discoveredProfile.removeAll()
@@ -701,6 +704,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
             // A Bluetooth power transition ends the automatic restoration scan.
             // Clear its guard so the next poweredOn callback can start a fresh scan.
             isAutomaticReconnectScan = false
+            automaticReconnectScanToken = UUID()
         }
         switch central.state {
         case .poweredOn:
@@ -742,13 +746,18 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
             statusText = "Bluetooth ready · searching for previously used WHOOP"
             if !isAutomaticReconnectScan {
                 isAutomaticReconnectScan = true
+                let scanToken = UUID()
+                automaticReconnectScanToken = scanToken
                 central.scanForPeripherals(withServices: nil, options: [
                     CBCentralManagerScanOptionAllowDuplicatesKey: false
                 ])
                 DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
-                    guard let self, self.isAutomaticReconnectScan else { return }
+                    guard let self,
+                          self.isAutomaticReconnectScan,
+                          self.automaticReconnectScanToken == scanToken else { return }
                     self.central.stopScan()
                     self.isAutomaticReconnectScan = false
+                    self.automaticReconnectScanToken = UUID()
                     self.statusText = "WHOOP not found · open Device and tap Scan to retry"
                 }
             }
@@ -939,6 +948,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
            peripheral.identifier.uuidString == rememberedID,
            isAutomaticReconnectScan {
             isAutomaticReconnectScan = false
+            automaticReconnectScanToken = UUID()
             central.stopScan()
             connectedPeripheral = peripheral
             connectedDeviceSnapshot = nil
