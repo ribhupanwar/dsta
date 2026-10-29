@@ -1627,12 +1627,19 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             do {
                 let rr = try Whoop5RRDecoder.decodeRealtime(b)
                 if !rr.isEmpty {
+                    let receivedAt = Date()
+                    // RMSSD assumes a continuous beat series. Do not bridge a
+                    // long notification gap with adjacent-value differences.
+                    if let previousUpdate = whoopRRLastUpdatedAt,
+                       receivedAt.timeIntervalSince(previousUpdate) > 10 {
+                        whoopRRWindowMilliseconds.removeAll(keepingCapacity: true)
+                    }
                     whoopRRIntervalsMilliseconds = rr
                     whoopRRWindowMilliseconds.append(contentsOf: rr)
                     if whoopRRWindowMilliseconds.count > 60 {
                         whoopRRWindowMilliseconds.removeFirst(whoopRRWindowMilliseconds.count - 60)
                     }
-                    whoopRRLastUpdatedAt = Date()
+                    whoopRRLastUpdatedAt = receivedAt
                     whoopRRSource = "WHOOP 5.0 realtime · \(rr.count) new interval(s) · rolling \(whoopRRWindowMilliseconds.count) · milliseconds"
                 }
             } catch {
