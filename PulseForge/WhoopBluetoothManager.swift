@@ -97,6 +97,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopLastEvent33At: Date?
     @Published private(set) var whoopLastEvent34FrameHex = "none"
     @Published private(set) var whoopLastEvent34At: Date?
+    /// Puffin event transports are retained independently until their payload schema is verified.
+    @Published private(set) var whoopPuffinEventCountsByChannel: [String: Int] = [:]
+    @Published private(set) var whoopPuffinEventFrameHistory: [String] = []
+    private var whoopPuffinEventTypeCounts: [Int: Int] = [:]
     /// Notification-level and CRC-valid packet-level evidence, keyed by GATT channel.
     private var vendorNotificationCountsByChannel: [String: Int] = [:]
     private var vendorNotificationBytesByChannel: [String: Int] = [:]
@@ -794,6 +798,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP per-channel telemetry: \(whoopPerChannelTelemetrySummary)",
             "WHOOP last Event 33: \(whoopLastEvent33At.map { ISO8601DateFormatter().string(from: $0) } ?? "not observed") · \(whoopLastEvent33FrameHex)",
             "WHOOP last Event 34: \(whoopLastEvent34At.map { ISO8601DateFormatter().string(from: $0) } ?? "not observed") · \(whoopLastEvent34FrameHex)",
+            "WHOOP Puffin event packet types 53/54: \(whoopPuffinEventTypeCounts.keys.sorted().map { "type \($0)=\(whoopPuffinEventTypeCounts[$0] ?? 0)" }.joined(separator: ", ").isEmpty ? "none" : whoopPuffinEventTypeCounts.keys.sorted().map { "type \($0)=\(whoopPuffinEventTypeCounts[$0] ?? 0)" }.joined(separator: ", "))",
+            "WHOOP Puffin event channels: \(whoopPuffinEventCountsByChannel.keys.sorted().map { "\($0)=\(whoopPuffinEventCountsByChannel[$0] ?? 0)" }.joined(separator: ", ").isEmpty ? "none" : whoopPuffinEventCountsByChannel.keys.sorted().map { "\($0)=\(whoopPuffinEventCountsByChannel[$0] ?? 0)" }.joined(separator: ", "))",
             "WHOOP automatic IMU request: \(whoop5AutoIMUStartRequested ? "yes" : "no")",
             "WHOOP automatic IMU enabled: \(whoop5AutoIMUEnabled ? "yes" : "no")",
             "WHOOP IMU frames: \(whoopIMUFrameCount) · samples: \(whoopIMUSampleCount) · live buffer: \(liveWhoopIMUSamples.count) · workout samples: \(workoutWhoopIMUSamples.count) · status: \(whoopIMUStatus)",
@@ -817,6 +823,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         lines.append("")
         lines.append("WHOOP vendor notification history (latest 40 events):")
         lines.append(contentsOf: vendorNotificationHistory.isEmpty ? ["  No vendor payload events captured"] : vendorNotificationHistory)
+        lines.append("")
+        lines.append("WHOOP Puffin event transport raw frames (types 53/54; newest last):")
+        lines.append(contentsOf: whoopPuffinEventFrameHistory.isEmpty ? ["  No type-53/type-54 frames captured"] : whoopPuffinEventFrameHistory.map { "  \($0)" })
         lines.append("")
         lines.append("WHOOP BLE connection timeline (latest 100 events):")
         lines.append(contentsOf: vendorNotificationTimeline.isEmpty ? ["  No connection timeline events captured"] : vendorNotificationTimeline.map { "  \($0)" })
@@ -1040,6 +1049,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopLastEvent33At = nil
         whoopLastEvent34FrameHex = "none"
         whoopLastEvent34At = nil
+        whoopPuffinEventCountsByChannel.removeAll()
+        whoopPuffinEventTypeCounts.removeAll()
+        whoopPuffinEventFrameHistory.removeAll()
         whoopIMUFrameCount = 0
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
@@ -1783,15 +1795,42 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 : "RR \(whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms"
             return "REALTIME_DATA · HR \(bpm) bpm · \(rrSummary) · CRC valid"
 
+        case 53, 54: // PUFFIN event transports; preserve raw until their payload schemas are independently verified.
+            whoopPuffinEventTypeCounts[type, default: 0] += 1
+            whoopPuffinEventCountsByChannel[channel, default: 0] += 1
+            let capturedAt = ISO8601DateFormatter().string(from: Date())
+            let rawHex = b.map { String(format: "%02X", $0) }.joined(separator: " ")
+            let candidateOffsets = b.indices.filter { index in
+                index >= 10 && index < min(b.count - 4, 32) && (b[index] == 33 || b[index] == 34)
+            }
+            let candidateSummary = candidateOffsets.isEmpty
+                ? "no byte-33/34 candidates in header/event prefix"
+                : "byte-33/34 candidates at absolute offsets " + candidateOffsets.map(String.init).joined(separator: ",")
+            whoopPuffinEventFrameHistory.append("\(capturedAt) · type=\(type) · channel=\(channel) · seq=\(b.count > 9 ? Int(b[9]) : -1) · \(candidateSummary) · HEX: \(rawHex)")
+            if whoopPuffinEventFrameHistory.count > 24 {
+                whoopPuffinEventFrameHistory.removeFirst(whoopPuffinEventFrameHistory.count - 24)
+            }
+            recordVendorTimeline("Puffin event transport packet · type=\(type) · channel=\(channel) · \(b.count) bytes · \(candidateSummary)")
+            return "PUFFIN_EVENT_TRANSPORT(\(type)) · raw retained · \(b.count) bytes · \(candidateSummary) · CRC valid"
+
         case 48: // EVENT
             guard b.count >= 20 else { return "EVENT · truncated · CRC valid" }
-            let eventID = Int(b[10]) | (Int(b[11]) << 8)
+            // Gen5 references place EventNumber at absolute offset 10 and the
+            // u32 event timestamp at offset 12. Keep byte 11 separately visible
+            // rather than silently folding it into a UInt16.
+            let eventID = Int(b[10])
+            let eventIDAdjacentByte = Int(b[11])
+            let eventTimestampRaw = UInt32(b[12])
+                | (UInt32(b[13]) << 8)
+                | (UInt32(b[14]) << 16)
+                | (UInt32(b[15]) << 24)
             whoopEventPacketCount += 1
             whoopEventCountsByChannel[channel, default: 0] += 1
             whoopLastEventID = eventID
             whoopLastEventChannel = channel
             let eventFrameHex = b.map { String(format: "%02X", $0) }.joined(separator: " ")
             whoopLastEventFrameHex = eventFrameHex
+            recordVendorTimeline("Type-48 EVENT decoded · idByte@10=\(eventID) · adjacent@11=\(eventIDAdjacentByte) · timestamp@12=\(eventTimestampRaw) · channel=\(channel) · frame=\(b.count) bytes")
             if eventID == 33 {
                 whoopEvent33Count += 1
                 whoopLastEvent33At = Date()
