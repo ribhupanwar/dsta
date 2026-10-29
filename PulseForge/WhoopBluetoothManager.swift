@@ -68,6 +68,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var lastHeartRateAt: Date?
     @Published private(set) var whoopProtocolDiagnostics = "No WHOOP 5.0 protocol frame decoded yet"
     @Published private(set) var whoopRealtimePacketCount = 0
+    private var lastWhoopRealtimeHRAt: Date?
     /// Latest RR intervals from the realtime type-40 stream only.
     @Published private(set) var whoopRRIntervalsMilliseconds: [Int] = []
     /// Rolling realtime RR window for live diagnostics; never used as overnight HRV.
@@ -945,6 +946,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         pendingCharacteristicServices.removeAll()
         pendingDescriptorCharacteristics.removeAll()
         gattCharacteristicDiscoveryErrors.removeAll()
+        lastWhoopRealtimeHRAt = nil
         discoveredProfile.removeAll()
         vendorNotificationStates.removeAll()
         vendorNotificationPayloads.removeAll()
@@ -1343,11 +1345,21 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             lastBLEEvent = "Standard HR notification received · payload could not be parsed"
             return
         }
+        // Standard 2A37 is a fallback only. Prefer the WHOOP 5.0 type-40
+        // stream while it is healthy so a parallel generic notification cannot
+        // overwrite the primary source or mix its RR intervals into that window.
+        let whoopRealtimeIsFresh = lastWhoopRealtimeHRAt.map {
+            Date().timeIntervalSince($0) <= 30
+        } ?? false
+        guard !whoopRealtimeIsFresh else {
+            lastBLEEvent = "Standard HR fallback ignored · WHOOP type-40 stream is fresh"
+            return
+        }
         let standardRR = StandardHeartRateRRParser.parseMilliseconds(data)
         if !standardRR.isEmpty {
-            appendRRIntervals(standardRR, source: "WHOOP standard BLE 2A37")
+            appendRRIntervals(standardRR, source: "WHOOP standard BLE 2A37 fallback")
         }
-        recordHeartRateSample(bpm, source: "WHOOP standard BLE HR")
+        recordHeartRateSample(bpm, source: "WHOOP standard BLE HR fallback")
     }
 
     private func updateGattDiscoveryCompletionStatus() {
@@ -1649,6 +1661,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             } catch {
                 whoopRRSource = "Realtime RR decode rejected · \(error)"
             }
+            lastWhoopRealtimeHRAt = Date()
             recordHeartRateSample(bpm, source: "WHOOP5 REALTIME_DATA")
             let rrSummary = whoopRRIntervalsMilliseconds.isEmpty
                 ? "RR unavailable"
