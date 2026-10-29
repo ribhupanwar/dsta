@@ -90,6 +90,15 @@ jobs:
           cat comparison-report/pulseforge-source-inventory.txt
 
 
+      - name: Install Mach-O inspection tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y llvm
+          command -v llvm-objdump
+          command -v llvm-nm
+
       - name: Audit WHOOP RR and historical packet symbols
         shell: bash
         run: |
