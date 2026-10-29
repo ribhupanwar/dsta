@@ -18,12 +18,13 @@ enum SleepNeedCalculator {
         let strainAdjustmentHours: Double
     }
 
-    static func calculate(_ inputs: Inputs) -> Result {
+    static func calculate(_ inputs: Inputs) -> Result? {
         // A stable personal baseline must be supplied by a future learning
         // layer; do not infer physiological need from sleep duration alone.
         let baseline = inputs.personalBaselineHours.flatMap {
             $0.isFinite && (5...12).contains($0) ? $0 : nil
-        } ?? 8
+        } ?? nil
+        guard let baseline else { return nil }
 
         let debt = inputs.sleepDebtHours.flatMap {
             $0.isFinite && $0 > 0 ? $0 : nil
@@ -50,14 +51,14 @@ enum SleepNeedCalculator {
         )
     }
 
-    /// Backwards-compatible convenience used until HealthKit nap and calibrated
-    /// strain inputs are available in the store.
-    static func calculate(baseNeedHours: Double = 8, sleepDebtHours: Double?) -> Double {
+    /// Convenience API that refuses to invent an 8-hour personal baseline.
+    /// Returns nil until a valid personal baseline has been learned.
+    static func calculate(baseNeedHours: Double?, sleepDebtHours: Double?) -> Double? {
         calculate(Inputs(
             personalBaselineHours: baseNeedHours,
             sleepDebtHours: sleepDebtHours,
             napMinutes: nil,
             strainAdjustmentHours: nil
-        )).targetHours
+        ))?.targetHours
     }
 }
