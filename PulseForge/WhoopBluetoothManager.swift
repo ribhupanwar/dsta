@@ -1769,6 +1769,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     /// A single bounded recovery for the WHOOP 5.0 HR stream if it goes silent
     /// after producing data. Do not reconnect or loop retries; preserve the GATT session.
     private func scheduleWhoop5HRStallRecovery(from sampleTime: Date) {
+        // HR arrives frequently; replace the quiet-period timer on each sample,
+        // but emit only one "scheduled" diagnostic per GATT connection.
+        let shouldLogSchedule = whoop5HRStallRecoveryWorkItem == nil
         whoop5HRStallRecoveryWorkItem?.cancel()
         guard !whoop5HRStallRecoveryAttempted else { return }
         let work = DispatchWorkItem { [weak self] in
@@ -1789,7 +1792,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         }
         whoop5HRStallRecoveryWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 5 * 60, execute: work)
-        recordVendorTimeline("HR stall watchdog scheduled · 5 min after latest sample")
+        if shouldLogSchedule {
+            recordVendorTimeline("HR stall watchdog armed · fires only after 5 min without a new HR sample")
+        }
     }
 
     /// Enable WHOOP 5.0 live HR (opcode 0x03, body [0x01]).
@@ -1947,8 +1952,19 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 $0.contains("Service · \(whoop5ServiceUUID.uuidString)")
             }
             if hasWhoopService {
-                lastBLEEvent = "WHOOP 5.0 command characteristic FD4B0002 not found after complete GATT discovery"
+                lastBLEEvent = "WHOOP Gen5 service found, but command characteristic FD4B0002 is unavailable"
                 recordVendorTimeline("CLIENT_HELLO withheld · FD4B0002 unavailable after all services discovered")
+            } else {
+                // Do not send the Gen5 CLIENT_HELLO to a different WHOOP GATT
+                // family. Keep discovery passive until that model's protocol is
+                // identified from its own service/characteristic capture.
+                let serviceLines = discoveredProfile.filter { $0.hasPrefix("Service ·") }
+                let serviceSummary = serviceLines.map {
+                    $0.replacingOccurrences(of: "Service · ", with: "")
+                }.joined(separator: ", ")
+                whoopSessionPhase = "Non-FD4B WHOOP profile · protocol mapping pending"
+                lastBLEEvent = "WHOOP candidate has no FD4B Gen5 service · \(serviceSummary)"
+                statusText = "WHOOP detected · non-Gen5 GATT profile · protocol mapping pending"
             }
             return
         }
