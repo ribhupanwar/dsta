@@ -1,0 +1,124 @@
+name: WHOOP IPA protocol resource inspection
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/whoop-ipa-protocol-inspection.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-protocol-resources:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download pinned WHOOP IPA release
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            "https://github.com/ribhupanwar/dsta/releases/download/whoop-5.75.0/pulseforge.ipa" \
+            --output /tmp/whoop-original.ipa
+          sha256sum /tmp/whoop-original.ipa
+          unzip -tq /tmp/whoop-original.ipa
+
+      - name: Extract protocol resources and executable evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p protocol-evidence
+          python3 - <<'PY'
+          import hashlib, json, plistlib, re, subprocess, zipfile
+          from pathlib import Path
+
+          ipa = Path("/tmp/whoop-original.ipa")
+          outdir = Path("protocol-evidence")
+          report = {
+              "ipa_sha256": hashlib.sha256(ipa.read_bytes()).hexdigest(),
+              "resources": {},
+              "executables": [],
+              "limitations": [
+                  "Static inspection only; this does not prove runtime BLE sequencing.",
+                  "Packet type names or numeric references alone do not establish packet layouts."
+              ]
+          }
+          with zipfile.ZipFile(ipa) as z:
+              names = set(z.namelist())
+              for name in sorted(names):
+                  base = name.rsplit("/", 1)[-1]
+                  if base in {"HelloPacketRev3", "HelloPacketRev4", "hrBroadcastBeat"}:
+                      data = z.read(name)
+                      report["resources"][name] = {
+                          "size": len(data),
+                          "sha256": hashlib.sha256(data).hexdigest(),
+                          "hex": data.hex(),
+                          "ascii_preview": "".join(chr(b) if 32 <= b < 127 else "." for b in data[:512])
+                      }
+                      (outdir / (base + ".hex.txt")).write_text(
+                          f"path: {name}\nsize: {len(data)}\nsha256: {hashlib.sha256(data).hexdigest()}\nhex:\n{data.hex()}\n"
+                      )
+
+              info_paths = [n for n in names if n.startswith("Payload/") and n.endswith(".app/Info.plist")]
+              for info_path in info_paths:
+                  info = plistlib.loads(z.read(info_path))
+                  executable = info.get("CFBundleExecutable")
+                  if not executable:
+                      continue
+                  exe_path = info_path.rsplit("/", 1)[0] + "/" + executable
+                  if exe_path not in names:
+                      continue
+                  binary = z.read(exe_path)
+                  strings = subprocess.run(
+                      ["strings", "-a"], input=binary, stdout=subprocess.PIPE, check=True
+                  ).stdout.decode("utf-8", "ignore").splitlines()
+                  terms = re.compile(
+                      r"whooppacket|payloadtype|type.?40|type.?47|realtime.?data|"
+                      r"historical|hellopacket|hello.?response|hello.?sending|"
+                      r"characteristic|command.?read|command.?write|data.?read|"
+                      r"event.?read|heart.?rate|rr.?interval|FD4B",
+                      re.I
+                  )
+                  selected = sorted(set(s.strip() for s in strings if terms.search(s)))
+                  report["executables"].append({
+                      "path": exe_path,
+                      "size": len(binary),
+                      "sha256": hashlib.sha256(binary).hexdigest(),
+                      "mach_o_magic": binary[:16].hex(),
+                      "matching_strings": selected[:2500]
+                  })
+                  (outdir / "executable-protocol-strings.txt").write_text("\n".join(selected) + "\n")
+                  (outdir / "executable-protocol-strings.txt").write_text(
+                      f"Executable: {exe_path}\nBytes: {len(binary)}\nSHA-256: {hashlib.sha256(binary).hexdigest()}\n\n"
+                      + "\n".join(selected) + "\n"
+                  )
+                  break
+
+          (outdir / "whoop-ipa-protocol-evidence.json").write_text(json.dumps(report, indent=2))
+          summary = [
+              "# WHOOP IPA protocol resource inspection",
+              "",
+              f"- IPA SHA-256: {report['ipa_sha256']}",
+              f"- Resource count: {len(report['resources'])}",
+              f"- Executable slices inspected: {len(report['executables'])}",
+              "",
+              "## Embedded resource fingerprints",
+          ]
+          for path, item in report["resources"].items():
+              summary += [f"- `{path}`: {item['size']} bytes; SHA-256 `{item['sha256']}`"]
+          summary += ["", "## Evidence limits", *[f"- {x}" for x in report["limitations"]]]
+          (outdir / "README.md").write_text("\n".join(summary) + "\n")
+          print(json.dumps({
+              "ipa_sha256": report["ipa_sha256"],
+              "resources": {k: {"size": v["size"], "sha256": v["sha256"], "hex": v["hex"]} for k,v in report["resources"].items()},
+              "executable_matches": len(report["executables"][0]["matching_strings"]) if report["executables"] else 0
+          }, indent=2))
+          PY
+
+      - name: Upload byte-level evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: whoop-ipa-protocol-byte-evidence
+          path: protocol-evidence/
+          retention-days: 14
