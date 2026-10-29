@@ -1130,6 +1130,10 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
             central.cancelPeripheralConnection(peripheral)
             return
         }
+        // Every successful link starts a fresh GATT session. Manual reconnects
+        // must reset the same one-shot recovery flags and packet buffers as
+        // automatic reconnects, otherwise a prior session can suppress recovery.
+        resetGattSessionForReconnect()
         connectionTimeoutWorkItem?.cancel()
         connectionTimeoutWorkItem = nil
         reconnectWorkItem?.cancel()
