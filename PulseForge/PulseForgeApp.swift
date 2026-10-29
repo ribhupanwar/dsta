@@ -149,7 +149,7 @@ struct TodayDashboard: View {
                 .overlay(RoundedRectangle(cornerRadius: 22).stroke(ForgeColors.stroke, lineWidth: 1))
 
                 HStack(spacing: 9) {
-                    CompactMetric(title: "HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
+                    CompactMetric(title: "SDNN HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
                     CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
                     CompactMetric(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                 }
@@ -208,7 +208,7 @@ struct RecoveryDetailSheet: View {
                         Spacer()
                     }
                     HStack(spacing: 10) {
-                        CompactMetric(title: "HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
+                        CompactMetric(title: "SDNN HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
                         CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
                         CompactMetric(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                     }
