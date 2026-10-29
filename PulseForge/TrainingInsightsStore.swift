@@ -8,6 +8,7 @@ import Combine
 final class TrainingInsightsStore: ObservableObject {
     @Published private(set) var sleepHours: Double?
     @Published private(set) var sleepDebtHours: Double?
+    @Published private(set) var typicalSleepHours: Double?
     @Published private(set) var sleepNeedHours: Double = 8
     @Published private(set) var recoveryScore: Int?
     @Published private(set) var recoveryStatus = "Waiting for HRV and resting-HR baseline"
@@ -27,9 +28,10 @@ final class TrainingInsightsStore: ObservableObject {
         let group = DispatchGroup()
 
         group.enter()
-        loadSleep { [weak self] hours, debt in
+        loadSleep { [weak self] hours, debt, typical in
             self?.sleepHours = hours
             self?.sleepDebtHours = debt
+            self?.typicalSleepHours = typical
             self?.sleepNeedHours = SleepNeedCalculator.calculate(sleepDebtHours: debt)
             group.leave()
         }
@@ -55,18 +57,20 @@ final class TrainingInsightsStore: ObservableObject {
         }
     }
 
-    private func loadSleep(completion: @escaping (Double?, Double?) -> Void) {
+    private func loadSleep(completion: @escaping (Double?, Double?, Double?) -> Void) {
         guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
-            completion(nil, nil)
+            completion(nil, nil, nil)
             return
         }
         let end = Date()
-        let start = calendar.date(byAdding: .day, value: -9, to: end) ?? end.addingTimeInterval(-9 * 86400)
+        // WHOOP documents a 28-day typical-sleep-pattern factor. We expose
+        // a measured 28-day median separately; it is not used as personal need.
+        let start = calendar.date(byAdding: .day, value: -29, to: end) ?? end.addingTimeInterval(-29 * 86400)
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
         let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit,
                                   sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) {
             [weak self] _, samples, _ in
-            guard let self else { completion(nil, nil); return }
+            guard let self else { completion(nil, nil, nil); return }
             let asleepValues: Set<Int> = [
                 HKCategoryValueSleepAnalysis.asleep.rawValue, // Legacy HealthKit sleep samples.
                 HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
@@ -87,7 +91,7 @@ final class TrainingInsightsStore: ObservableObject {
             )
             let latestHours = summary.latestNight.map { $0.durationMinutes / 60 }
             DispatchQueue.main.async {
-                completion(latestHours, summary.sleepDebtHours)
+                completion(latestHours, summary.sleepDebtHours, summary.typicalSleepHours)
             }
         }
         healthStore.execute(query)
