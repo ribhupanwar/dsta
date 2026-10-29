@@ -137,7 +137,7 @@ final class TrainingInsightsStore: ObservableObject {
                 completion(nil, "Building baseline · need 3 prior days of HRV + resting HR")
                 return
             }
-            completion(result.score, "PulseForge estimate · HRV 60% + resting HR 40% · 3+ day median baseline")
+            completion(result.score, "PulseForge estimate · Apple Health SDNN (not WHOOP RMSSD) 60% + resting HR 40% · 3+ day median baseline")
         }
     }
 
