@@ -124,7 +124,7 @@ final class RealtimeRMSSDCalculatorTests: XCTestCase {
         let result = RealtimeRMSSDCalculator.calculate(
             intervalsMilliseconds: [1000, 1010, 990, 1005, 995]
         )
-        XCTAssertEqual(result ?? -1, (725.0 / 4.0).squareRoot(), accuracy: 0.0001)
+        XCTAssertEqual(result ?? -1, (825.0 / 4.0).squareRoot(), accuracy: 0.0001)
     }
 
     func testRequiresAtLeastFiveIntervalsByDefault() {
