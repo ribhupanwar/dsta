@@ -1350,9 +1350,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         // Standard 2A37 is a fallback only. Prefer the WHOOP 5.0 type-40
         // stream while it is healthy so a parallel generic notification cannot
         // overwrite the primary source or mix its RR intervals into that window.
-        let whoopRealtimeIsFresh = lastWhoopRealtimeHRAt.map {
-            Date().timeIntervalSince($0) <= 30
-        } ?? false
+        let whoopRealtimeIsFresh = WhoopRealtimeFreshness.isFresh(
+            lastPacketAt: lastWhoopRealtimeHRAt, now: Date(), maximumAge: 30
+        )
         guard !whoopRealtimeIsFresh else {
             lastBLEEvent = "Standard HR fallback ignored · WHOOP type-40 stream is fresh"
             return
