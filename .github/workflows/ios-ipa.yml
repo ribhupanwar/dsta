@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feature/export-whoop-rr-raw-archive
+      - fix/history-end-ack-confirmation
     paths:
       - "PulseForge/**"
       - "project.yml"
