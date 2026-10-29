@@ -1330,6 +1330,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             lastBLEEvent = "Standard HR notification received · payload could not be parsed"
             return
         }
+        let standardRR = StandardHeartRateRRParser.parseMilliseconds(data)
+        if !standardRR.isEmpty {
+            appendRRIntervals(standardRR, source: "WHOOP standard BLE 2A37")
+        }
         recordHeartRateSample(bpm, source: "WHOOP standard BLE HR")
     }
 
@@ -1626,22 +1630,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             do {
                 let rr = try Whoop5RRDecoder.decodeRealtime(b)
-                if !rr.isEmpty {
-                    let receivedAt = Date()
-                    // RMSSD assumes a continuous beat series. Do not bridge a
-                    // long notification gap with adjacent-value differences.
-                    if let previousUpdate = whoopRRLastUpdatedAt,
-                       receivedAt.timeIntervalSince(previousUpdate) > 30 {
-                        whoopRRWindowMilliseconds.removeAll(keepingCapacity: true)
-                    }
-                    whoopRRIntervalsMilliseconds = rr
-                    whoopRRWindowMilliseconds.append(contentsOf: rr)
-                    if whoopRRWindowMilliseconds.count > 60 {
-                        whoopRRWindowMilliseconds.removeFirst(whoopRRWindowMilliseconds.count - 60)
-                    }
-                    whoopRRLastUpdatedAt = receivedAt
-                    whoopRRSource = "WHOOP 5.0 realtime · \(rr.count) new interval(s) · rolling \(whoopRRWindowMilliseconds.count) · milliseconds"
-                }
+                appendRRIntervals(rr, source: "WHOOP 5.0 realtime")
             } catch {
                 whoopRRSource = "Realtime RR decode rejected · \(error)"
             }
@@ -1883,6 +1872,21 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         heartRateUpdateCount += 1
         lastBLEEvent = "\(source) · \(bpm) bpm · \(ISO8601DateFormatter().string(from: timestamp)) · sample #\(heartRateUpdateCount)"
         statusText = "Live HR · \(bpm) bpm · \(heartRateUpdateCount) update(s)"
+    }
+
+    private func appendRRIntervals(_ intervals: [Int], source: String, receivedAt: Date = Date()) {
+        guard !intervals.isEmpty else { return }
+        if let previousUpdate = whoopRRLastUpdatedAt,
+           receivedAt.timeIntervalSince(previousUpdate) > 30 {
+            whoopRRWindowMilliseconds.removeAll(keepingCapacity: true)
+        }
+        whoopRRIntervalsMilliseconds = intervals
+        whoopRRWindowMilliseconds.append(contentsOf: intervals)
+        if whoopRRWindowMilliseconds.count > 60 {
+            whoopRRWindowMilliseconds.removeFirst(whoopRRWindowMilliseconds.count - 60)
+        }
+        whoopRRLastUpdatedAt = receivedAt
+        whoopRRSource = "\(source) · \(intervals.count) new interval(s) · rolling \(whoopRRWindowMilliseconds.count) · milliseconds"
     }
 
     private func parseStandardHeartRateMeasurement(_ data: Data) -> Int? {
