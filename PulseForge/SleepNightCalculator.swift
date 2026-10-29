@@ -1,0 +1,85 @@
+import Foundation
+
+/// Groups HealthKit asleep intervals into sleep sessions without double-counting
+/// overlapping stage/source samples. A session is assigned to its wake-up day.
+enum SleepNightCalculator {
+    struct Night: Equatable {
+        let wakeDate: Date
+        let durationMinutes: Double
+        let startDate: Date
+        let endDate: Date
+    }
+
+    struct Summary: Equatable {
+        let latestNight: Night?
+        let nights: [Night]
+        let sleepDebtHours: Double?
+    }
+
+    static func summarize(intervals: [DateInterval],
+                          now: Date,
+                          calendar: Calendar,
+                          targetMinutes: Double = 480,
+                          debtWindowNights: Int = 7,
+                          sessionGapMinutes: Double = 90) -> Summary {
+        guard targetMinutes.isFinite, targetMinutes > 0,
+              debtWindowNights > 0,
+              sessionGapMinutes.isFinite, sessionGapMinutes >= 0 else {
+            return Summary(latestNight: nil, nights: [], sleepDebtHours: nil)
+        }
+
+        let valid = intervals
+            .filter { $0.start < $0.end && $0.end <= now }
+            .sorted { $0.start < $1.start }
+
+        // First union overlapping samples (e.g. duplicate Apple Health sources).
+        var merged: [DateInterval] = []
+        for interval in valid {
+            guard let last = merged.last else {
+                merged.append(interval)
+                continue
+            }
+            if interval.start <= last.end {
+                merged[merged.count - 1] = DateInterval(
+                    start: last.start,
+                    end: max(last.end, interval.end)
+                )
+            } else {
+                merged.append(interval)
+            }
+        }
+
+        // Then join fragments separated by short awakenings into one night.
+        let gap = sessionGapMinutes * 60
+        var sessions: [DateInterval] = []
+        for interval in merged {
+            guard let last = sessions.last else {
+                sessions.append(interval)
+                continue
+            }
+            if interval.start.timeIntervalSince(last.end) <= gap {
+                sessions[sessions.count - 1] = DateInterval(
+                    start: last.start,
+                    end: interval.end
+                )
+            } else {
+                sessions.append(interval)
+            }
+        }
+
+        let nights = sessions.map { session in
+            Night(
+                wakeDate: calendar.startOfDay(for: session.end),
+                durationMinutes: session.duration / 60,
+                startDate: session.start,
+                endDate: session.end
+            )
+        }.sorted { $0.endDate > $1.endDate }
+
+        let debtNights = Array(nights.prefix(debtWindowNights))
+        let debt = debtNights.isEmpty ? nil :
+            debtNights.reduce(0.0) { $0 + max(0, targetMinutes - $1.durationMinutes) } / 60
+
+        return Summary(latestNight: nights.first, nights: nights, sleepDebtHours: debt)
+    }
+}
