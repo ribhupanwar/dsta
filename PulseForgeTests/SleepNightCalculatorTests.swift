@@ -2,7 +2,7 @@ import XCTest
 @testable import PulseForge
 
 final class SleepNightCalculatorTests: XCTestCase {
-    func testOverlappingSamplesAreCountedOnlyOnce() {
+    func testOverlappingSamplesAreCountedOnlyOnce() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let now = date("2026-10-29T08:00:00Z")
@@ -13,11 +13,11 @@ final class SleepNightCalculatorTests: XCTestCase {
         let result = SleepNightCalculator.summarize(
             intervals: intervals, now: now, calendar: calendar
         )
-        XCTAssertEqual(result.latestNight?.durationMinutes, 420, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(result.latestNight).durationMinutes, 420, accuracy: 0.001)
         XCTAssertEqual(result.nights.count, 1)
     }
 
-    func testShortAwakeningFragmentsRemainOneNight() {
+    func testShortAwakeningFragmentsRemainOneNight() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let now = date("2026-10-29T08:00:00Z")
@@ -29,10 +29,10 @@ final class SleepNightCalculatorTests: XCTestCase {
             intervals: intervals, now: now, calendar: calendar
         )
         XCTAssertEqual(result.nights.count, 1)
-        XCTAssertEqual(result.latestNight?.durationMinutes, 330, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(result.latestNight).durationMinutes, 330, accuracy: 0.001)
     }
 
-    func testLongGapCreatesSeparateSessionsAndDebtUsesRecordedNightsOnly() {
+    func testLongGapCreatesSeparateSessionsAndDebtUsesRecordedNightsOnly() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let now = date("2026-10-29T12:00:00Z")
@@ -45,7 +45,7 @@ final class SleepNightCalculatorTests: XCTestCase {
             targetMinutes: 480, debtWindowNights: 7
         )
         XCTAssertEqual(result.nights.count, 2)
-        XCTAssertEqual(result.sleepDebtHours, 4, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(result.sleepDebtHours), 4, accuracy: 0.001)
         XCTAssertEqual(result.latestNight?.wakeDate, calendar.startOfDay(for: date("2026-10-29T05:00:00Z")))
     }
 
