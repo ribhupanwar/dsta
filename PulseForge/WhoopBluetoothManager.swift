@@ -1872,17 +1872,17 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     | (UInt32(endData[3]) << 24)
                 guard let command = whoop5CommandCharacteristic,
                       command.properties.contains(.write) else {
-                    recordVendorTimeline("HISTORY_END received · trim=\\(trimCursor) · ACK withheld because command characteristic is unavailable")
-                    return "METADATA · HISTORY_END · trim=\\(trimCursor) · ACK unavailable"
+                    recordVendorTimeline("HISTORY_END received · trim=\(trimCursor) · ACK withheld because command characteristic is unavailable")
+                    return "METADATA · HISTORY_END · trim=\(trimCursor) · ACK unavailable"
                 }
                 let sequence = whoop5NextCommandSequence
                 whoop5NextCommandSequence &+= 1
                 let payload = [UInt8(0x01)] + endData
                 let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x17, payload: payload)
                 whoop5PendingWrites.append("HISTORICAL_DATA_RESULT")
-                recordVendorTimeline("HISTORY_END ACK requested · HISTORICAL_DATA_RESULT(23) · trim=\\(trimCursor) · seq=\\(sequence) · exact end_data echoed")
+                recordVendorTimeline("HISTORY_END ACK requested · HISTORICAL_DATA_RESULT(23) · trim=\(trimCursor) · seq=\\(sequence) · exact end_data echoed")
                 peripheral.writeValue(frame, for: command, type: .withResponse)
-                return "METADATA · HISTORY_END · trim=\\(trimCursor) · HISTORICAL_DATA_RESULT(23) ACK sent"
+                return "METADATA · HISTORY_END · trim=\(trimCursor) · HISTORICAL_DATA_RESULT(23) ACK sent"
             }
             let metadataName = metadataType == 1 ? "HISTORY_START"
                 : metadataType == 3 ? "HISTORY_COMPLETE" : "metadata type \(metadataType)"
