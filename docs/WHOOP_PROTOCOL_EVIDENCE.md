@@ -115,3 +115,32 @@ These are **Observed** symbol/string names from the IPA executable. They establi
 PulseForge currently writes this 16-byte constant to FD4B0002:
 `AA 01 08 00 00 01 E6 71 23 01 91 01 36 3E 5C 8D`.
 That is **Observed in PulseForge source**, but its equivalence to WHOOP's `sendGetHelloPacket` request is **Not verified**. Do not replace it with either 144-byte resource without resolving the original sender implementation and response contract.
+
+
+## Recovery / Sleep / Cardio Load verification audit (2026-10-29)
+
+The following existing engines were re-read from `main`; they were not newly created in this protocol audit:
+
+- `PulseForge/RecoveryScoreCalculator.swift`: transparent 0–100 estimate using Apple Health SDNN (60%) and resting HR (40%), with a median baseline requiring at least three prior daily values for both inputs. This is not WHOOP Recovery parity.
+- `PulseForge/SleepNightCalculator.swift`: unions overlapping asleep intervals, joins fragments separated by up to 90 minutes without counting awake gaps as sleep, selects the longest session per wake day, and calculates debt from up to seven recorded nights.
+- `PulseForge/SleepNeedCalculator.swift`: transparent heuristic with 8-hour default baseline, capped debt repayment, optional nap and strain adjustments. Personal baseline learning and calibrated strain adjustment are not wired into the current HealthKit store.
+- `PulseForge/CardioLoadCalculator.swift`: timestamped workout-HR intensity × credited duration, deduplicated timestamps and 60-second gap cap. Explicitly not WHOOP's 0–21 Strain algorithm.
+- `PulseForge/TrainingInsightsStore.swift`: reads HealthKit sleep, SDNN, resting HR, workouts and workout HR; withholds Recovery until today's HRV/RHR and three prior baseline days exist, and withholds cardio load without a measured max HR.
+
+### CI evidence
+
+Workflow run `40842102574` was labelled `cancelled` by the GitHub Actions job API, so its overall conclusion is not a clean successful workflow. However, its uploaded Xcode log artifact (`pulseforge-xcode-logs`, artifact `12883825768`) contains explicit `** BUILD SUCCEEDED **` and `** TEST SUCCEEDED **` markers. The test log reports **61 tests, 0 failures**, including:
+
+- `RecoveryScoreCalculatorTests`: 4 passed
+- `SleepNeedCalculatorTests`: 6 passed
+- `SleepNightCalculatorTests`: 5 passed
+- `CardioLoadCalculatorTests`: 4 passed
+
+This verifies simulator compilation and these pure-calculation unit tests on that commit. It does not validate live HealthKit data, iPhone entitlements, real-device BLE, or WHOOP algorithm parity. The simulator test log also contains HealthKit entitlement errors (`Missing com.apple.developer.healthkit entitlement`), so HealthKit integration still requires a correctly signed iPhone build and explicit permission/data validation.
+
+### Known validation gaps before publishing user-facing scores
+
+1. Confirm HealthKit authorization and actual sample retrieval on the user's signed iPhone; simulator tests cannot establish this.
+2. Confirm sleep stage/source de-duplication and night assignment against real Apple Health samples, including naps and timezone/day-boundary cases.
+3. Strengthen Recovery input provenance and baseline quality; current score is an explicitly labelled PulseForge SDNN/RHR estimate, not overnight WHOOP RMSSD or WHOOP Recovery.
+4. Keep Cardio Load separate from WHOOP Strain until a verified physiological model and device/workout validation exist.
