@@ -16,8 +16,10 @@ enum HistoricalRRPacketArchive {
     static let maximumRecords = 500
 
     static func load(from fileURL: URL) -> [HistoricalRRPacketRecord] {
-        guard let data = try? Data(contentsOf: fileURL),
-              let records = try? JSONDecoder().decode([HistoricalRRPacketRecord].self, from: data) else {
+        guard let data = try? Data(contentsOf: fileURL) else { return [] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let records = try? decoder.decode([HistoricalRRPacketRecord].self, from: data) else {
             return []
         }
         return records
