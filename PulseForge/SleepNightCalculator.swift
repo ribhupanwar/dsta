@@ -20,6 +20,8 @@ enum SleepNightCalculator {
         let latestNight: Night?
         let nights: [Night]
         let sleepDebtHours: Double?
+        /// Median of the longest recorded sleep session per wake day in the supplied history.
+        let typicalSleepHours: Double?
     }
 
     static func summarize(intervals: [DateInterval],
@@ -31,7 +33,7 @@ enum SleepNightCalculator {
         guard targetMinutes.isFinite, targetMinutes > 0,
               debtWindowNights > 0,
               sessionGapMinutes.isFinite, sessionGapMinutes >= 0 else {
-            return Summary(latestNight: nil, nights: [], sleepDebtHours: nil)
+            return Summary(latestNight: nil, nights: [], sleepDebtHours: nil, typicalSleepHours: nil)
         }
 
         let valid = intervals
@@ -87,6 +89,27 @@ enum SleepNightCalculator {
         let debt = debtNights.isEmpty ? nil :
             debtNights.reduce(0.0) { $0 + max(0, targetMinutes - $1.durationMinutes) } / 60
 
-        return Summary(latestNight: nights.first, nights: nights, sleepDebtHours: debt)
+        // Daytime naps can create extra sessions on a wake day. Use only the
+        // longest session for each wake day before calculating a robust median.
+        let mainSessionHours = Dictionary(grouping: nights, by: \.wakeDate)
+            .values
+            .compactMap { sessions in sessions.map(\.durationMinutes).max().map { $0 / 60 } }
+            .sorted()
+        let typicalSleepHours: Double?
+        if mainSessionHours.isEmpty {
+            typicalSleepHours = nil
+        } else {
+            let middle = mainSessionHours.count / 2
+            typicalSleepHours = mainSessionHours.count.isMultiple(of: 2)
+                ? (mainSessionHours[middle - 1] + mainSessionHours[middle]) / 2
+                : mainSessionHours[middle]
+        }
+
+        return Summary(
+            latestNight: nights.first,
+            nights: nights,
+            sleepDebtHours: debt,
+            typicalSleepHours: typicalSleepHours
+        )
     }
 }
