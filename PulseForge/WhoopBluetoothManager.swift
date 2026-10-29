@@ -1768,6 +1768,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     revision: 18,
                     intervalsMilliseconds: rr,
                     rawFrameHex: rawHex,
+                    physiologicalTimestamp: nil,
                     decodeError: decodeError
                 )
                 if let support = FileManager.default.urls(
