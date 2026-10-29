@@ -358,8 +358,13 @@ struct WhoopRRCard: View {
         guard !intervals.isEmpty else { return nil }
         return Double(intervals.reduce(0, +)) / Double(intervals.count)
     }
+    private var isRRFresh: Bool {
+        guard let updatedAt = bluetooth.whoopRRLastUpdatedAt else { return false }
+        return Date().timeIntervalSince(updatedAt) <= 15
+    }
     private var shortWindowRMSSD: Double? {
-        RRVariabilityCalculator.rmssdMilliseconds(from: rollingIntervals)
+        guard isRRFresh else { return nil }
+        return RRVariabilityCalculator.rmssdMilliseconds(from: rollingIntervals)
     }
 
     var body: some View {
@@ -369,9 +374,9 @@ struct WhoopRRCard: View {
                     .font(.system(size: 9, weight: .bold)).tracking(0.9)
                     .foregroundStyle(ForgeColors.muted)
                 Spacer()
-                Text(intervals.isEmpty ? "WAITING" : "LIVE DATA")
+                Text(intervals.isEmpty ? "WAITING" : (isRRFresh ? "LIVE DATA" : "STALE"))
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(intervals.isEmpty ? ForgeColors.muted : ForgeColors.lime)
+                    .foregroundStyle(isRRFresh ? ForgeColors.lime : ForgeColors.muted)
             }
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(meanInterval.map { String(format: "%.0f", $0) } ?? "—")
@@ -401,7 +406,9 @@ struct WhoopRRCard: View {
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white)
                 .lineLimit(2)
-            Text(bluetooth.whoopRRSource)
+            Text(bluetooth.whoopRRSource + (bluetooth.whoopRRLastUpdatedAt.map {
+                " · updated \(Int(max(0, Date().timeIntervalSince($0))))s ago"
+            } ?? ""))
                 .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
             Text("RMSSD requires 30+ realtime intervals. Short-window estimate only; not WHOOP HRV, daily HRV or a Recovery input.")
                 .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
