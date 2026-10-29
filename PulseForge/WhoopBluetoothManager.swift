@@ -1092,6 +1092,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoopRRIntervalsMilliseconds.removeAll()
         whoopRRWindowMilliseconds.removeAll()
+        whoopLiveRMSSDMilliseconds = nil
+        lastWhoopRealtimeHRAt = nil
         whoopRRLastUpdatedAt = nil
         whoopRRSource = "Waiting for WHOOP RR intervals"
         whoop5PendingWrites.removeAll()
