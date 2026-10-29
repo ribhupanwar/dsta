@@ -412,7 +412,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                     }
                     builder.finishWorkout { workout, finishError in
                         DispatchQueue.main.async {
-                            if let workout {
+                            if workout != nil {
                                 exportedIDs.insert(record.id.uuidString)
                                 UserDefaults.standard.set(Array(exportedIDs), forKey: exportedKey)
                                 self.healthKitExportStatus = "Saved to Apple Health · \(heartRateSamples.count) HR samples"
@@ -1878,15 +1878,14 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 let payload = [UInt8(0x01)] + endData
                 let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x17, payload: payload)
                 whoop5PendingWrites.append("HISTORICAL_DATA_RESULT")
-                let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
-                recordVendorTimeline("HISTORY_END ACK requested · HISTORICAL_DATA_RESULT(23) · trim=\\(trimCursor) · seq=\\(sequence) · exact end_data echoed · HEX: \\(hex)")
+                recordVendorTimeline("HISTORY_END ACK requested · HISTORICAL_DATA_RESULT(23) · trim=\\(trimCursor) · seq=\\(sequence) · exact end_data echoed")
                 peripheral.writeValue(frame, for: command, type: .withResponse)
                 return "METADATA · HISTORY_END · trim=\\(trimCursor) · HISTORICAL_DATA_RESULT(23) ACK sent"
             }
             let metadataName = metadataType == 1 ? "HISTORY_START"
-                : metadataType == 3 ? "HISTORY_COMPLETE" : "metadata type \\(metadataType)"
-            recordVendorTimeline("WHOOP metadata observed · \\(metadataName) · CRC valid")
-            return "METADATA · \\(metadataName) · CRC valid"
+                : metadataType == 3 ? "HISTORY_COMPLETE" : "metadata type \(metadataType)"
+            recordVendorTimeline("WHOOP metadata observed · \(metadataName) · CRC valid")
+            return "METADATA · \(metadataName) · CRC valid"
 
         case 47: // HISTORICAL_DATA; contains several Gen5 layouts, not all of them IMU.
             // Preserve every CRC-valid v18 frame before trusting the candidate RR offsets.
