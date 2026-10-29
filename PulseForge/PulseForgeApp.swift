@@ -735,12 +735,17 @@ struct StrainDashboard: View {
                             Circle().trim(from: 0, to: 0)
                                 .stroke(Color(red: 0.98, green: 0.58, blue: 0.27), style: StrokeStyle(lineWidth: 9, lineCap: .round))
                                 .rotationEffect(.degrees(-90))
-                            Text("—").font(.system(size: 39, weight: .light, design: .rounded))
+                            Text(insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—")
+                                .font(.system(size: 39, weight: .light, design: .rounded))
+                                .monospacedDigit()
                         }
                         .frame(width: 132, height: 132)
                         VStack(alignment: .leading, spacing: 7) {
-                            Text("No strain score yet").font(.system(size: 18, weight: .semibold))
-                            Text("A verified workout and heart-rate load model are needed to calculate daily strain.")
+                            Text(insights.cardioLoadPoints == nil ? "Building cardio load" : "Cardio load recorded")
+                                .font(.system(size: 18, weight: .semibold))
+                            Text(insights.cardioLoadPoints == nil
+                                 ? "Add a measured maximum heart rate and record a workout with heart-rate samples."
+                                 : "Intensity-weighted workout load from Apple Health heart-rate samples. This is not a WHOOP Strain score.")
                                 .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                         }
                     }
