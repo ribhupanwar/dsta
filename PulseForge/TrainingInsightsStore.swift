@@ -30,6 +30,7 @@ final class TrainingInsightsStore: ObservableObject {
         loadSleep { [weak self] hours, debt in
             self?.sleepHours = hours
             self?.sleepDebtHours = debt
+            self?.sleepNeedHours = SleepNeedCalculator.calculate(sleepDebtHours: debt)
             group.leave()
         }
 
