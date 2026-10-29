@@ -384,7 +384,7 @@ struct WhoopRRCard: View {
                  ? "No validated RR interval packet received yet."
                  : intervals.map { "\($0) ms" }.joined(separator: "  ·  "))
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(ForgeColors.primary)
+                .foregroundStyle(.white)
                 .lineLimit(2)
             Text(bluetooth.whoopRRSource)
                 .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
