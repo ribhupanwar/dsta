@@ -98,3 +98,20 @@ A byte-for-byte comparison of the two extracted 144-byte resources found:
 **Interpretation limit:** these offsets are byte-difference coordinates only. Without resolving the WHOOP executable's resource loader, packet serializer, and revision-specific field definitions, we cannot label these ranges as device ID, firmware, capabilities, CRC, or outbound command fields. Do not copy either blob into PulseForge or derive a CLIENT_HELLO from it yet.
 
 **Next reverse-engineering step:** inspect the executable's references to `HelloPacketRev3` / `HelloPacketRev4`, `HelloInfoProviding`, and `HelloResponsePacket`; establish whether the resources are loaded as a request, template, or response-side structure, then map the serializer and response parser before changing BLE writes.
+
+
+### Additional hello-related executable symbols
+
+The extracted WHOOP executable string table also contains these names:
+
+- `sendGetHelloPacket`
+- `HelloSending` and `AsyncHelloSending`
+- `HelloPacketMinSize` and `HelloPacketErrors`
+- `HelloResponsePacket`, `HelloResponsePacketRev3`, `HelloResponsePacketRev4`, and `HelloResponsePacketRevRouter`
+- `HelloInfoProviding` and `helloResponse`
+
+These are **Observed** symbol/string names from the IPA executable. They establish that WHOOP has a distinct Hello sending path and revision-specific Hello Response parser/router abstractions. They do not expose the method bodies or prove that the two 144-byte bundle resources are the bytes written over BLE. In particular, the presence of both HelloPacketRev3/Rev4 resources and HelloResponsePacketRev3/Rev4 types makes it important not to conflate the request resource with the response parser.
+
+PulseForge currently writes this 16-byte constant to FD4B0002:
+`AA 01 08 00 00 01 E6 71 23 01 91 01 36 3E 5C 8D`.
+That is **Observed in PulseForge source**, but its equivalence to WHOOP's `sendGetHelloPacket` request is **Not verified**. Do not replace it with either 144-byte resource without resolving the original sender implementation and response contract.
