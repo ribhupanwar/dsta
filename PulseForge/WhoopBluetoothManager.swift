@@ -1850,19 +1850,29 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "COMMAND_RESPONSE · STOP_RAW_DATA(82) SUCCESS · TOGGLE_IMU_MODE OFF requested"
             }
             if command == 145 {
-                if result == 1 && echoedHostSequence == 1 {
-                    let responseHex = b.map { String(format: "%02X", $0) }.joined(separator: " ")
-                    recordVendorTimeline("GET_HELLO response raw HEX · \(responseHex)")
+                // The Gen5 strap assigns its own response-frame sequence in byte [9].
+                // It is NOT an echo of the fixed CLIENT_HELLO host sequence (1).
+                // On-device capture: CLIENT_HELLO produced PENDING at response seq 58,
+                // followed by SUCCESS at response seq 59; response counter [11] stayed 1.
+                guard whoop5HelloSent, whoop5HelloWriteAcknowledged else {
+                    return "COMMAND_RESPONSE · GET_HELLO ignored · no acknowledged CLIENT_HELLO · response seq \(echoedHostSequence) · \(resultName)"
                 }
-                guard result == 1, echoedHostSequence == 1 else {
-                    return "COMMAND_RESPONSE · GET_HELLO · seq echo \(echoedHostSequence) · result \(resultName) · CRC valid"
+                if result == 2 {
+                    recordVendorTimeline("GET_HELLO response · PENDING · strap response seq=\(echoedHostSequence) · responseCounter=\(responseCounter)")
+                    return "COMMAND_RESPONSE · GET_HELLO · PENDING · strap response seq \(echoedHostSequence)"
                 }
+                guard result == 1 else {
+                    recordVendorTimeline("GET_HELLO response · \(resultName) · strap response seq=\(echoedHostSequence)")
+                    return "COMMAND_RESPONSE · GET_HELLO · \(resultName) · strap response seq \(echoedHostSequence)"
+                }
+                let responseHex = b.map { String(format: "%02X", $0) }.joined(separator: " ")
+                recordVendorTimeline("GET_HELLO response raw HEX · strap response seq=\(echoedHostSequence) · \(responseHex)")
                 // Gen5 HELLO revision-1 semantic body spans 104 bytes.
                 guard b.count >= 121 else {
                     recordVendorTimeline("GET_HELLO response rejected · body too short · \(b.count) bytes")
                     return "COMMAND_RESPONSE · GET_HELLO success but body too short (\(b.count) bytes)"
                 }
-                recordVendorTimeline("GET_HELLO response accepted · sequence 1 · success · minimum body length met")
+                recordVendorTimeline("GET_HELLO response accepted · strap response seq=\(echoedHostSequence) · success · minimum body length met")
                 // Revision-1 Gen5 HELLO carries strap RTC at body[6..13]:
                 // seconds:u32le + subseconds:u32le in 1/32768-second units.
                 whoop5HelloRevision = Int(b[13])
