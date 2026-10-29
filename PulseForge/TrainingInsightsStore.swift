@@ -252,7 +252,8 @@ final class TrainingInsightsStore: ObservableObject {
                     let nextGap = index + 1 < values.count
                         ? values[index + 1].startDate.timeIntervalSince(sample.startDate)
                         : sample.endDate.timeIntervalSince(sample.startDate)
-                    let minutes = min(1.0, max(0, nextGap) / 60)
+                    let sampleCoverage = max(sample.endDate.timeIntervalSince(sample.startDate), nextGap)
+                    let minutes = min(5.0, max(0, sampleCoverage) / 60)
                     let intensity = min(1, max(0, bpm / Double(maxHR)))
                     lock.lock()
                     totalLoad += minutes * intensity * 100
