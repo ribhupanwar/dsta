@@ -1,0 +1,83 @@
+name: WHOOP IPA Mach-O protocol symbol audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/whoop-ipa-mach-o-audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-mach-o:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Download pinned WHOOP 5.75.0 IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            "https://github.com/ribhupanwar/dsta/releases/download/whoop-5.75.0/pulseforge.ipa" \
+            --output /tmp/whoop-original.ipa
+          shasum -a 256 /tmp/whoop-original.ipa
+          unzip -tq /tmp/whoop-original.ipa
+
+      - name: Extract arm64 Mach-O symbols and targeted disassembly
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mach-o-evidence
+          unzip -q /tmp/whoop-original.ipa -d /tmp/whoop-ipa
+          APP_INFO="$(find /tmp/whoop-ipa/Payload -maxdepth 2 -name Info.plist -print -quit)"
+          APP_DIR="$(dirname "$APP_INFO")"
+          EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_INFO")"
+          BIN="$APP_DIR/$EXECUTABLE"
+          test -f "$BIN"
+          echo "App: $APP_DIR" > mach-o-evidence/README.txt
+          echo "Executable: $BIN" >> mach-o-evidence/README.txt
+          echo "IPA SHA-256: $(shasum -a 256 /tmp/whoop-original.ipa | awk '{print $1}')" >> mach-o-evidence/README.txt
+          echo "Binary SHA-256: $(shasum -a 256 "$BIN" | awk '{print $1}')" >> mach-o-evidence/README.txt
+          echo "Architectures: $(lipo -archs "$BIN")" >> mach-o-evidence/README.txt
+          lipo "$BIN" -thin arm64 -output /tmp/whoop-arm64
+          nm -arch arm64 -nm /tmp/whoop-arm64 > mach-o-evidence/nm-arm64.txt 2>&1 || true
+          xcrun swift-demangle < <(awk '{print $NF}' mach-o-evidence/nm-arm64.txt | grep '^_' | sort -u) \
+            > mach-o-evidence/swift-demangled-symbols.txt 2>&1 || true
+          grep -Ei 'Hello(Packet|Response|Sending|Info)|sendGetHelloPacket|RealtimeHRPacket|RealtimeSequenceable|HistoricalSequenceable|FrameEnvelopePacket|RevisionRouter|RealtimeHeartRateData|HistoricalPull|WhoopPacket.*CRC|rrIntervals|RealtimeDataType' \
+            mach-o-evidence/swift-demangled-symbols.txt > mach-o-evidence/protocol-symbols.txt || true
+          strings -a /tmp/whoop-arm64 | grep -Ei 'HelloPacketRev[34]|sendGetHelloPacket|HelloResponsePacket|RealtimeHRPacket|HistoricalSequenceable|rrIntervals|FD4B|Characteristics Subscribed|HELLO RESPONSE' \
+            > mach-o-evidence/protocol-strings.txt || true
+          otool -arch arm64 -l /tmp/whoop-arm64 > mach-o-evidence/load-commands.txt
+          otool -arch arm64 -tvV /tmp/whoop-arm64 > /tmp/whoop-disassembly.txt 2>mach-o-evidence/otool-errors.txt || true
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          source = Path("/tmp/whoop-disassembly.txt").read_text(errors="replace")
+          lines = source.splitlines()
+          terms = re.compile(r"hello|realtimehr|historical|frameenvelope|revisionrouter|rrinterval|sendgethellopacket|crc", re.I)
+          hits = [i for i, line in enumerate(lines) if terms.search(line)]
+          keep = set()
+          for i in hits:
+              keep.update(range(max(0, i-18), min(len(lines), i+45)))
+          selected = sorted(keep)
+          out = []
+          previous = -2
+          for i in selected:
+              if i != previous + 1:
+                  out.append("\n--- disassembly context ---")
+              out.append(lines[i])
+              previous = i
+          Path("mach-o-evidence/protocol-disassembly-context.txt").write_text("\n".join(out) + "\n")
+          print(f"Disassembly lines: {len(lines)}; matching context lines: {len(selected)}")
+          PY
+          echo "Targeted Swift symbols and disassembly context are static evidence only; they do not prove runtime BLE behaviour." >> mach-o-evidence/README.txt
+          echo "No protocol payloads were modified or sent." >> mach-o-evidence/README.txt
+
+      - name: Upload Mach-O evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: whoop-ipa-mach-o-protocol-audit
+          path: mach-o-evidence/
+          retention-days: 14
