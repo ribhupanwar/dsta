@@ -767,6 +767,33 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         }
     }
 
+    /// JSON export of CRC-valid Type-47 v18 frames captured from the connected band.
+    /// Includes raw frame hex, phone receipt time, candidate RR values, and decode errors.
+    /// Physiological timestamps remain nil until the packet layout is independently verified.
+    var historicalRRArchiveExport: String {
+        guard let support = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return "[]" }
+        let archiveURL = support
+            .appendingPathComponent("PulseForge", isDirectory: true)
+            .appendingPathComponent("historical-whoop-rr-v1.json")
+        guard let data = try? Data(contentsOf: archiveURL),
+              let contents = String(data: data, encoding: .utf8) else {
+            return "[]"
+        }
+        return contents
+    }
+
+    var historicalRRArchiveRecordCount: Int {
+        guard let support = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return 0 }
+        let archiveURL = support
+            .appendingPathComponent("PulseForge", isDirectory: true)
+            .appendingPathComponent("historical-whoop-rr-v1.json")
+        return HistoricalRRPacketArchive.load(from: archiveURL).count
+    }
+
     var diagnosticSnapshot: String {
         var lines = [
             "GATT summary: \(gattCapabilitySummary)",
@@ -816,6 +843,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP latest CRC-valid raw IMU frame hex (outer type 43 · inner 0x2B/R21): \(whoopIMULastRawFrameHex)",
             "WHOOP RR state: \(whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · source: \(whoopRRSource) · last RR update: \(whoopRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
+            "WHOOP historical Type-47 v18 archive: \\(historicalRRArchiveRecordCount) raw frames · source: \\(whoopHistoricalRRSource) · physiological timestamp unverified",
             "WHOOP IMU recent CRC-valid raw frames (oldest first):",
         ]
         lines.append(contentsOf: whoopIMURawFrameHistory.isEmpty ? ["  none"] : whoopIMURawFrameHistory.map { "  \($0)" })
