@@ -190,6 +190,7 @@ struct TodayDashboard: View {
 
 struct RecoveryDetailSheet: View {
     @EnvironmentObject private var health: HealthDataStore
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
     @EnvironmentObject private var insights: TrainingInsightsStore
     @Environment(\.dismiss) private var dismiss
 
