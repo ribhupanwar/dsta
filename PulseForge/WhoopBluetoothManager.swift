@@ -1880,7 +1880,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 let payload = [UInt8(0x01)] + endData
                 let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x17, payload: payload)
                 whoop5PendingWrites.append("HISTORICAL_DATA_RESULT")
-                recordVendorTimeline("HISTORY_END ACK requested · HISTORICAL_DATA_RESULT(23) · trim=\(trimCursor) · seq=\\(sequence) · exact end_data echoed")
+                recordVendorTimeline("HISTORY_END ACK requested · HISTORICAL_DATA_RESULT(23) · trim=\(trimCursor) · seq=\(sequence) · exact end_data echoed")
                 peripheral.writeValue(frame, for: command, type: .withResponse)
                 return "METADATA · HISTORY_END · trim=\(trimCursor) · HISTORICAL_DATA_RESULT(23) ACK sent"
             }
@@ -1952,7 +1952,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 if let decodeError {
                     return "HISTORICAL_DATA v18 · raw frame retained · RR candidate rejected · \(decodeError) · CRC valid"
                 }
-                return "HISTORICAL_DATA v18 · HR \(historicalHeartRateBPM.map(String.init) ?? "unavailable") bpm · RR \(rr.map(String.init).joined(separator: ",")) ms · band time \(physiologicalTimestamp.map { ISO8601DateFormatter().string(from: $0) } ?? "unverified") · CRC valid"
+                return "HISTORICAL_DATA v18 · HR \(historicalHeartRateBPM.map(String.init) ?? "unavailable") bpm · raw RR words \(rr.map(String.init).joined(separator: ",")) · units unverified · band time \(physiologicalTimestamp.map { ISO8601DateFormatter().string(from: $0) } ?? "unverified") · CRC valid"
             }
 
             // WHOOP 5 R22 can carry the same 1,244-byte R21 IMU body inside
