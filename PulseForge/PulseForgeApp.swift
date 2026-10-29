@@ -1458,6 +1458,29 @@ struct DeviceDashboard: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
+                    if bluetooth.historicalRRArchiveRecordCount > 0 {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("TYPE-47 V18 RAW RR ARCHIVE")
+                                    .font(.system(size: 9, weight: .bold)).tracking(1)
+                                    .foregroundStyle(ForgeColors.lime)
+                                Spacer()
+                                ShareLink(item: bluetooth.historicalRRArchiveExport) {
+                                    Label("EXPORT JSON", systemImage: "square.and.arrow.up")
+                                        .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                                        .foregroundStyle(ForgeColors.lime)
+                                }
+                            }
+                            Text("\(bluetooth.historicalRRArchiveRecordCount) CRC-valid raw frame(s) saved")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.white)
+                            Text("Export includes raw hex and decode errors. Phone receipt time is not physiological time; candidate RR offsets remain unverified.")
+                                .font(.system(size: 9))
+                                .foregroundStyle(ForgeColors.muted)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
+                    }
                     VStack(alignment: .leading, spacing: 7) {
                         Text("NOTIFICATION CHANNEL STATUS")
                             .font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
