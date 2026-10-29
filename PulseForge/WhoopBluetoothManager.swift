@@ -791,10 +791,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP realtime HR ON event confirmed: \(whoop5HRStreamConfirmed ? "yes" : "no")",
             "WHOOP Type-48 EVENT counts by channel: \(whoopEventCountsByChannel.keys.sorted().map { "\($0)=\(whoopEventCountsByChannel[$0] ?? 0)" }.joined(separator: ", ").isEmpty ? "none" : whoopEventCountsByChannel.keys.sorted().map { "\($0)=\(whoopEventCountsByChannel[$0] ?? 0)" }.joined(separator: ", "))",
             "WHOOP event IDs · total: \(whoopEventPacketCount) · ID 33: \(whoopEvent33Count) · ID 34: \(whoopEvent34Count) · last ID: \(whoopLastEventID.map(String.init) ?? "none") · last channel: \(whoopLastEventChannel)",
-            "WHOOP vendor notifications by channel: \(vendorNotificationCountsByChannel.keys.sorted().map { "\($0)=\(vendorNotificationCountsByChannel[$0] ?? 0) notifications/\(vendorNotificationBytesByChannel[$0] ?? 0) bytes" }.joined(separator: ", ").isEmpty ? "none" : vendorNotificationCountsByChannel.keys.sorted().map { "\($0)=\(vendorNotificationCountsByChannel[$0] ?? 0) notifications/\(vendorNotificationBytesByChannel[$0] ?? 0) bytes" }.joined(separator: ", "))",
-            "WHOOP CRC-valid packet types by channel: \(whoopPacketTypeCountsByChannel.keys.sorted().map { channel in "\(channel)=[\((whoopPacketTypeCountsByChannel[channel] ?? [:]).keys.sorted().map { "\($0):\((whoopPacketTypeCountsByChannel[channel] ?? [:])[$0] ?? 0)" }.joined(separator: ", "))]" }.joined(separator: "; ").isEmpty ? "none" : whoopPacketTypeCountsByChannel.keys.sorted().map { channel in "\(channel)=[\((whoopPacketTypeCountsByChannel[channel] ?? [:]).keys.sorted().map { "\($0):\((whoopPacketTypeCountsByChannel[channel] ?? [:])[$0] ?? 0)" }.joined(separator: ", "))]" }.joined(separator: "; "))",
-            "WHOOP last packet type by channel: \(whoopLastPacketTypeByChannel.keys.sorted().map { "\($0)=\(whoopLastPacketTypeByChannel[$0] ?? -1)" }.joined(separator: ", ").isEmpty ? "none" : whoopLastPacketTypeByChannel.keys.sorted().map { "\($0)=\(whoopLastPacketTypeByChannel[$0] ?? -1)" }.joined(separator: ", "))",
-            "WHOOP rejected frames by channel: \(whoopRejectedFrameCountsByChannel.keys.sorted().map { "\($0)=\(whoopRejectedFrameCountsByChannel[$0] ?? 0)" }.joined(separator: ", ").isEmpty ? "none" : whoopRejectedFrameCountsByChannel.keys.sorted().map { "\($0)=\(whoopRejectedFrameCountsByChannel[$0] ?? 0)" }.joined(separator: ", "))",
+            "WHOOP per-channel telemetry: \(whoopPerChannelTelemetrySummary)",
             "WHOOP last Event 33: \(whoopLastEvent33At.map { ISO8601DateFormatter().string(from: $0) } ?? "not observed") · \(whoopLastEvent33FrameHex)",
             "WHOOP last Event 34: \(whoopLastEvent34At.map { ISO8601DateFormatter().string(from: $0) } ?? "not observed") · \(whoopLastEvent34FrameHex)",
             "WHOOP automatic IMU request: \(whoop5AutoIMUStartRequested ? "yes" : "no")",
@@ -831,6 +828,28 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         lines.append("")
         lines.append("Note: WHOOP 5.0 frames are checked with header CRC16-Modbus and payload CRC32. HR stream activation is tracked separately from notification subscription.")
         return lines.joined(separator: "\n")
+    }
+
+    /// Compact, bounded summary of which GATT channels actually delivered notifications
+    /// and which CRC-valid WHOOP Gen5 frame types arrived on each channel.
+    private var whoopPerChannelTelemetrySummary: String {
+        let channelIDs = Set(vendorNotificationCountsByChannel.keys)
+            .union(whoopPacketTypeCountsByChannel.keys)
+            .union(whoopRejectedFrameCountsByChannel.keys)
+        guard !channelIDs.isEmpty else { return "none" }
+        return channelIDs.sorted().map { channel in
+            let notificationCount = vendorNotificationCountsByChannel[channel] ?? 0
+            let byteCount = vendorNotificationBytesByChannel[channel] ?? 0
+            let packetCounts = whoopPacketTypeCountsByChannel[channel] ?? [:]
+            let packetSummary = packetCounts.keys.sorted().map { type in
+                "\(type):\(packetCounts[type] ?? 0)"
+            }.joined(separator: ", ")
+            let lastType = whoopLastPacketTypeByChannel[channel].map(String.init) ?? "none"
+            let rejected = whoopRejectedFrameCountsByChannel[channel] ?? 0
+            let lastAt = vendorNotificationLastAtByChannel[channel]
+                .map { ISO8601DateFormatter().string(from: $0) } ?? "none"
+            return "\(channel): notifications=\(notificationCount), bytes=\(byteCount), validTypes=[\(packetSummary.isEmpty ? "none" : packetSummary)], lastType=\(lastType), crcRejected=\(rejected), lastAt=\(lastAt)"
+        }.joined(separator: " | ")
     }
 
     private func propertyNames(_ properties: CBCharacteristicProperties) -> String {
