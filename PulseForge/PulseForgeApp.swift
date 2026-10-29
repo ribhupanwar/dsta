@@ -156,8 +156,8 @@ struct TodayDashboard: View {
                 .overlay(RoundedRectangle(cornerRadius: 22).stroke(ForgeColors.stroke, lineWidth: 1))
 
                 HStack(spacing: 9) {
-                    CompactMetric(title: "SDNN HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
-                    CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
+                    CompactMetric(title: "WHOOP HRV", value: "—", unit: "ms")
+                    CompactMetric(title: "WHOOP RHR", value: "—", unit: "bpm")
                     CompactMetric(title: "SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                 }
                 LiveHeartRateCard()
@@ -219,7 +219,7 @@ struct RecoveryDetailSheet: View {
                         CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
                         CompactMetric(title: "SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                     }
-                    Text("Recovery trend and baseline history will appear as enough verified daily measurements are collected.")
+                    Text("WHOOP overnight RR/HRV and resting-HR history are not yet validated. Apple Health values are intentionally excluded.")
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(18)
@@ -846,39 +846,13 @@ struct StrainDashboard: View {
                             Text(insights.cardioLoadPoints == nil ? "Building cardio load" : "Cardio load recorded")
                                 .font(.system(size: 18, weight: .semibold))
                             Text(insights.cardioLoadPoints == nil
-                                 ? "Add a measured maximum heart rate and record a workout with heart-rate samples."
-                                 : "Intensity-weighted workout load from Apple Health heart-rate samples. This is not a WHOOP Strain score.")
+                                 ? "Waiting for WHOOP strap HR and validated motion-derived activity load."
+                                 : "WHOOP device-only strain will appear after HR and motion load validation.")
                                 .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                         }
                     }
                 }
                 .padding(20).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
-                SectionHeader(title: "PERSONAL HEART-RATE SETUP")
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Measured maximum heart rate (bpm)")
-                        .font(.system(size: 12, weight: .medium))
-                    HStack(spacing: 9) {
-                        TextField(measuredMaxHeartRate > 0 ? String(measuredMaxHeartRate) : "Enter measured max HR", text: $maxHeartRateDraft)
-                            .keyboardType(.numberPad)
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
-                            .padding(12)
-                            .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 10))
-                        Button("SAVE") {
-                            if let value = Int(maxHeartRateDraft), (100...240).contains(value) {
-                                measuredMaxHeartRate = value
-                                maxHeartRateDraft = ""
-                                insights.refresh()
-                            }
-                        }
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 15).padding(.vertical, 12)
-                        .background(ForgeColors.lime, in: Capsule())
-                    }
-                    Text("Enter a value measured during a hard effort or clinical test. PulseForge will leave cardio load blank until this is set.")
-                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
-                }
-                .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
                 SectionHeader(title: "CARDIO LOAD")
                 HStack(spacing: 10) {
                     CompactMetric(title: "CARDIO LOAD", value: insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—", unit: "load pts")
