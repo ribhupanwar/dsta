@@ -952,15 +952,11 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HelloWriteAcknowledged = false
         whoopSessionPhase = "GATT session reset · awaiting discovery"
         whoop5PostHelloNotifyRetryAttempted.removeAll()
+        // Cancel any quiet-period callback before rebuilding the GATT session.
         whoop5HRStallRecoveryWorkItem?.cancel()
         whoop5HRStallRecoveryWorkItem = nil
         whoop5HRStallRecoveryAttempted = false
         whoop5HRStreamEnableSent = false
-        // A delayed stall-recovery callback must never write commands after the
-        // peripheral has been disconnected or its GATT session has been cleared.
-        whoop5HRStallRecoveryWorkItem?.cancel()
-        whoop5HRStallRecoveryWorkItem = nil
-        whoop5HRStallRecoveryAttempted = false
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
         whoop5AutoIMUEnabled = false
@@ -1016,6 +1012,10 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         workoutDetectionSamples.removeAll()
         connectionTimeoutWorkItem?.cancel()
         connectionTimeoutWorkItem = nil
+        // A delayed HR-stall recovery must not issue a WHOOP command after disconnect.
+        whoop5HRStallRecoveryWorkItem?.cancel()
+        whoop5HRStallRecoveryWorkItem = nil
+        whoop5HRStallRecoveryAttempted = false
         pendingCharacteristicServices.removeAll()
         pendingDescriptorCharacteristics.removeAll()
         connectedName = nil
