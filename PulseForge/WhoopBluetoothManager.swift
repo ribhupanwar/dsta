@@ -88,6 +88,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopEventPacketCount = 0
     @Published private(set) var whoopLastEventID: Int?
     @Published private(set) var whoopLastEventFrameHex = "none"
+    /// True only after at least one CRC-valid type-40 HR frame in this connection.
+    private var whoop5HRDataObserved = false
     @Published private(set) var whoopConnectionGeneration = 0
     @Published private(set) var whoopSessionPhase = "Disconnected"
     @Published private(set) var heartRateUpdateCount = 0
@@ -769,6 +771,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP 5.0 CLIENT_HELLO sent: \(whoop5HelloSent ? "yes" : "no")",
             "WHOOP 5.0 CLIENT_HELLO write pending: \(whoop5HelloWritePending ? "yes" : "no")",
             "WHOOP realtime HR enable command sent: \(whoop5HRStreamEnableSent ? "yes" : "no")",
+            "WHOOP realtime HR data observed (type 40): \(whoop5HRDataObserved ? "yes" : "no")",
             "WHOOP realtime HR ON event confirmed: \(whoop5HRStreamConfirmed ? "yes" : "no")",
             "WHOOP automatic IMU request: \(whoop5AutoIMUStartRequested ? "yes" : "no")",
             "WHOOP automatic IMU enabled: \(whoop5AutoIMUEnabled ? "yes" : "no")",
@@ -970,6 +973,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HRStallRecoveryAttempted = false
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
+        whoop5HRDataObserved = false
         whoop5AutoIMUStartRequested = false
         whoop5AutoIMUEnabled = false
         whoop5RawStreamStopWorkItem?.cancel()
@@ -1081,6 +1085,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5PostHelloNotifyRetryAttempted.removeAll()
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
+        whoop5HRDataObserved = false
         whoop5AutoIMUStartRequested = false
         whoop5AutoIMUEnabled = false
         whoop5RawStreamStopWorkItem?.cancel()
@@ -1695,6 +1700,13 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopRRSource = "Realtime RR decode rejected · \(error)"
             }
             lastWhoopRealtimeHRAt = Date()
+            if !whoop5HRDataObserved {
+                whoop5HRDataObserved = true
+                recordVendorTimeline("WHOOP Type-40 realtime HR data observed · event 33 confirmation \(whoop5HRStreamConfirmed ? "present" : "not yet received")")
+            }
+            if !whoop5HRStreamConfirmed {
+                whoopSessionPhase = "Realtime HR data observed · event 33 not received · generation \(whoopConnectionGeneration)"
+            }
             recordHeartRateSample(bpm, source: "WHOOP5 REALTIME_DATA")
             let rrSummary = whoopRRIntervalsMilliseconds.isEmpty
                 ? "RR unavailable"
@@ -1717,6 +1729,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             if eventID == 34 {
                 whoop5HRStreamConfirmed = false
+                whoopSessionPhase = "Realtime HR stream stopped · event 34 received · generation \(whoopConnectionGeneration)"
                 lastBLEEvent = "WHOOP event 34 · BLE_REALTIME_HR_OFF"
                 return "EVENT · BLE_REALTIME_HR_OFF(34) · CRC valid"
             }
