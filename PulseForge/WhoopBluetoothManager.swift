@@ -2,6 +2,16 @@ import Foundation
 import CoreBluetooth
 import Combine
 import HealthKit
+import CryptoKit
+
+enum WhoopHistoricalFrameIdentity {
+    /// Stable full-payload identity: transport headers alone are not unique enough
+    /// because two records can share timestamps/sequence metadata but differ in samples.
+    static func key(_ frame: [UInt8], deviceID: String) -> String {
+        let digest = SHA256.hash(data: Data(frame))
+        return deviceID + ":" + digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
 
 struct DiscoveredWearable: Identifiable {
     let peripheral: CBPeripheral
@@ -2015,11 +2025,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
     private func whoop5HistoricalFrameKey(_ frame: [UInt8]) -> String {
         let device = connectedPeripheral?.identifier.uuidString ?? "unknown-device"
-        guard frame.count >= 24 else {
-            return device + ":" + frame.map { String(format: "%02X", $0) }.joined()
-        }
-        let identity = [frame[8]] + Array(frame[9..<19]) + Array(frame.suffix(4))
-        return device + ":" + identity.map { String(format: "%02X", $0) }.joined()
+        return WhoopHistoricalFrameIdentity.key(frame, deviceID: device)
     }
 
     /// Persist raw type-47 records and named type-52 historical IMU stream packets before
