@@ -159,6 +159,47 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var workoutWhoopIMUSamples: [WhoopIMUSample] = []
     private var lastWhoopIMUPersistedSampleCount = 0
 
+    private enum DashboardHistoryKey {
+        static let heartRate = "pulseforge.history.liveHeartRate.v1"
+        static let historicalRR = "pulseforge.history.historicalRR.v1"
+        static let historicalHR = "pulseforge.history.historicalHR.v1"
+        static let historicalAt = "pulseforge.history.historicalAt.v1"
+    }
+
+    private func persistDashboardHistory() {
+        let defaults = UserDefaults.standard
+        let cutoff = Date().addingTimeInterval(-7 * 24 * 60 * 60)
+        let retainedHR = liveHeartRateSamples.filter { $0.timestamp >= cutoff }
+        if let data = try? JSONEncoder().encode(retainedHR) {
+            defaults.set(data, forKey: DashboardHistoryKey.heartRate)
+        }
+        if let data = try? JSONEncoder().encode(whoopHistoricalRRIntervalsMilliseconds) {
+            defaults.set(data, forKey: DashboardHistoryKey.historicalRR)
+        }
+        if let value = whoopHistoricalHeartRateBPM {
+            defaults.set(value, forKey: DashboardHistoryKey.historicalHR)
+        }
+        if let value = whoopHistoricalTimestampLastUpdatedAt {
+            defaults.set(value, forKey: DashboardHistoryKey.historicalAt)
+        }
+    }
+
+    private func restoreDashboardHistory() {
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: DashboardHistoryKey.heartRate),
+           let samples = try? JSONDecoder().decode([LiveHeartRateSample].self, from: data) {
+            let cutoff = Date().addingTimeInterval(-7 * 24 * 60 * 60)
+            liveHeartRateSamples = samples.filter { $0.timestamp >= cutoff }
+        }
+        if let data = defaults.data(forKey: DashboardHistoryKey.historicalRR),
+           let intervals = try? JSONDecoder().decode([Int].self, from: data) {
+            whoopHistoricalRRIntervalsMilliseconds = intervals
+        }
+        whoopHistoricalHeartRateBPM = defaults.object(forKey: DashboardHistoryKey.historicalHR) as? Int
+        whoopHistoricalTimestampLastUpdatedAt = defaults.object(forKey: DashboardHistoryKey.historicalAt) as? Date
+        // Never restore live BPM/freshness or calculate live RMSSD from old samples.
+    }
+
     var freshHeartRateBPM: Int? {
         guard connectedName != nil, let lastHeartRateAt,
               Date().timeIntervalSince(lastHeartRateAt) <= 8 else { return nil }
@@ -605,6 +646,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         super.init()
         whoopBatteryPercent = UserDefaults.standard.object(forKey: "pulseforge.whoop.batteryPercent") as? Double
         whoopBatteryLastUpdatedAt = UserDefaults.standard.object(forKey: "pulseforge.whoop.batteryUpdatedAt") as? Date
+        restoreDashboardHistory()
         if let data = UserDefaults.standard.data(forKey: "pulseforge.whoop.lastWorkoutSamples"),
            let savedSamples = try? JSONDecoder().decode([LiveHeartRateSample].self, from: data) {
             workoutHeartRateSamples = savedSamples
@@ -1978,6 +2020,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         // live type-40 RR window or its freshness timestamp.
                         whoopHistoricalRRIntervalsMilliseconds = rr
                         whoopHistoricalRRLastUpdatedAt = receivedAt
+                        persistDashboardHistory()
                     }
                 } catch {
                     decodeError = String(describing: error)
@@ -2561,6 +2604,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         }
         let sample = LiveHeartRateSample(timestamp: timestamp, bpm: bpm)
         liveHeartRateSamples.append(sample)
+        if liveHeartRateSamples.count.isMultiple(of: 10) { persistDashboardHistory() }
         liveHeartRateSamples.removeAll { timestamp.timeIntervalSince($0.timestamp) > 60 }
         if liveHeartRateSamples.count > 120 {
             liveHeartRateSamples.removeFirst(liveHeartRateSamples.count - 120)
@@ -2603,6 +2647,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopRRWindowMilliseconds.removeAll(keepingCapacity: true)
         }
         whoopRRWindowMilliseconds.append(contentsOf: intervals)
+        persistDashboardHistory()
         if whoopRRWindowMilliseconds.count > 60 {
             whoopRRWindowMilliseconds.removeFirst(whoopRRWindowMilliseconds.count - 60)
         }
