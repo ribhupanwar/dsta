@@ -1675,8 +1675,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             if command == 3 {
                 if let offSequence = whoopEventProbeOffSequence,
                    echoedSequence == Int(offSequence) {
-                    recordVendorTimeline("Event probe OFF command response · seq=\(echoedSequence) · result=\(resultName)")
-                    if result != 2 { scheduleWhoopEventProbeRearm(after: 0.35) }
+                    recordVendorTimeline("Event probe OFF command response · seq=\(echoedSequence) · result=\(resultName) · 1.5s observation window")
+                    if result != 2 { scheduleWhoopEventProbeRearm(after: 1.5) }
                     return "COMMAND_RESPONSE · Event probe REALTIME_HR_OFF(3) · seq \(echoedSequence) · \(resultName)"
                 }
                 if let onSequence = whoopEventProbeOnSequence,
@@ -2114,7 +2114,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
         whoop5PendingWrites.append("REALTIME_HR_OFF_PROBE")
-        whoopEventProbeStatus = "OFF command sent · waiting for Event 34, then automatic ON"
+        whoopEventProbeStatus = "OFF command sent · 1.5s event observation window, then automatic ON"
         recordVendorTimeline("Event probe OFF write requested · opcode=03 payload=00 · seq=\(sequence)")
         peripheral.writeValue(frame, for: command, type: .withResponse)
         // Independent failsafe: restore HR even if the write/response callback is delayed or absent.
@@ -2386,7 +2386,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 recordVendorTimeline("Event probe OFF write callback failed · \(error.localizedDescription)")
                 scheduleWhoopEventProbeRearm(after: 0.25)
             } else {
-                whoopEventProbeStatus = "OFF write acknowledged · waiting for strap response/Event 34"
+                whoopEventProbeStatus = "OFF write acknowledged · waiting up to 1.5s for Event 34"
                 recordVendorTimeline("Event probe OFF write acknowledged by CoreBluetooth")
                 scheduleWhoopEventProbeRearm(after: 1.5)
             }
