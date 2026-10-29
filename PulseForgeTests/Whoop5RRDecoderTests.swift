@@ -14,9 +14,9 @@ final class Whoop5RRDecoderTests: XCTestCase {
     }
 
     func testDecodesCapturedRealtimeRRInMilliseconds() throws {
-        // NOOP-sourced type-40 fixture used as a candidate layout test: HR 98, RR 603/587 ms; not IPA-derived.
+        // NOOP-sourced type-40 fixture used as a candidate layout test: HR 98, RR 603/587 ticks (589/573 ms); not IPA-derived.
         let frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
-        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtime(frame), [603, 587])
+        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtime(frame), [589, 573])
     }
 
     func testDecodesCapturedHistoricalV18RRInMilliseconds() throws {
