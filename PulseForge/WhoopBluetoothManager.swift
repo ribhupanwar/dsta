@@ -1645,12 +1645,13 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
         case 47: // HISTORICAL_DATA; count received records separately from decoded six-axis IMU.
             let historyKey = whoop5HistoricalFrameKey(b)
-            if whoopHistoricalRecordKeys.insert(historyKey).inserted {
+            let isNewHistoricalRecord = whoopHistoricalRecordKeys.insert(historyKey).inserted
+            if isNewHistoricalRecord {
                 whoopHistoricalRecordCount += 1
-            }
-            if b.count > 9 {
-                if b[9] == 18 { whoopHistoricalLayout18FrameCount += 1 }
-                if b[9] == 21 { whoopHistoricalLayout21FrameCount += 1 }
+                if b.count > 9 {
+                    if b[9] == 18 { whoopHistoricalLayout18FrameCount += 1 }
+                    if b[9] == 21 { whoopHistoricalLayout21FrameCount += 1 }
+                }
             }
             whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
             let capturedAt = ISO8601DateFormatter().string(from: Date())
@@ -1660,6 +1661,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             if whoop5HistoricalRequestSent || whoop5HistoricalOffloadActive {
                 whoop5HistoricalChunkFrames.append(b)
+            }
+            guard isNewHistoricalRecord else {
+                return "HISTORICAL_DATA(47) · duplicate record ignored for decoded counters"
             }
 
             if b.count == 1244, b[8] == 0x2F, b[9] == 21 {
@@ -1676,9 +1680,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         historicalWhoopIMUSamples.removeFirst(historicalWhoopIMUSamples.count - 5000)
                     }
                     whoopHistoricalIMUFrameCount += 1
-                    whoopIMUFrameCount += 1
                     whoopHistoricalIMUSampleCount += decoded.count
-                    whoopIMUSampleCount += decoded.count
                     whoopIMUStatus = "Historical Gen5 R21 decoded · \(decoded.count) samples · 100 Hz"
                     recordVendorTimeline("HISTORICAL R21 IMU decoded · \(decoded.count) samples · type 47 · layout 21")
                     return "HISTORICAL_R21_IMU(0x2F) · decoded \(decoded.count) samples · CRC valid"
@@ -1695,8 +1697,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let historyKey = whoop5HistoricalFrameKey(b)
             if whoopHistoricalRecordKeys.insert(historyKey).inserted {
                 whoopHistoricalRecordCount += 1
+                whoopHistoricalIMUStreamFrameCount += 1
             }
-            whoopHistoricalIMUStreamFrameCount += 1
             whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
             let capturedAt = ISO8601DateFormatter().string(from: Date())
             whoopIMURawFrameHistory.append("type=52 · \(capturedAt) · \(whoopIMULastRawFrameHex)")
