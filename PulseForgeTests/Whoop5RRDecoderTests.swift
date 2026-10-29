@@ -151,3 +151,27 @@ final class RealtimeRMSSDCalculatorTests: XCTestCase {
         ))
     }
 }
+
+
+final class HistoricalAckWriteStateTests: XCTestCase {
+    func testSuccessfulCoreBluetoothWriteStillAwaitsBandProgress() {
+        XCTAssertEqual(
+            HistoricalAckWriteState.resolve(errorDescription: nil),
+            .acknowledgedAwaitingBandProgress
+        )
+    }
+
+    func testFailedCoreBluetoothWriteIsNotReportedAsAcknowledged() {
+        XCTAssertEqual(
+            HistoricalAckWriteState.resolve(errorDescription: "The operation timed out."),
+            .failed("The operation timed out.")
+        )
+    }
+
+    func testEmptyErrorDescriptionDoesNotCreateFalseFailure() {
+        XCTAssertEqual(
+            HistoricalAckWriteState.resolve(errorDescription: ""),
+            .acknowledgedAwaitingBandProgress
+        )
+    }
+}
