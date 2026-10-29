@@ -1771,6 +1771,41 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopIMUStatus = "Realtime IMU stream packet received · \(b.count) bytes · CRC valid · subtype decode pending"
             return "REALTIME_IMU_DATA_STREAM(51) · \(b.count) bytes · CRC valid · raw frame retained"
 
+        case 49: // METADATA; WHOOP 5 HISTORY_END must be acknowledged to advance the trim cursor.
+            // NOOP's hardware-backed v5 fixture establishes:
+            // meta_type @10 (2 = HISTORY_END), and end_data @21..<29 (trim cursor + next cursor).
+            // The official flow echoes these exact 8 bytes in HISTORICAL_DATA_RESULT(23),
+            // prefixed by 0x01. Do not infer timestamps from phone receipt time.
+            guard b.count >= 29 else {
+                return "METADATA · truncated frame · \\(b.count) bytes · CRC valid"
+            }
+            let metadataType = Int(b[10])
+            if metadataType == 2 { // HISTORY_END
+                let endData = Array(b[21..<29])
+                let trimCursor = UInt32(endData[0])
+                    | (UInt32(endData[1]) << 8)
+                    | (UInt32(endData[2]) << 16)
+                    | (UInt32(endData[3]) << 24)
+                guard let command = whoop5CommandCharacteristic,
+                      command.properties.contains(.write) else {
+                    recordVendorTimeline("HISTORY_END received · trim=\\(trimCursor) · ACK withheld because command characteristic is unavailable")
+                    return "METADATA · HISTORY_END · trim=\\(trimCursor) · ACK unavailable"
+                }
+                let sequence = whoop5NextCommandSequence
+                whoop5NextCommandSequence &+= 1
+                let payload = [UInt8(0x01)] + endData
+                let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x17, payload: payload)
+                whoop5PendingWrites.append("HISTORICAL_DATA_RESULT")
+                let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
+                recordVendorTimeline("HISTORY_END ACK requested · HISTORICAL_DATA_RESULT(23) · trim=\\(trimCursor) · seq=\\(sequence) · exact end_data echoed · HEX: \\(hex)")
+                peripheral.writeValue(frame, for: command, type: .withResponse)
+                return "METADATA · HISTORY_END · trim=\\(trimCursor) · HISTORICAL_DATA_RESULT(23) ACK sent"
+            }
+            let metadataName = metadataType == 1 ? "HISTORY_START"
+                : metadataType == 3 ? "HISTORY_COMPLETE" : "metadata type \\(metadataType)"
+            recordVendorTimeline("WHOOP metadata observed · \\(metadataName) · CRC valid")
+            return "METADATA · \\(metadataName) · CRC valid"
+
         case 47: // HISTORICAL_DATA; contains several Gen5 layouts, not all of them IMU.
             // Preserve every CRC-valid v18 frame before trusting the candidate RR offsets.
             // Receipt time is forensic metadata only; physiological time remains nil.
