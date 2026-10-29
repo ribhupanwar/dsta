@@ -44,6 +44,26 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         XCTAssertEqual(records.last?.rawFrameHex, "500")
     }
 
+    func testPersistsRawFrameWhenCandidateRRLayoutIsRejected() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let record = HistoricalRRPacketRecord(
+            receivedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            recordType: 47,
+            revision: 18,
+            intervalsMilliseconds: [],
+            rawFrameHex: "AA0147UNDECODED",
+            decodeError: "candidate RR count/offset rejected"
+        )
+
+        XCTAssertEqual(try HistoricalRRPacketArchive.append(record, to: url), 1)
+        let restored = try XCTUnwrap(HistoricalRRPacketArchive.load(from: url).first)
+        XCTAssertEqual(restored.rawFrameHex, record.rawFrameHex)
+        XCTAssertEqual(restored.intervalsMilliseconds, [])
+        XCTAssertEqual(restored.decodeError, record.decodeError)
+        XCTAssertNil(restored.physiologicalTimestamp)
+    }
+
     func testMissingOrInvalidArchiveLoadsAsEmpty() {
         XCTAssertTrue(HistoricalRRPacketArchive.load(from: temporaryURL()).isEmpty)
     }
