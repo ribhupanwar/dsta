@@ -10,6 +10,8 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
     let revision: Int
     let intervalsMilliseconds: [Int]
     let rawFrameHex: String
+    /// Historical v18 heart rate from the band, if the frame validates.
+    let heartRateBPM: Int?
     /// Nil until an embedded physiological timestamp is independently decoded.
     let physiologicalTimestamp: Date?
     /// Present when a CRC-valid v18 frame could not be decoded as RR.
