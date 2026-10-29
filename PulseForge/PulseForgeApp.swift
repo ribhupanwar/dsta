@@ -158,7 +158,7 @@ struct TodayDashboard: View {
                 HStack(spacing: 9) {
                     CompactMetric(title: "SDNN HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
                     CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
-                    CompactMetric(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                    CompactMetric(title: "SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                 }
                 LiveHeartRateCard()
                 LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE HEART RATE")
@@ -217,7 +217,7 @@ struct RecoveryDetailSheet: View {
                     HStack(spacing: 10) {
                         CompactMetric(title: "SDNN HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
                         CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
-                        CompactMetric(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                        CompactMetric(title: "SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                     }
                     Text("Recovery trend and baseline history will appear as enough verified daily measurements are collected.")
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
@@ -768,7 +768,7 @@ struct SleepDashboard: View {
                         ScoreRing(title: "PERFORMANCE", value: nil, tint: Color(red: 0.35, green: 0.62, blue: 0.96))
                             .frame(width: 112)
                         VStack(alignment: .leading, spacing: 7) {
-                            Text(health.sleepHours.map { String(format: "%.1f h", $0) } ?? "—")
+                            Text(insights.sleepHours.map { String(format: "%.1f h", $0) } ?? "—")
                                 .font(.system(size: 34, weight: .medium, design: .rounded)).monospacedDigit()
                             Text("Time asleep").font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                             Text("Sleep score needs a verified sleep target and complete sleep data.")
@@ -806,11 +806,11 @@ struct SleepDashboard: View {
                 SleepStageBreakdown(deep: health.deepSleepMinutes, rem: health.remSleepMinutes, core: health.coreSleepMinutes, awake: health.awakeMinutes)
                 SectionHeader(title: "SLEEP SUMMARY")
                 HStack(spacing: 10) {
-                    CompactMetric(title: "TOTAL SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                    CompactMetric(title: "TOTAL SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                     CompactMetric(title: "DEEP SLEEP", value: health.deepSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
                     CompactMetric(title: "REM SLEEP", value: health.remSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
                 }
-                Text("Sleep stages are read from Apple Health. Debt is the rolling shortfall against an 8-hour target across completed nights with recorded sleep.")
+                Text("Sleep duration and debt use overlap-deduplicated Apple Health asleep intervals. Stage totals are read separately from Apple Health; WHOOP-native stage decoding is not yet verified.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
