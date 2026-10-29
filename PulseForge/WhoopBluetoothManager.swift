@@ -1703,13 +1703,16 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopCommandResponseCount += 1
             let command = Int(b[10])
             guard b.count > 12 else { return "COMMAND_RESPONSE · cmd \(command) · truncated" }
-            let echoedSequence = Int(b[11])
+            // WHOOP 5 response byte [9] echoes the host command-frame sequence.
+            // Byte [11] is the strap's independent response counter; never correlate on it.
+            let echoedHostSequence = Int(b[9])
+            let responseCounter = Int(b[11])
             let result = Int(b[12])
             let resultName = [0: "FAILURE", 1: "SUCCESS", 2: "PENDING", 3: "UNSUPPORTED"][result] ?? "UNKNOWN(\(result))"
-            recordVendorTimeline("COMMAND_RESPONSE · cmd=\(command) · seq=\(echoedSequence) · result=\(resultName) · frame=\(b.count) bytes · CRC valid")
+            recordVendorTimeline("COMMAND_RESPONSE · cmd=\(command) · hostSeq=\(echoedHostSequence) · responseCounter=\(responseCounter) · result=\(resultName) · frame=\(b.count) bytes · CRC valid")
             if command == 81,
                let expectedSequence = whoop5RawStartSequence,
-               echoedSequence == Int(expectedSequence) {
+               echoedHostSequence == Int(expectedSequence) {
                 if result == 2 {
                     whoopIMUStatus = "START_RAW_DATA pending · awaiting final response"
                     return "COMMAND_RESPONSE · START_RAW_DATA(81) · PENDING"
@@ -1730,7 +1733,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             if command == 106,
                let expectedSequence = whoop5IMUModeEnableSequence,
-               echoedSequence == Int(expectedSequence),
+               echoedHostSequence == Int(expectedSequence),
                let targetEnabled = whoop5IMUModeTargetEnabled {
                 if result == 2 {
                     whoopIMUStatus = "Gen5 IMU mode \(targetEnabled ? "ON" : "OFF") pending · awaiting final response"
@@ -1763,7 +1766,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             if command == 82,
                let expectedSequence = whoop5RawStopSequence,
-               echoedSequence == Int(expectedSequence) {
+               echoedHostSequence == Int(expectedSequence) {
                 if result == 2 {
                     whoopIMUStatus = "STOP_RAW_DATA pending · awaiting final response"
                     return "COMMAND_RESPONSE · STOP_RAW_DATA(82) · PENDING"
