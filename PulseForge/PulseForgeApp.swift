@@ -409,8 +409,8 @@ struct WhoopRRCard: View {
                 .foregroundStyle(.white)
                 .lineLimit(2)
             Text(bluetooth.whoopRRSource + (bluetooth.whoopRRLastUpdatedAt.map {
-                " · updated \(Int(max(0, Date().timeIntervalSince($0))))s ago"
-            } ?? ""))
+                " · last RR batch \(Int(max(0, Date().timeIntervalSince($0))))s ago"
+            } ?? " · no RR batch timestamp"))
                 .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
             Text("RMSSD requires 30+ realtime intervals. Short-window estimate only; not WHOOP HRV, daily HRV or a Recovery input.")
                 .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
