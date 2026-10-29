@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feature/export-whoop-rr-raw-archive
     paths:
       - "PulseForge/**"
       - "project.yml"
