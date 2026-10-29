@@ -34,4 +34,21 @@ final class Whoop5RRDecoderTests: XCTestCase {
         let frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
         XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtime(Array(frame.prefix(23))))
     }
+
+    func testRejectsZeroAndImplausibleRRValues() {
+        let valid = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
+        var zero = valid
+        zero[18] = 0
+        zero[19] = 0
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtime(zero)) { error in
+            XCTAssertEqual(error as? Whoop5RRDecoder.DecodeError, .invalidIntervalValue(0))
+        }
+
+        var corrupt = valid
+        corrupt[18] = 0x88
+        corrupt[19] = 0x13 // 5000 ms
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtime(corrupt)) { error in
+            XCTAssertEqual(error as? Whoop5RRDecoder.DecodeError, .invalidIntervalValue(5000))
+        }
+    }
 }
