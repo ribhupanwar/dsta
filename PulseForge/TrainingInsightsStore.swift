@@ -18,6 +18,10 @@ final class TrainingInsightsStore: ObservableObject {
     @Published private(set) var restingHRDeviationBPM: Double?
     @Published private(set) var recoveryBaselineDays = 0
     @Published private(set) var cardioLoadPoints: Double?
+    @Published private(set) var whoopCardioLoadPointsToday: Double?
+    @Published private(set) var whoopWorkoutMinutesToday: Double = 0
+    @Published private(set) var whoopWorkoutSampleCountToday = 0
+    @Published private(set) var whoopSensorLoadStatus = "Waiting for WHOOP workout HR samples"
     @Published private(set) var workoutCountToday = 0
     @Published private(set) var workoutMinutesToday: Double?
     @Published private(set) var lastUpdated: Date?
@@ -26,6 +30,72 @@ final class TrainingInsightsStore: ObservableObject {
     private let healthStore = HKHealthStore()
     private let calendar = Calendar.current
     private let sleepTargetMinutes = 8.0 * 60.0
+    private var lastWhoopWorkoutHR: (timestamp: Date, bpm: Int)?
+    private var loadedWhoopLoadDay: String?
+    private let whoopLoadPointsKey = "pulseforge.whoop.dailyLoad.points"
+    private let whoopLoadMinutesKey = "pulseforge.whoop.dailyLoad.minutes"
+    private let whoopLoadSamplesKey = "pulseforge.whoop.dailyLoad.samples"
+    private let whoopLoadDayKey = "pulseforge.whoop.dailyLoad.day"
+
+    /// Ingest timestamped HR directly from the connected WHOOP BLE stream.
+    /// Only samples inside an explicitly recorded workout contribute to load.
+    func ingestWhoopHeartRate(_ bpm: Int, at timestamp: Date, workoutActive: Bool) {
+        loadWhoopDailyLoadIfNeeded(for: timestamp)
+        guard workoutActive else {
+            lastWhoopWorkoutHR = nil
+            return
+        }
+        if let previous = lastWhoopWorkoutHR {
+            let gap = timestamp.timeIntervalSince(previous.timestamp)
+            if gap > 0 && gap <= 10 {
+                let maxHR = UserDefaults.standard.string(forKey: "pulseforge.running.maxHeartRate")
+                    .flatMap(Double.init)
+                if let maxHR, maxHR > 0 {
+                    let intensity = min(1, max(0, Double(previous.bpm) / maxHR))
+                    let points = gap / 60 * intensity * 100
+                    whoopCardioLoadPointsToday = (whoopCardioLoadPointsToday ?? 0) + points
+                    UserDefaults.standard.set(whoopCardioLoadPointsToday, forKey: whoopLoadPointsKey)
+                }
+                whoopWorkoutMinutesToday += gap / 60
+                whoopWorkoutSampleCountToday += 1
+                UserDefaults.standard.set(whoopWorkoutMinutesToday, forKey: whoopLoadMinutesKey)
+                UserDefaults.standard.set(whoopWorkoutSampleCountToday, forKey: whoopLoadSamplesKey)
+                whoopSensorLoadStatus = maxHRDescription()
+            } else if gap > 10 {
+                whoopSensorLoadStatus = "WHOOP HR gap detected · interval excluded from load"
+            }
+        }
+        lastWhoopWorkoutHR = (timestamp, bpm)
+    }
+
+    private func maxHRDescription() -> String {
+        let hasMaxHR = UserDefaults.standard.string(forKey: "pulseforge.running.maxHeartRate")
+            .flatMap(Double.init).map { $0 > 0 } ?? false
+        return hasMaxHR
+            ? "Direct WHOOP BLE HR · recorded workout samples · measured max HR model"
+            : "Direct WHOOP BLE HR received · enter measured max HR to calculate load"
+    }
+
+    private func loadWhoopDailyLoadIfNeeded(for date: Date) {
+        let day = ISO8601DateFormatter().string(from: calendar.startOfDay(for: date))
+        guard loadedWhoopLoadDay != day else { return }
+        loadedWhoopLoadDay = day
+        lastWhoopWorkoutHR = nil
+        let savedDay = UserDefaults.standard.string(forKey: whoopLoadDayKey)
+        if savedDay == day {
+            whoopCardioLoadPointsToday = UserDefaults.standard.object(forKey: whoopLoadPointsKey) as? Double
+            whoopWorkoutMinutesToday = UserDefaults.standard.double(forKey: whoopLoadMinutesKey)
+            whoopWorkoutSampleCountToday = UserDefaults.standard.integer(forKey: whoopLoadSamplesKey)
+        } else {
+            whoopCardioLoadPointsToday = nil
+            whoopWorkoutMinutesToday = 0
+            whoopWorkoutSampleCountToday = 0
+            UserDefaults.standard.set(day, forKey: whoopLoadDayKey)
+            UserDefaults.standard.removeObject(forKey: whoopLoadPointsKey)
+            UserDefaults.standard.set(0.0, forKey: whoopLoadMinutesKey)
+            UserDefaults.standard.set(0, forKey: whoopLoadSamplesKey)
+        }
+    }
 
     func refresh() {
         guard HKHealthStore.isHealthDataAvailable(), !isRefreshing else { return }
