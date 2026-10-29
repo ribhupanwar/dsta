@@ -117,3 +117,37 @@ final class WhoopRealtimeFreshnessTests: XCTestCase {
         XCTAssertFalse(WhoopRealtimeFreshness.isFresh(lastPacketAt: packetAt, now: now))
     }
 }
+
+
+final class RealtimeRMSSDCalculatorTests: XCTestCase {
+    func testCalculatesRMSSDFromContiguousRRIntervals() {
+        let result = RealtimeRMSSDCalculator.calculate(
+            intervalsMilliseconds: [1000, 1010, 990, 1005, 995]
+        )
+        XCTAssertEqual(result ?? -1, (725.0 / 4.0).squareRoot(), accuracy: 0.0001)
+    }
+
+    func testRequiresAtLeastFiveIntervalsByDefault() {
+        XCTAssertNil(RealtimeRMSSDCalculator.calculate(
+            intervalsMilliseconds: [800, 805, 795, 802]
+        ))
+    }
+
+    func testRejectsPhysiologicallyImplausibleIntervals() {
+        XCTAssertNil(RealtimeRMSSDCalculator.calculate(
+            intervalsMilliseconds: [800, 805, 0, 802, 799]
+        ))
+    }
+
+    func testRejectsLargeAdjacentRRJump() {
+        XCTAssertNil(RealtimeRMSSDCalculator.calculate(
+            intervalsMilliseconds: [800, 805, 1200, 802, 799]
+        ))
+    }
+
+    func testAcceptsStableSlowHeartRateIntervals() {
+        XCTAssertNotNil(RealtimeRMSSDCalculator.calculate(
+            intervalsMilliseconds: [1400, 1410, 1395, 1405, 1400]
+        ))
+    }
+}

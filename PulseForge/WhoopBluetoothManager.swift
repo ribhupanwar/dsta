@@ -73,6 +73,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopRRIntervalsMilliseconds: [Int] = []
     /// Rolling realtime RR window for live diagnostics; never used as overnight HRV.
     @Published private(set) var whoopRRWindowMilliseconds: [Int] = []
+    /// Short-window RMSSD from live type-40 RR only; never overnight HRV.
+    @Published private(set) var whoopLiveRMSSDMilliseconds: Double?
     /// Historical type-47/v18 intervals are kept separate from the live stream.
     @Published private(set) var whoopHistoricalRRIntervalsMilliseconds: [Int] = []
     @Published private(set) var whoopHistoricalRRLastUpdatedAt: Date?
@@ -986,6 +988,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoopRRIntervalsMilliseconds.removeAll()
         whoopRRWindowMilliseconds.removeAll()
+        whoopLiveRMSSDMilliseconds = nil
         whoopRRLastUpdatedAt = nil
         whoopRRSource = "Waiting for WHOOP RR intervals"
         whoop5PendingWrites.removeAll()
@@ -1916,6 +1919,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         if whoopRRWindowMilliseconds.count > 60 {
             whoopRRWindowMilliseconds.removeFirst(whoopRRWindowMilliseconds.count - 60)
         }
+        // Short rolling estimate only; never used as overnight HRV or Recovery input.
+        whoopLiveRMSSDMilliseconds = RealtimeRMSSDCalculator.calculate(
+            intervalsMilliseconds: whoopRRWindowMilliseconds
+        )
         whoopRRLastUpdatedAt = receivedAt
         whoopRRSource = "\(source) · \(intervals.count) new interval(s) · rolling \(whoopRRWindowMilliseconds.count) · milliseconds"
     }

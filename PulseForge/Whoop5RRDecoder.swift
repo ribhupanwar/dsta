@@ -72,3 +72,29 @@ enum WhoopRealtimeFreshness {
         return age >= 0 && age <= maximumAge
     }
 }
+
+
+/// Short-window RMSSD from contiguous realtime RR intervals only.
+/// This is a live diagnostic, not overnight HRV and not a Recovery input.
+enum RealtimeRMSSDCalculator {
+    static func calculate(intervalsMilliseconds: [Int],
+                          minimumIntervals: Int = 5,
+                          maximumAdjacentDifference: Int = 300) -> Double? {
+        guard minimumIntervals >= 3,
+              intervalsMilliseconds.count >= minimumIntervals,
+              intervalsMilliseconds.allSatisfy({ (250...3000).contains($0) }) else {
+            return nil
+        }
+        let differences = zip(intervalsMilliseconds, intervalsMilliseconds.dropFirst()).map {
+            $1 - $0
+        }
+        guard differences.allSatisfy({ abs($0) <= maximumAdjacentDifference }) else {
+            return nil
+        }
+        let meanSquaredDifference = differences
+            .map { Double($0) * Double($0) }
+            .reduce(0, +) / Double(differences.count)
+        let result = meanSquaredDifference.squareRoot()
+        return result.isFinite ? result : nil
+    }
+}
