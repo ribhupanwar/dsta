@@ -330,12 +330,14 @@ struct LiveHeartRateChartCard: View {
                         .foregroundStyle(ForgeColors.lime)
                         .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
                     }
-                    .chartYScale(domain: lower...upper)
+                    .chartYScale(domain: 40...200)
+                    .chartXScale(domain: context.date.addingTimeInterval(-60)...context.date)
                     .chartXAxis(.hidden)
                     .chartYAxis {
-                        AxisMarks(position: .leading, values: .automatic(desiredCount: 3))
+                        AxisMarks(position: .leading, values: [60, 100, 140, 180])
                     }
                     .frame(height: 125)
+                    .clipped()
                 } else {
                     Text(visibleSamples.isEmpty ? "Live WHOOP heart-rate samples will draw here." : "Collecting live samples…")
                         .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
