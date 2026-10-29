@@ -353,9 +353,13 @@ struct WhoopRRCard: View {
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
 
     private var intervals: [Int] { bluetooth.whoopRRIntervalsMilliseconds }
+    private var rollingIntervals: [Int] { bluetooth.whoopRRWindowMilliseconds }
     private var meanInterval: Double? {
         guard !intervals.isEmpty else { return nil }
         return Double(intervals.reduce(0, +)) / Double(intervals.count)
+    }
+    private var shortWindowRMSSD: Double? {
+        RRVariabilityCalculator.rmssdMilliseconds(from: rollingIntervals)
     }
 
     var body: some View {
@@ -365,7 +369,7 @@ struct WhoopRRCard: View {
                     .font(.system(size: 9, weight: .bold)).tracking(0.9)
                     .foregroundStyle(ForgeColors.muted)
                 Spacer()
-                Text(intervals.isEmpty ? "WAITING" : "PACKET DECODED")
+                Text(intervals.isEmpty ? "WAITING" : "LIVE DATA")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(intervals.isEmpty ? ForgeColors.muted : ForgeColors.lime)
             }
@@ -373,22 +377,33 @@ struct WhoopRRCard: View {
                 Text(meanInterval.map { String(format: "%.0f", $0) } ?? "—")
                     .font(.system(size: 27, weight: .semibold, design: .rounded))
                     .monospacedDigit()
-                Text("ms mean RR")
+                Text("ms latest mean RR")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer()
-                Text("\(intervals.count) interval(s)")
+                Text("\(rollingIntervals.count)/60")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundStyle(ForgeColors.muted)
             }
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(shortWindowRMSSD.map { String(format: "%.1f", $0) } ?? "—")
+                    .font(.system(size: 22, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text("ms short-window RMSSD")
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                Spacer()
+                Text(shortWindowRMSSD == nil ? "COLLECTING" : "ESTIMATE")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(shortWindowRMSSD == nil ? ForgeColors.muted : ForgeColors.lime)
+            }
             Text(intervals.isEmpty
-                 ? "No validated RR interval packet received yet."
+                 ? "No validated realtime RR packet received yet."
                  : intervals.map { "\($0) ms" }.joined(separator: "  ·  "))
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white)
                 .lineLimit(2)
             Text(bluetooth.whoopRRSource)
                 .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
-            Text("Raw beat-to-beat intervals only. This is not a calibrated HRV or Recovery score.")
+            Text("RMSSD requires 30+ realtime intervals. Short-window estimate only; not WHOOP HRV, daily HRV or a Recovery input.")
                 .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
         }
         .padding(16)
