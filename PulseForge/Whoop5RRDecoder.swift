@@ -85,8 +85,8 @@ enum RealtimeRMSSDCalculator {
               intervalsMilliseconds.allSatisfy({ (250...3000).contains($0) }) else {
             return nil
         }
-        let differences = zip(intervalsMilliseconds, intervalsMilliseconds.dropFirst()).map {
-            $1 - $0
+        let differences = zip(intervalsMilliseconds, intervalsMilliseconds.dropFirst()).map { pair in
+            pair.1 - pair.0
         }
         guard differences.allSatisfy({ abs($0) <= maximumAdjacentDifference }) else {
             return nil
