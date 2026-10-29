@@ -44,6 +44,47 @@ enum Whoop5RRDecoder {
         return try decodeWords(frame, countOffset: 23, wordsOffset: 24)
     }
 
+    /// WHOOP 5.0 HISTORICAL_DATA v18 embeds its physiological Unix timestamp
+    /// as u32 little-endian at absolute frame offset 15. This is independent of
+    /// the phone's BLE receipt time.
+    static func decodeHistoricalTimestampV18(_ frame: [UInt8]) throws -> Date {
+        guard frame.count >= 19, frame[0] == 0xAA, frame[1] == 0x01 else {
+            throw DecodeError.invalidFrame
+        }
+        guard Int(frame[8]) == 47 else {
+            throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
+        }
+        guard Int(frame[9]) == 18 else {
+            throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
+        }
+        let seconds = UInt32(frame[15])
+            | (UInt32(frame[16]) << 8)
+            | (UInt32(frame[17]) << 16)
+            | (UInt32(frame[18]) << 24)
+        guard seconds >= 1_577_836_800, seconds <= 4_102_444_800 else {
+            throw DecodeError.invalidFrame
+        }
+        return Date(timeIntervalSince1970: TimeInterval(seconds))
+    }
+
+    /// v18 heart rate is a single BPM byte at absolute offset 22.
+    static func decodeHistoricalHeartRateV18(_ frame: [UInt8]) throws -> Int {
+        guard frame.count >= 23, frame[0] == 0xAA, frame[1] == 0x01 else {
+            throw DecodeError.invalidFrame
+        }
+        guard Int(frame[8]) == 47 else {
+            throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
+        }
+        guard Int(frame[9]) == 18 else {
+            throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
+        }
+        let bpm = Int(frame[22])
+        guard (25...240).contains(bpm) else {
+            throw DecodeError.invalidIntervalValue(bpm)
+        }
+        return bpm
+    }
+
     private static func decodeWords(_ frame: [UInt8], countOffset: Int,
                                     wordsOffset: Int) throws -> [Int] {
         let count = Int(frame[countOffset])
