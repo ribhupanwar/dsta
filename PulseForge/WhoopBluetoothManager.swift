@@ -68,8 +68,14 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var lastHeartRateAt: Date?
     @Published private(set) var whoopProtocolDiagnostics = "No WHOOP 5.0 protocol frame decoded yet"
     @Published private(set) var whoopRealtimePacketCount = 0
+    /// Latest RR intervals from the realtime type-40 stream only.
     @Published private(set) var whoopRRIntervalsMilliseconds: [Int] = []
+    /// Rolling realtime RR window for live diagnostics; never used as overnight HRV.
     @Published private(set) var whoopRRWindowMilliseconds: [Int] = []
+    /// Historical type-47/v18 intervals are kept separate from the live stream.
+    @Published private(set) var whoopHistoricalRRIntervalsMilliseconds: [Int] = []
+    @Published private(set) var whoopHistoricalRRLastUpdatedAt: Date?
+    @Published private(set) var whoopHistoricalRRSource = "No historical WHOOP RR intervals decoded yet"
     @Published private(set) var whoopRRLastUpdatedAt: Date?
     @Published private(set) var whoopRRSource = "No WHOOP RR intervals decoded yet"
     @Published private(set) var whoopCommandResponseCount = 0
@@ -1574,9 +1580,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 do {
                     let rr = try Whoop5RRDecoder.decodeHistoricalV18(b)
                     if !rr.isEmpty {
-                        whoopRRIntervalsMilliseconds = rr
-                        whoopRRLastUpdatedAt = Date()
-                        whoopRRSource = "WHOOP 5.0 historical v18 · \(rr.count) interval(s) · milliseconds"
+                        // Historical/offloaded intervals must never replace the
+                        // live type-40 RR window or its freshness timestamp.
+                        whoopHistoricalRRIntervalsMilliseconds = rr
+                        whoopHistoricalRRLastUpdatedAt = Date()
+                        whoopHistoricalRRSource = "WHOOP 5.0 historical v18 · \(rr.count) interval(s) · milliseconds"
                     }
                     return "HISTORICAL_DATA v18 · RR \(rr.map(String.init).joined(separator: ",")) ms · CRC valid"
                 } catch {
