@@ -30,9 +30,10 @@ enum Whoop5RRDecoder {
         return ticks.map { ($0 * 1000 + 512) / 1024 }
     }
 
-    /// Candidate HISTORICAL_DATA v18 layout (type 47), currently NOOP-fixture-derived:
-    /// version @9, HR @22, count @23, u16 little-endian RR ms @24.
-    /// Other historical versions use other layouts.
+    /// HISTORICAL_DATA v18 candidate layout (type 47):
+    /// version @9, HR @22, count @23 (maximum four), RR ticks @24.
+    /// WHOOP 5.0 R18 RR values use 1/1024-second ticks, like type 40.
+    /// Keep other historical versions on their own versioned decoders.
     static func decodeHistoricalV18(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 28, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
@@ -43,7 +44,10 @@ enum Whoop5RRDecoder {
         guard Int(frame[9]) == 18 else {
             throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
         }
-        return try decodeWords(frame, countOffset: 23, wordsOffset: 24)
+        let count = Int(frame[23])
+        guard count <= 4 else { throw DecodeError.invalidIntervalCount(count) }
+        let ticks = try decodeRawWords(frame, countOffset: 23, wordsOffset: 24)
+        return ticks.map { ($0 * 1000 + 512) / 1024 }
     }
 
     /// WHOOP 5.0 HISTORICAL_DATA v18 embeds its physiological Unix timestamp
