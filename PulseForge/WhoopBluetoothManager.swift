@@ -1929,7 +1929,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     // Keep the rolling window for diagnostics, but clear the current batch
                     // and leave its timestamp unchanged so freshness expires naturally.
                     whoopRRIntervalsMilliseconds.removeAll(keepingCapacity: true)
-                    whoopRRSource = "WHOOP 5.0 realtime · latest Type-40 packet contained 0 RR intervals · no current RR batch"
+                    whoopRRWindowMilliseconds.removeAll(keepingCapacity: true)
+                    whoopLiveRMSSDMilliseconds = nil
+                    whoopRRSource = "WHOOP 5.0 realtime · latest Type-40 packet contained 0 RR intervals · current RR/RMSSD cleared"
                 } else {
                     appendRRIntervals(rr, source: "WHOOP 5.0 realtime")
                 }
