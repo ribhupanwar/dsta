@@ -72,44 +72,20 @@ final class TrainingInsightsStore: ObservableObject {
                 HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
                 HKCategoryValueSleepAnalysis.asleepREM.rawValue
             ]
-            let asleep = (samples as? [HKCategorySample] ?? [])
+            let intervals = (samples as? [HKCategorySample] ?? [])
                 .filter { asleepValues.contains($0.value) }
                 .map { DateInterval(start: $0.startDate, end: $0.endDate) }
-                .sorted { $0.start < $1.start }
-
-            // Merge overlapping samples across sources/stages so duplicated
-            // Apple Health intervals are not counted twice.
-            var merged: [DateInterval] = []
-            for interval in asleep {
-                guard let last = merged.last else { merged.append(interval); continue }
-                if interval.start <= last.end {
-                    merged[merged.count - 1] = DateInterval(start: last.start, end: max(last.end, interval.end))
-                } else {
-                    merged.append(interval)
-                }
-            }
-
-            var minutesByNight: [Date: Double] = [:]
-            for interval in merged {
-                // Assign a sleep interval to the morning on which it ended.
-                let night = self.calendar.startOfDay(for: interval.end)
-                minutesByNight[night, default: 0] += interval.duration / 60
-            }
-            let today = self.calendar.startOfDay(for: Date())
-            let latestNight = minutesByNight.keys.filter { $0 <= today }.max()
-            let latestHours = latestNight.flatMap { minutesByNight[$0] }.map { $0 / 60 }
-
-            // Only completed prior nights contribute to debt; missing nights
-            // are not silently treated as zero hours.
-            let completedNights = minutesByNight.keys
-                .filter { $0 <= today }
-                .sorted(by: >)
-                .prefix(7)
-            let debtMinutes = completedNights.reduce(0.0) { partial, night in
-                partial + max(0, self.sleepTargetMinutes - (minutesByNight[night] ?? 0))
-            }
+            let summary = SleepNightCalculator.summarize(
+                intervals: intervals,
+                now: end,
+                calendar: self.calendar,
+                targetMinutes: self.sleepTargetMinutes,
+                debtWindowNights: 7,
+                sessionGapMinutes: 90
+            )
+            let latestHours = summary.latestNight.map { $0.durationMinutes / 60 }
             DispatchQueue.main.async {
-                completion(latestHours, completedNights.isEmpty ? nil : debtMinutes / 60)
+                completion(latestHours, summary.sleepDebtHours)
             }
         }
         healthStore.execute(query)
