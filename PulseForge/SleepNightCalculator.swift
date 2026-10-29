@@ -90,8 +90,8 @@ enum SleepNightCalculator {
         // longest session for that day so a nap is never mistaken for another
         // full night of sleep debt.
         let nights = Dictionary(grouping: allSessions, by: \.wakeDate)
-            .compactMap { _, sameDaySessions in
-                sameDaySessions.max { $0.durationMinutes < $1.durationMinutes }
+            .compactMap { entry in
+                entry.value.max { $0.durationMinutes < $1.durationMinutes }
             }
             .sorted { $0.endDate > $1.endDate }
 
