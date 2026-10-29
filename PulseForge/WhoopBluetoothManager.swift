@@ -407,7 +407,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                     }
                     builder.finishWorkout { workout, finishError in
                         DispatchQueue.main.async {
-                            if let workout {
+                            if workout != nil {
                                 exportedIDs.insert(record.id.uuidString)
                                 UserDefaults.standard.set(Array(exportedIDs), forKey: exportedKey)
                                 self.healthKitExportStatus = "Saved to Apple Health · \(heartRateSamples.count) HR samples"
