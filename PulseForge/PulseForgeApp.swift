@@ -363,8 +363,10 @@ struct WhoopRRCard: View {
         return Date().timeIntervalSince(updatedAt) <= 30
     }
     private var shortWindowRMSSD: Double? {
-        guard isRRFresh else { return nil }
-        return RRVariabilityCalculator.rmssdMilliseconds(from: rollingIntervals)
+        // Keep the last calculated window visible when packets pause, but label
+        // it STALE below. Freshness controls the status, not whether a valid
+        // previously calculated value abruptly disappears from the card.
+        RRVariabilityCalculator.rmssdMilliseconds(from: rollingIntervals)
     }
 
     var body: some View {
@@ -396,9 +398,9 @@ struct WhoopRRCard: View {
                 Text("ms short-window RMSSD")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer()
-                Text(shortWindowRMSSD == nil ? "COLLECTING" : "ESTIMATE")
+                Text(shortWindowRMSSD == nil ? "COLLECTING" : (isRRFresh ? "ESTIMATE" : "STALE"))
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(shortWindowRMSSD == nil ? ForgeColors.muted : ForgeColors.lime)
+                    .foregroundStyle(shortWindowRMSSD == nil || !isRRFresh ? ForgeColors.muted : ForgeColors.lime)
             }
             Text(intervals.isEmpty
                  ? "No validated realtime RR packet received yet."
