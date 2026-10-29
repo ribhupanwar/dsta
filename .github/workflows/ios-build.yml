@@ -8,6 +8,7 @@ on:
       - integrate-pulseforge-into-main
       - ci/unsigned-ipa-export
       - ui/reference-dashboard-redesign
+      - feature/export-whoop-rr-raw-archive
   workflow_dispatch:
 
 concurrency:
