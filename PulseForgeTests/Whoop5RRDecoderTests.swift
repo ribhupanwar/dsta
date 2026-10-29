@@ -40,6 +40,31 @@ final class Whoop5RRDecoderTests: XCTestCase {
         }
     }
 
+    func testHistoricalDecoderRejectsUnknownLayoutVersion() {
+        var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
+        frame[9] = 17
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeHistoricalV18(frame)) { error in
+            XCTAssertEqual(error as? Whoop5RRDecoder.DecodeError, .unsupportedHistoricalVersion(17))
+        }
+    }
+
+    func testRealtimeDecoderRejectsInvalidFrameHeader() {
+        var frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
+        frame[0] = 0xAB
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtime(frame)) { error in
+            XCTAssertEqual(error as? Whoop5RRDecoder.DecodeError, .invalidFrame)
+        }
+    }
+
+    func testRealtimeDecoderDoesNotReadTrailingCRCAsRRData() {
+        var frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
+        frame[17] = 7 // Claims seven RR words, but only two precede the CRC.
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtime(frame)) { error in
+            XCTAssertEqual(error as? Whoop5RRDecoder.DecodeError,
+                           .truncatedIntervals(expectedBytes: 14, availableBytes: 10))
+        }
+    }
+
     func testRejectsWrongRecordType() {
         let frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
         XCTAssertThrowsError(try Whoop5RRDecoder.decodeHistoricalV18(frame))
