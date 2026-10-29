@@ -1849,13 +1849,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     recordVendorTimeline("Event probe ON command response · seq=\(echoedSequence) · result=\(resultName)")
                     return "COMMAND_RESPONSE · Event probe REALTIME_HR_ON(3) · seq \(echoedSequence) · \(resultName)"
                 }
-                guard result == 1 else {
-                    return "COMMAND_RESPONSE · REALTIME_HR_ON(3) · \(resultName) · bounded raw stream withheld"
-                }
-                // Restore the previously working bounded live motion path.
-                // Keep the request limited to 60 seconds; never enable an unbounded stream.
-                sendWhoop5RawDataStart(to: peripheral, durationMilliseconds: 60_000)
-                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · bounded 60-second motion stream requested"
+                // Realtime-HR command success is not an IMU readiness signal.
+                // Motion startup is gated exclusively by the CRC-valid Event 33 path.
+                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) · \(resultName) · IMU startup remains Event-33 gated"
             }
             return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
 
