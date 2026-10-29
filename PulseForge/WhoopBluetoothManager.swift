@@ -956,6 +956,11 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HRStallRecoveryWorkItem = nil
         whoop5HRStallRecoveryAttempted = false
         whoop5HRStreamEnableSent = false
+        // A delayed stall-recovery callback must never write commands after the
+        // peripheral has been disconnected or its GATT session has been cleared.
+        whoop5HRStallRecoveryWorkItem?.cancel()
+        whoop5HRStallRecoveryWorkItem = nil
+        whoop5HRStallRecoveryAttempted = false
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
         whoop5AutoIMUEnabled = false
