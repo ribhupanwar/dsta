@@ -48,6 +48,23 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         XCTAssertEqual(records.last?.rawFrameHex, "500")
     }
 
+    func testPersistsValidEmptyHistoricalRRRecordWithoutDecodeError() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let record = HistoricalRRPacketRecord(
+            receivedAt: Date(timeIntervalSince1970: 1_700_000_200),
+            recordType: 47,
+            revision: 18,
+            intervalsMilliseconds: [],
+            rawFrameHex: "AA0147EMPTY",
+            physiologicalTimestamp: nil,
+            decodeError: nil
+        )
+
+        XCTAssertEqual(try HistoricalRRPacketArchive.append(record, to: url), 1)
+        XCTAssertEqual(HistoricalRRPacketArchive.load(from: url).first, record)
+    }
+
     func testPersistsRawFrameWhenCandidateRRLayoutIsRejected() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
