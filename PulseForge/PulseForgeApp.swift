@@ -772,7 +772,7 @@ struct SleepDashboard: View {
                             Text(insights.sleepHours.map { String(format: "%.1f h", $0) } ?? "—")
                                 .font(.system(size: 34, weight: .medium, design: .rounded)).monospacedDigit()
                             Text("Time asleep").font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
-                            Text("Waiting for verified WHOOP-native sleep history and stage timestamps.")
+                            Text(insights.sleepSourceStatus)
                                 .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
                         }
                     }
@@ -799,7 +799,7 @@ struct SleepDashboard: View {
                             .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
                             .multilineTextAlignment(.trailing).frame(maxWidth: 130)
                     }
-                    Text("PulseForge estimate · 8 h starting baseline with capped sleep-debt adjustment. The 28-day median is a sleep-pattern reference, not a personal sleep-need baseline; naps and calibrated strain are not yet connected.")
+                    Text("Sleep Need stays unavailable until WHOOP-native sleep history and a personal baseline are available. No fixed 8-hour placeholder is presented as a measured score.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
