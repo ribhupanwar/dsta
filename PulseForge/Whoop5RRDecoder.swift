@@ -31,9 +31,10 @@ enum Whoop5RRDecoder {
     }
 
     /// HISTORICAL_DATA v18 candidate layout (type 47):
-    /// version @9, HR @22, count @23 (maximum four), RR ticks @24.
-    /// WHOOP 5.0 R18 RR values use 1/1024-second ticks, like type 40.
-    /// Keep other historical versions on their own versioned decoders.
+    /// version @9, HR @22, count @23, little-endian words @24.
+    /// Historical R18 RR units are not yet independently verified against
+    /// WHOOP IPA or a timestamp-aligned official export; return raw words only.
+    /// Do not feed these values into physiological calculations until verified.
     static func decodeHistoricalV18(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 28, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
@@ -46,8 +47,7 @@ enum Whoop5RRDecoder {
         }
         let count = Int(frame[23])
         guard count <= 4 else { throw DecodeError.invalidIntervalCount(count) }
-        let ticks = try decodeRawWords(frame, countOffset: 23, wordsOffset: 24)
-        return ticks.map { ($0 * 1000 + 512) / 1024 }
+        return try decodeRawWords(frame, countOffset: 23, wordsOffset: 24)
     }
 
     /// WHOOP 5.0 HISTORICAL_DATA v18 embeds its physiological Unix timestamp
