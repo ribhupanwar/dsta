@@ -2108,6 +2108,17 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 recordVendorTimeline("WHOOP realtime HR active event 33 received")
                 lastBLEEvent = "WHOOP event 33 · BLE_REALTIME_HR_ON · stream activation confirmed"
                 statusText = "Connected · WHOOP realtime HR stream confirmed · waiting for sample"
+
+                // Event 33 is the confirmed live-HR readiness signal, not an IMU
+                // packet. Use it as a one-time gate to request the separately
+                // bounded raw-motion stream. The command-response path may race
+                // this event; sendWhoop5RawDataStart's in-flight guard prevents
+                // duplicate START_RAW_DATA writes.
+                if !whoop5AutoIMUStartRequested && !whoop5AutoIMUEnabled,
+                   whoop5HelloWriteAcknowledged {
+                    recordVendorTimeline("IMU startup gate · Event 33 confirmed · issuing bounded START_RAW_DATA")
+                    sendWhoop5RawDataStart(to: peripheral, durationMilliseconds: 60_000)
+                }
                 return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid · realtime HR active; IMU activation withheld pending protocol verification"
             }
             if eventID == 34 {
