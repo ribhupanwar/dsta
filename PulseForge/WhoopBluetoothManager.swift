@@ -1799,9 +1799,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 guard result == 1 else {
                     return "COMMAND_RESPONSE · REALTIME_HR_ON(3) · \(resultName) · bounded raw stream withheld"
                 }
-                whoopIMUStatus = "HR active · awaiting WHOOP 5 R22 historical R21 IMU buffers (type 47 / inner 0x2F)"
-                recordVendorTimeline("IMU live raw commands 81/106 withheld · 5.0 firmware evidence shows accepted-but-inert; decode R22 R21 offload when present")
-                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · HR active; high-rate IMU awaits R22 offload"
+                // Restore the previously working bounded live motion path.
+                // Keep the request limited to 60 seconds; never enable an unbounded stream.
+                sendWhoop5RawDataStart(to: peripheral, durationMilliseconds: 60_000)
+                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · bounded 60-second motion stream requested"
             }
             return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
 
