@@ -699,7 +699,18 @@ struct SleepDashboard: View {
                             Text(insights.sleepDebtHours.map { String(format: "%.1f h", $0) } ?? "—").font(.system(size: 23, weight: .semibold, design: .rounded))
                         }
                     }
-                    Text("PulseForge estimate · 8 h starting baseline with a capped sleep-debt adjustment. Personal baseline, naps and calibrated strain are not yet connected.")
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("28-DAY TYPICAL").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                            Text(insights.typicalSleepHours.map { String(format: "%.1f h", $0) } ?? "Building history")
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        }
+                        Spacer()
+                        Text("Median main sleep session per wake day")
+                            .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                            .multilineTextAlignment(.trailing).frame(maxWidth: 130)
+                    }
+                    Text("PulseForge estimate · 8 h starting baseline with capped sleep-debt adjustment. The 28-day median is a sleep-pattern reference, not a personal sleep-need baseline; naps and calibrated strain are not yet connected.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
