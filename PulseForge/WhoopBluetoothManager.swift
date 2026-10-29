@@ -1748,8 +1748,31 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         // Historical/offloaded intervals must never replace the
                         // live type-40 RR window or its freshness timestamp.
                         whoopHistoricalRRIntervalsMilliseconds = rr
-                        whoopHistoricalRRLastUpdatedAt = Date()
-                        whoopHistoricalRRSource = "WHOOP 5.0 historical v18 · \(rr.count) interval(s) · milliseconds"
+                        let receivedAt = Date()
+                        whoopHistoricalRRLastUpdatedAt = receivedAt
+                        let rawHex = b.map { String(format: "%02X", $0) }.joined()
+                        let record = HistoricalRRPacketRecord(
+                            receivedAt: receivedAt,
+                            recordType: 47,
+                            revision: 18,
+                            intervalsMilliseconds: rr,
+                            rawFrameHex: rawHex
+                        )
+                        if let support = FileManager.default.urls(
+                            for: .applicationSupportDirectory, in: .userDomainMask
+                        ).first {
+                            let archiveURL = support
+                                .appendingPathComponent("PulseForge", isDirectory: true)
+                                .appendingPathComponent("historical-whoop-rr-v1.json")
+                            do {
+                                let count = try HistoricalRRPacketArchive.append(record, to: archiveURL)
+                                whoopHistoricalRRSource = "WHOOP 5.0 historical v18 · \(rr.count) RR · archived packets \(count) · receipt time only"
+                            } catch {
+                                whoopHistoricalRRSource = "Historical RR decoded · archive failed · \(error.localizedDescription)"
+                            }
+                        } else {
+                            whoopHistoricalRRSource = "Historical RR decoded · local archive unavailable"
+                        }
                     }
                     return "HISTORICAL_DATA v18 · RR \(rr.map(String.init).joined(separator: ",")) ms · CRC valid"
                 } catch {
