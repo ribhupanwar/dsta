@@ -1631,7 +1631,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     // RMSSD assumes a continuous beat series. Do not bridge a
                     // long notification gap with adjacent-value differences.
                     if let previousUpdate = whoopRRLastUpdatedAt,
-                       receivedAt.timeIntervalSince(previousUpdate) > 10 {
+                       receivedAt.timeIntervalSince(previousUpdate) > 30 {
                         whoopRRWindowMilliseconds.removeAll(keepingCapacity: true)
                     }
                     whoopRRIntervalsMilliseconds = rr
