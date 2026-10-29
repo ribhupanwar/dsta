@@ -1255,6 +1255,24 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
 }
 
 extension WhoopBluetoothManager: CBPeripheralDelegate {
+    /// CoreBluetooth can deliver callbacks for characteristic instances that were
+    /// discovered before a service invalidation/reconnect. Matching only the
+    /// peripheral UUID is insufficient when the same peripheral is rediscovered.
+    /// Accept a callback only when its exact service/characteristic object still
+    /// belongs to the peripheral's current GATT tree.
+    private func isCurrentGattService(_ service: CBService, on peripheral: CBPeripheral) -> Bool {
+        peripheral.services?.contains(where: { $0 === service }) == true
+    }
+
+    private func isCurrentGattCharacteristic(_ characteristic: CBCharacteristic,
+                                             on peripheral: CBPeripheral) -> Bool {
+        guard let service = characteristic.service,
+              isCurrentGattService(service, on: peripheral),
+              let currentCharacteristics = service.characteristics else {
+            return false
+        }
+        return currentCharacteristics.contains(where: { $0 === characteristic })
+    }
     func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         let invalidatedIDs = Array(Set(invalidatedServices.map { $0.uuid.uuidString })).sorted()
@@ -1305,7 +1323,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        guard connectedPeripheral?.identifier == peripheral.identifier,
+              isCurrentGattCharacteristic(characteristic, on: peripheral) else { return }
         if let error {
             lastBLEEvent = "Read/notification error · \(characteristic.uuid.uuidString) · \(error.localizedDescription)"
             return
@@ -1953,7 +1972,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        guard connectedPeripheral?.identifier == peripheral.identifier,
+              isCurrentGattService(service, on: peripheral) else { return }
         if let error {
             let failure = "\(service.uuid.uuidString): \(error.localizedDescription)"
             // Only a failed discovery inside the WHOOP Gen5 service can
@@ -2076,6 +2096,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     }
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier,
+              isCurrentGattCharacteristic(characteristic, on: peripheral),
               characteristic.uuid == whoop5CommandUUID,
               !whoop5PendingWrites.isEmpty else { return }
         let kind = whoop5PendingWrites.removeFirst()
@@ -2162,7 +2183,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
-        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        guard connectedPeripheral?.identifier == peripheral.identifier,
+              isCurrentGattCharacteristic(characteristic, on: peripheral) else { return }
         let notificationUUID = characteristic.uuid.uuidString.uppercased()
         if motionProbeUUIDPrefixes.contains(where: { notificationUUID.hasPrefix($0) }) {
             candidateNotificationStates[notificationUUID] = error.map { "failed · \($0.localizedDescription)" }
@@ -2217,7 +2239,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverDescriptorsFor characteristic: CBCharacteristic, error: Error?) {
-        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        guard connectedPeripheral?.identifier == peripheral.identifier,
+              isCurrentGattCharacteristic(characteristic, on: peripheral) else { return }
         let serviceUUID = characteristic.service?.uuid.uuidString ?? "Unknown service"
         let displayKey = "\(serviceUUID)|\(characteristic.uuid.uuidString)"
         let key = ObjectIdentifier(characteristic)
