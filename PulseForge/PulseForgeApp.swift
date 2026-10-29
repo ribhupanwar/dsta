@@ -771,15 +771,15 @@ struct SleepDashboard: View {
                             Text(insights.sleepHours.map { String(format: "%.1f h", $0) } ?? "—")
                                 .font(.system(size: 34, weight: .medium, design: .rounded)).monospacedDigit()
                             Text("Time asleep").font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
-                            Text("Sleep score needs a verified sleep target and complete sleep data.")
+                            Text("Waiting for verified WHOOP-native sleep history and stage timestamps.")
                                 .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
                         }
                     }
                     Divider().overlay(ForgeColors.stroke)
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("ESTIMATED SLEEP NEED").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
-                            Text(String(format: "%.1f h", insights.sleepNeedHours)).font(.system(size: 23, weight: .semibold, design: .rounded))
+                            Text("WHOOP SLEEP NEED").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                            Text(insights.sleepNeedHours.map { String(format: "%.1f h", $0) } ?? "—").font(.system(size: 23, weight: .semibold, design: .rounded))
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 4) {
@@ -803,12 +803,12 @@ struct SleepDashboard: View {
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 SectionHeader(title: "SLEEP STAGES")
-                SleepStageBreakdown(deep: health.deepSleepMinutes, rem: health.remSleepMinutes, core: health.coreSleepMinutes, awake: health.awakeMinutes)
+                SleepStageBreakdown(deep: nil, rem: nil, core: nil, awake: nil)
                 SectionHeader(title: "SLEEP SUMMARY")
                 HStack(spacing: 10) {
                     CompactMetric(title: "TOTAL SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
-                    CompactMetric(title: "DEEP SLEEP", value: health.deepSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
-                    CompactMetric(title: "REM SLEEP", value: health.remSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
+                    CompactMetric(title: "DEEP SLEEP", value: "—", unit: "min")
+                    CompactMetric(title: "REM SLEEP", value: "—", unit: "min")
                 }
                 Text("Sleep duration and debt use overlap-deduplicated Apple Health asleep intervals. Stage totals are read separately from Apple Health; WHOOP-native stage decoding is not yet verified.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
