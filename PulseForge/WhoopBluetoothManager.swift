@@ -2007,14 +2007,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             do {
                 let rr = try Whoop5RRDecoder.decodeRealtime(b)
                 if rr.isEmpty {
-                    // A valid Type-40 frame can carry HR without RR intervals.
-                    // Do not present the previous batch as the latest packet's RR.
-                    // Keep the rolling window for diagnostics, but clear the current batch
-                    // and leave its timestamp unchanged so freshness expires naturally.
-                    whoopRRIntervalsMilliseconds.removeAll(keepingCapacity: true)
-                    whoopRRWindowMilliseconds.removeAll(keepingCapacity: true)
-                    whoopLiveRMSSDMilliseconds = nil
-                    whoopRRSource = "WHOOP 5.0 realtime · latest Type-40 packet contained 0 RR intervals · current RR/RMSSD cleared"
+                    // Type-40 legitimately carries HR-only packets between RR-bearing
+                    // packets. Preserve the last valid RR batch and rolling window;
+                    // do not erase useful RR data or reset its freshness timestamp.
+                    // appendRRIntervals() already expires the rolling window after a
+                    // >30-second gap when the next RR-bearing packet arrives.
+                    whoopRRSource = "WHOOP 5.0 realtime · latest Type-40 packet contained 0 RR intervals · retaining last valid RR batch"
                 } else {
                     appendRRIntervals(rr, source: "WHOOP 5.0 realtime")
                 }
