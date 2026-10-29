@@ -71,3 +71,10 @@ Do not infer the timestamp from phone receipt time. Keep `physiologicalTimestamp
 - The earlier CI failure at `a7f9d947` was caused by passing `decodeError` to a memberwise initializer whose stored property had a default value. The current main version declares both optional fields without stored-property defaults and passes explicit `nil` values where appropriate.
 
 This note is an evidence ledger, not a claim that the WHOOP BLE wire layout or physiological timestamp has been reverse-engineered.
+
+
+## Current PulseForge score inputs (important distinction)
+
+On the inspected main source revision, the existing Recovery estimate reads Apple Health HRV SDNN and resting-heart-rate samples, then applies PulseForge's own HRV/RHR weighting and baseline logic. It is explicitly labelled as an Apple Health SDNN estimate, not WHOOP RMSSD. Sleep duration and sleep-debt inputs currently come from HealthKit sleep-analysis samples. These are useful provisional app features, but they are not a reconstruction of WHOOP's proprietary overnight pipeline.
+
+Do not relabel these scores as WHOOP-derived merely because WHOOP may write samples into Apple Health. Source attribution must be checked per sample before making that claim.
