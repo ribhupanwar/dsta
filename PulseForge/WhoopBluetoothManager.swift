@@ -1081,6 +1081,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopEventProbeActive = false
         whoopEventProbeOffSequence = nil
         whoopEventProbeOnSequence = nil
+        whoopEventProbeStartedAt = nil
         whoopEventProbeStatus = "Controlled Event 33/34 probe not run in this connection"
         whoopIMUFrameCount = 0
         whoopIMUSampleCount = 0
@@ -2072,6 +2073,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 } ?? false
                 self.whoopEventProbeStatus = "Probe complete · Event33 +\(onDelta) · Event34 +\(offDelta) · HR \(restoredSample ? "sample restored" : "not yet restored")"
                 self.whoopEventProbeActive = false
+                self.whoopEventProbeOffSequence = nil
+                self.whoopEventProbeOnSequence = nil
                 self.recordVendorTimeline("Event probe complete · Event33 delta=\(onDelta) · Event34 delta=\(offDelta)")
             }
             whoopEventProbeFinishWorkItem = finish
