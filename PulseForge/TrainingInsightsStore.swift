@@ -127,29 +127,35 @@ final class TrainingInsightsStore: ObservableObject {
             let today = self.calendar.startOfDay(for: Date())
             let currentHRV = hrvSamples.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
             let currentRHR = rhrSamples.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
-            let baselineHRVValues = hrvSamples.filter { $0.endDate < today }.map {
-                $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
+            let hrvByDay = Dictionary(grouping: hrvSamples.filter { $0.endDate < today }) {
+                self.calendar.startOfDay(for: $0.endDate)
+            }.values.map { samples in
+                samples.map { $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli)) }
+                    .reduce(0, +) / Double(samples.count)
             }
-            let baselineRHRValues = rhrSamples.filter { $0.endDate < today }.map {
-                $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
+            let rhrByDay = Dictionary(grouping: rhrSamples.filter { $0.endDate < today }) {
+                self.calendar.startOfDay(for: $0.endDate)
+            }.values.map { samples in
+                samples.map { $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute())) }
+                    .reduce(0, +) / Double(samples.count)
             }
-            guard let currentHRV, let currentRHR,
-                  !baselineHRVValues.isEmpty, !baselineRHRValues.isEmpty else {
-                completion(nil, "Need today's HRV + resting HR and prior-day baselines")
+            guard let currentHRV, let currentRHR else {
+                completion(nil, "Need today's HRV + resting HR")
                 return
             }
             let hrvNow = currentHRV.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
             let rhrNow = currentRHR.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
-            let hrvBaseline = baselineHRVValues.reduce(0, +) / Double(baselineHRVValues.count)
-            let rhrBaseline = baselineRHRValues.reduce(0, +) / Double(baselineRHRValues.count)
-            guard hrvBaseline > 0, rhrBaseline > 0 else {
-                completion(nil, "Baseline data is not valid yet")
+            guard let result = RecoveryScoreCalculator.calculate(
+                currentHRV: hrvNow,
+                currentRestingHeartRate: rhrNow,
+                baselineHRV: hrvByDay,
+                baselineRestingHeartRate: rhrByDay,
+                minimumBaselineDays: 3
+            ) else {
+                completion(nil, "Building baseline · need 3 prior days of HRV + resting HR")
                 return
             }
-            let hrvComponent = min(100, max(0, 50 + 50 * ((hrvNow / hrvBaseline) - 1) / 0.30))
-            let rhrComponent = min(100, max(0, 50 + 5 * (rhrBaseline - rhrNow)))
-            let score = Int((0.60 * hrvComponent + 0.40 * rhrComponent).rounded())
-            completion(score, "PulseForge estimate · HRV 60% + resting HR 40%")
+            completion(result.score, "PulseForge estimate · HRV 60% + resting HR 40% · 3+ day median baseline")
         }
     }
 
