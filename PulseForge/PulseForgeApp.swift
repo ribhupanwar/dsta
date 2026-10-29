@@ -683,13 +683,13 @@ struct SleepDashboard: View {
                 VStack(alignment: .leading, spacing: 16) {
                     SectionHeader(title: "SLEEP PERFORMANCE")
                     HStack(spacing: 20) {
-                        ScoreRing(title: "PERFORMANCE", value: nil, tint: Color(red: 0.35, green: 0.62, blue: 0.96))
+                        ScoreRing(title: "PERFORMANCE", value: insights.sleepPerformanceScore, tint: Color(red: 0.35, green: 0.62, blue: 0.96))
                             .frame(width: 112)
                         VStack(alignment: .leading, spacing: 7) {
                             Text(health.sleepHours.map { String(format: "%.1f h", $0) } ?? "—")
                                 .font(.system(size: 34, weight: .medium, design: .rounded)).monospacedDigit()
                             Text("Time asleep").font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
-                            Text("Sleep score needs a verified sleep target and complete sleep data.")
+                            Text(insights.sleepStatus)
                                 .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
                         }
                     }
@@ -715,7 +715,11 @@ struct SleepDashboard: View {
                     CompactMetric(title: "DEEP SLEEP", value: health.deepSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
                     CompactMetric(title: "REM SLEEP", value: health.remSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
                 }
-                Text("Sleep stages are read from Apple Health. Debt is the rolling shortfall against an 8-hour target across completed nights with recorded sleep.")
+                HStack(spacing: 10) {
+                    CompactMetric(title: "NIGHTS TRACKED", value: String(insights.sleepNightsCount), unit: "of 7")
+                    CompactMetric(title: "SLEEP DEBT", value: insights.sleepDebtHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                }
+                Text("Sleep performance compares the latest completed Apple Health sleep record with an 8-hour reference target. Debt sums recorded nights only; missing nights are not assumed to be zero.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
@@ -738,15 +742,22 @@ struct StrainDashboard: View {
                     HStack(spacing: 22) {
                         ZStack {
                             Circle().stroke(ForgeColors.track, lineWidth: 9)
-                            Circle().trim(from: 0, to: 0)
+                            Circle().trim(from: 0, to: min(1, max(0, (insights.cardioLoadPoints ?? 0) / 300)))
                                 .stroke(Color(red: 0.98, green: 0.58, blue: 0.27), style: StrokeStyle(lineWidth: 9, lineCap: .round))
                                 .rotationEffect(.degrees(-90))
-                            Text("—").font(.system(size: 39, weight: .light, design: .rounded))
+                            VStack(spacing: 2) {
+                                Text(insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—")
+                                    .font(.system(size: 34, weight: .light, design: .rounded)).monospacedDigit()
+                                Text("LOAD PTS").font(.system(size: 8, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                            }
                         }
                         .frame(width: 132, height: 132)
                         VStack(alignment: .leading, spacing: 7) {
-                            Text("No strain score yet").font(.system(size: 18, weight: .semibold))
-                            Text("A verified workout and heart-rate load model are needed to calculate daily strain.")
+                            Text(insights.cardioLoadPoints == nil ? "Load not available yet" : "Daily cardio load")
+                                .font(.system(size: 18, weight: .semibold))
+                            Text(insights.cardioLoadPoints == nil
+                                 ? "Add a measured maximum HR and record a workout with heart-rate samples."
+                                 : "Estimated from workout heart-rate intensity and duration. This is a transparent load index, not a WHOOP strain score.")
                                 .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                         }
                     }
@@ -793,7 +804,7 @@ struct StrainDashboard: View {
                 }
                 .font(.system(size: 13, weight: .medium))
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
-                Text("Cardio-load points use workout HR samples and your saved measured max HR. WHOOP-style strain remains blank until its model is validated.")
+                Text("Cardio-load points use workout HR samples and your saved measured max HR. The ring is a visual scale capped at 300 points; it is not a WHOOP strain score.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
