@@ -721,7 +721,8 @@ struct SleepDashboard: View {
 struct StrainDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
-    @AppStorage("pulseforge.running.maxHeartRate") private var measuredMaxHeartRate = ""
+    @AppStorage("pulseforge.running.maxHeartRate") private var measuredMaxHeartRate = 0
+    @State private var maxHeartRateDraft = ""
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -755,11 +756,24 @@ struct StrainDashboard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Measured maximum heart rate (bpm)")
                         .font(.system(size: 12, weight: .medium))
-                    TextField("Enter your measured max HR", text: $measuredMaxHeartRate)
-                        .keyboardType(.numberPad)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .padding(12)
-                        .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 10))
+                    HStack(spacing: 9) {
+                        TextField(measuredMaxHeartRate > 0 ? String(measuredMaxHeartRate) : "Enter measured max HR", text: $maxHeartRateDraft)
+                            .keyboardType(.numberPad)
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .padding(12)
+                            .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 10))
+                        Button("SAVE") {
+                            if let value = Int(maxHeartRateDraft), (100...240).contains(value) {
+                                measuredMaxHeartRate = value
+                                maxHeartRateDraft = ""
+                                insights.refresh()
+                            }
+                        }
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 15).padding(.vertical, 12)
+                        .background(ForgeColors.lime, in: Capsule())
+                    }
                     Text("Enter a value measured during a hard effort or clinical test. PulseForge will leave cardio load blank until this is set.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
