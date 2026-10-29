@@ -118,6 +118,22 @@ enum Whoop5RRDecoder {
     }
 }
 
+
+/// Distinguishes a CoreBluetooth write acknowledgement from actual band-side
+/// history progress. A successful write only means the ACK frame was written;
+/// HISTORY_START / subsequent records are still required as transfer evidence.
+enum HistoricalAckWriteState: Equatable {
+    case acknowledgedAwaitingBandProgress
+    case failed(String)
+
+    static func resolve(errorDescription: String?) -> HistoricalAckWriteState {
+        guard let errorDescription, !errorDescription.isEmpty else {
+            return .acknowledgedAwaitingBandProgress
+        }
+        return .failed(errorDescription)
+    }
+}
+
 /// Freshness gate for source arbitration: a future-dated or stale WHOOP packet
 /// must not suppress the standard BLE fallback indefinitely.
 enum WhoopRealtimeFreshness {
