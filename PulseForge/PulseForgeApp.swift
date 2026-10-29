@@ -212,7 +212,13 @@ struct RecoveryDetailSheet: View {
                         CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
                         CompactMetric(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                     }
-                    Text("Recovery trend and baseline history will appear as enough verified daily measurements are collected.")
+                    HStack(spacing: 10) {
+                        CompactMetric(title: "HRV VS BASELINE", value: insights.hrvDeviationPercent.map { String(format: "%+.0f", $0) } ?? "—", unit: "%")
+                        CompactMetric(title: "RHR VS BASELINE", value: insights.restingHRDeviationBPM.map { String(format: "%+.1f", $0) } ?? "—", unit: "bpm")
+                    }
+                    Text(insights.recoveryStatus)
+                        .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                    Text("PulseForge recovery is an estimate using today's HRV and resting HR against at least three prior readings. It is not a medical assessment or WHOOP's proprietary score.")
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(18)
