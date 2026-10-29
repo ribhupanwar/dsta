@@ -16,7 +16,9 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
             recordType: 47,
             revision: 18,
             intervalsMilliseconds: [602, 613],
-            rawFrameHex: "AA0174"
+            rawFrameHex: "AA0174",
+            physiologicalTimestamp: nil,
+            decodeError: nil
         )
 
         XCTAssertEqual(try HistoricalRRPacketArchive.append(record, to: url), 1)
@@ -33,7 +35,9 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
                 recordType: 47,
                 revision: 18,
                 intervalsMilliseconds: [600],
-                rawFrameHex: String(index)
+                rawFrameHex: String(index),
+                physiologicalTimestamp: nil,
+                decodeError: nil
             )
             _ = try HistoricalRRPacketArchive.append(record, to: url)
         }
@@ -53,6 +57,7 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
             revision: 18,
             intervalsMilliseconds: [],
             rawFrameHex: "AA0147UNDECODED",
+            physiologicalTimestamp: nil,
             decodeError: "candidate RR count/offset rejected"
         )
 
