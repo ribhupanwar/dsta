@@ -34,7 +34,9 @@ enum Gen5R21IMUDecoder {
             UInt32(inner[7]) | (UInt32(inner[8]) << 8) |
             (UInt32(inner[9]) << 16) | (UInt32(inner[10]) << 24)
         )
-        let frameTimestamp = unixSeconds + Double(u16(11)) / 32768.0
+        // NOOP's hardware-validated Gen5 decoder uses the integer Unix timestamp
+        // at absolute frame offset 15. Bytes 19–20 are not a documented time fraction.
+        let frameTimestamp = unixSeconds
         let accelScale = 1.0 / 4096.0
         let gyroScale = 2000.0 / 32768.0
 
