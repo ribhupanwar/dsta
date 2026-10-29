@@ -92,3 +92,28 @@ final class Whoop5RRDecoderTests: XCTestCase {
         }
     }
 }
+
+
+final class WhoopRealtimeFreshnessTests: XCTestCase {
+    func testNoPacketIsNotFresh() {
+        XCTAssertFalse(WhoopRealtimeFreshness.isFresh(lastPacketAt: nil, now: Date()))
+    }
+
+    func testPacketIsFreshAtThirtySecondBoundary() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let packetAt = now.addingTimeInterval(-30)
+        XCTAssertTrue(WhoopRealtimeFreshness.isFresh(lastPacketAt: packetAt, now: now))
+    }
+
+    func testPacketOlderThanThirtySecondsAllowsFallback() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let packetAt = now.addingTimeInterval(-30.001)
+        XCTAssertFalse(WhoopRealtimeFreshness.isFresh(lastPacketAt: packetAt, now: now))
+    }
+
+    func testFutureDatedPacketDoesNotBlockFallback() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let packetAt = now.addingTimeInterval(1)
+        XCTAssertFalse(WhoopRealtimeFreshness.isFresh(lastPacketAt: packetAt, now: now))
+    }
+}
