@@ -510,8 +510,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private func recordVendorTimeline(_ event: String) {
         let elapsed = hrTimingConnectionAt.map { Date().timeIntervalSince($0) } ?? 0
         let stamp = ISO8601DateFormatter().string(from: Date())
-        let line = String(format: "%@ · +%.3fs · %@ · helloSent=%@ helloAckPending=%@ hrEnableSent=%@",
-                          stamp, elapsed, event,
+        let line = String(format: "%@ · gen=%d · +%.3fs · %@ · helloSent=%@ helloAckPending=%@ hrEnableSent=%@",
+                          stamp, whoopConnectionGeneration, elapsed, event,
                           whoop5HelloSent ? "yes" : "no",
                           whoop5HelloWritePending ? "yes" : "no",
                           whoop5HRStreamEnableSent ? "yes" : "no")
