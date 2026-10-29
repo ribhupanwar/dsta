@@ -1900,9 +1900,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
                 do {
                     rr = try Whoop5RRDecoder.decodeHistoricalV18(b)
-                    if rr.isEmpty {
-                        decodeError = "Candidate v18 layout decoded zero RR intervals"
-                    } else {
+                    // A zero RR count is a successfully decoded empty interval list,
+                    // not a packet/layout failure. Preserve the raw frame and keep
+                    // the diagnostic distinct from genuine decode errors.
+                    if !rr.isEmpty {
                         // Historical/offloaded intervals must never replace the
                         // live type-40 RR window or its freshness timestamp.
                         whoopHistoricalRRIntervalsMilliseconds = rr
