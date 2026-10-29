@@ -565,7 +565,6 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var connectionTimeoutWorkItem: DispatchWorkItem?
     private var reconnectWorkItem: DispatchWorkItem?
     private var automaticReconnectAttempt = 0
-    private let automaticReconnectDelays: [TimeInterval] = [1, 2, 4, 8, 16, 30]
     private var pendingCharacteristicServices = Set<ObjectIdentifier>()
     private var pendingDescriptorCharacteristics = Set<ObjectIdentifier>()
     private var gattCharacteristicDiscoveryErrors: [String] = []
@@ -1336,13 +1335,12 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
             statusText = "WHOOP disconnected · automatic reconnect unavailable"
             return
         }
-        guard automaticReconnectAttempt < automaticReconnectDelays.count else {
-            statusText = "WHOOP reconnect paused after 6 attempts · tap Scan to retry"
+        guard let delay = ReconnectBackoffPolicy.delay(forAttempt: automaticReconnectAttempt) else {
+            statusText = "WHOOP reconnect paused after \(ReconnectBackoffPolicy.maximumAttempts) attempts · tap Scan to retry"
             lastBLEEvent = "Automatic reconnect limit reached · \(reason)"
             return
         }
         reconnectWorkItem?.cancel()
-        let delay = automaticReconnectDelays[automaticReconnectAttempt]
         automaticReconnectAttempt += 1
         let attempt = automaticReconnectAttempt
         connectedPeripheral = peripheral
@@ -1351,14 +1349,14 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         connectedName = peripheral.name ?? "WHOOP"
         isConnecting = true
         resetGattSessionForReconnect()
-        statusText = "WHOOP reconnecting · attempt \(attempt)/6 in \(Int(delay))s"
-        lastBLEEvent = "Automatic reconnect scheduled · attempt \(attempt)/6 · \(reason)"
+        statusText = "WHOOP reconnecting · attempt \(attempt)/\(ReconnectBackoffPolicy.maximumAttempts) in \(Int(delay))s"
+        lastBLEEvent = "Automatic reconnect scheduled · attempt \(attempt)/\(ReconnectBackoffPolicy.maximumAttempts) · \(reason)"
         let work = DispatchWorkItem { [weak self, weak peripheral] in
             guard let self, let peripheral,
                   self.connectedPeripheral?.identifier == peripheral.identifier,
                   self.central.state == .poweredOn,
                   UserDefaults.standard.string(forKey: self.rememberedPeripheralKey) == peripheral.identifier.uuidString else { return }
-            self.statusText = "WHOOP reconnecting · attempt \(attempt)/6"
+            self.statusText = "WHOOP reconnecting · attempt \(attempt)/\(ReconnectBackoffPolicy.maximumAttempts)"
             self.central.connect(peripheral, options: nil)
             self.scheduleReconnectTimeout(for: peripheral)
         }
