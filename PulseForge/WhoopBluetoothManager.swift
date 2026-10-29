@@ -97,6 +97,13 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopLastEvent33At: Date?
     @Published private(set) var whoopLastEvent34FrameHex = "none"
     @Published private(set) var whoopLastEvent34At: Date?
+    /// Notification-level and CRC-valid packet-level evidence, keyed by GATT channel.
+    private var vendorNotificationCountsByChannel: [String: Int] = [:]
+    private var vendorNotificationBytesByChannel: [String: Int] = [:]
+    private var vendorNotificationLastAtByChannel: [String: Date] = [:]
+    private var whoopPacketTypeCountsByChannel: [String: [Int: Int]] = [:]
+    private var whoopLastPacketTypeByChannel: [String: Int] = [:]
+    private var whoopRejectedFrameCountsByChannel: [String: Int] = [:]
     /// True only after at least one CRC-valid type-40 HR frame in this connection.
     private var whoop5HRDataObserved = false
     @Published private(set) var whoopConnectionGeneration = 0
@@ -784,6 +791,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP realtime HR ON event confirmed: \(whoop5HRStreamConfirmed ? "yes" : "no")",
             "WHOOP Type-48 EVENT counts by channel: \(whoopEventCountsByChannel.keys.sorted().map { "\($0)=\(whoopEventCountsByChannel[$0] ?? 0)" }.joined(separator: ", ").isEmpty ? "none" : whoopEventCountsByChannel.keys.sorted().map { "\($0)=\(whoopEventCountsByChannel[$0] ?? 0)" }.joined(separator: ", "))",
             "WHOOP event IDs · total: \(whoopEventPacketCount) · ID 33: \(whoopEvent33Count) · ID 34: \(whoopEvent34Count) · last ID: \(whoopLastEventID.map(String.init) ?? "none") · last channel: \(whoopLastEventChannel)",
+            "WHOOP vendor notifications by channel: \(vendorNotificationCountsByChannel.keys.sorted().map { "\($0)=\(vendorNotificationCountsByChannel[$0] ?? 0) notifications/\(vendorNotificationBytesByChannel[$0] ?? 0) bytes" }.joined(separator: ", ").isEmpty ? "none" : vendorNotificationCountsByChannel.keys.sorted().map { "\($0)=\(vendorNotificationCountsByChannel[$0] ?? 0) notifications/\(vendorNotificationBytesByChannel[$0] ?? 0) bytes" }.joined(separator: ", "))",
+            "WHOOP CRC-valid packet types by channel: \(whoopPacketTypeCountsByChannel.keys.sorted().map { channel in "\(channel)=[\((whoopPacketTypeCountsByChannel[channel] ?? [:]).keys.sorted().map { "\($0):\((whoopPacketTypeCountsByChannel[channel] ?? [:])[$0] ?? 0)" }.joined(separator: ", "))]" }.joined(separator: "; ").isEmpty ? "none" : whoopPacketTypeCountsByChannel.keys.sorted().map { channel in "\(channel)=[\((whoopPacketTypeCountsByChannel[channel] ?? [:]).keys.sorted().map { "\($0):\((whoopPacketTypeCountsByChannel[channel] ?? [:])[$0] ?? 0)" }.joined(separator: ", "))]" }.joined(separator: "; "))",
+            "WHOOP last packet type by channel: \(whoopLastPacketTypeByChannel.keys.sorted().map { "\($0)=\(whoopLastPacketTypeByChannel[$0] ?? -1)" }.joined(separator: ", ").isEmpty ? "none" : whoopLastPacketTypeByChannel.keys.sorted().map { "\($0)=\(whoopLastPacketTypeByChannel[$0] ?? -1)" }.joined(separator: ", "))",
+            "WHOOP rejected frames by channel: \(whoopRejectedFrameCountsByChannel.keys.sorted().map { "\($0)=\(whoopRejectedFrameCountsByChannel[$0] ?? 0)" }.joined(separator: ", ").isEmpty ? "none" : whoopRejectedFrameCountsByChannel.keys.sorted().map { "\($0)=\(whoopRejectedFrameCountsByChannel[$0] ?? 0)" }.joined(separator: ", "))",
             "WHOOP last Event 33: \(whoopLastEvent33At.map { ISO8601DateFormatter().string(from: $0) } ?? "not observed") · \(whoopLastEvent33FrameHex)",
             "WHOOP last Event 34: \(whoopLastEvent34At.map { ISO8601DateFormatter().string(from: $0) } ?? "not observed") · \(whoopLastEvent34FrameHex)",
             "WHOOP automatic IMU request: \(whoop5AutoIMUStartRequested ? "yes" : "no")",
@@ -969,6 +980,12 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         vendorNotificationStates.removeAll()
         vendorNotificationPayloads.removeAll()
         vendorNotificationHistory.removeAll()
+        vendorNotificationCountsByChannel.removeAll()
+        vendorNotificationBytesByChannel.removeAll()
+        vendorNotificationLastAtByChannel.removeAll()
+        whoopPacketTypeCountsByChannel.removeAll()
+        whoopLastPacketTypeByChannel.removeAll()
+        whoopRejectedFrameCountsByChannel.removeAll()
         vendorNotificationTimeline.removeAll()
         whoop5FragmentBuffers.removeAll()
         whoop5ExpectedFrameLengths.removeAll()
@@ -1094,6 +1111,12 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         vendorNotificationStates.removeAll()
         vendorNotificationPayloads.removeAll()
         vendorNotificationHistory.removeAll()
+        vendorNotificationCountsByChannel.removeAll()
+        vendorNotificationBytesByChannel.removeAll()
+        vendorNotificationLastAtByChannel.removeAll()
+        whoopPacketTypeCountsByChannel.removeAll()
+        whoopLastPacketTypeByChannel.removeAll()
+        whoopRejectedFrameCountsByChannel.removeAll()
         vendorNotificationTimeline.removeAll()
         whoop5FragmentBuffers.removeAll()
         whoop5ExpectedFrameLengths.removeAll()
@@ -1361,7 +1384,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let uuid = characteristic.uuid.uuidString.uppercased()
             let data = characteristic.value ?? Data()
             let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
-            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let now = Date()
+            vendorNotificationCountsByChannel[uuid, default: 0] += 1
+            vendorNotificationBytesByChannel[uuid, default: 0] += data.count
+            vendorNotificationLastAtByChannel[uuid] = now
+            let timestamp = ISO8601DateFormatter().string(from: now)
             whoopProtocolDiagnostics = ingestWhoop5Notification(data, channel: uuid, peripheral: peripheral)
             if vendorNotificationTimeline.first(where: { $0.contains("first vendor payload") }) == nil {
                 recordVendorTimeline("first vendor payload · \(uuid) · \(data.count) bytes")
@@ -1518,11 +1545,14 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return "WHOOP5 length mismatch · expected \(expected), received \(b.count) · awaiting complete frame"
         }
         guard isValidWhoop5Frame(b) else {
+            whoopRejectedFrameCountsByChannel[channel, default: 0] += 1
             return "WHOOP5 frame rejected · CRC16 header or CRC32 payload invalid"
         }
 
         let type = Int(b[8])
         whoopLastPacketType = "\(type)"
+        whoopPacketTypeCountsByChannel[channel, default: [:]][type, default: 0] += 1
+        whoopLastPacketTypeByChannel[channel] = type
         switch type {
         // The NOOP Gen5 reference routes PUFFIN_COMMAND_RESPONSE (38) through the command-response decoder.
         case 36, 38: // COMMAND_RESPONSE / PUFFIN_COMMAND_RESPONSE share command, sequence and result fields.
