@@ -68,6 +68,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var lastHeartRateAt: Date?
     @Published private(set) var whoopProtocolDiagnostics = "No WHOOP 5.0 protocol frame decoded yet"
     @Published private(set) var whoopRealtimePacketCount = 0
+    @Published private(set) var whoopRRIntervalsMilliseconds: [Int] = []
+    @Published private(set) var whoopRRLastUpdatedAt: Date?
+    @Published private(set) var whoopRRSource = "No WHOOP RR intervals decoded yet"
     @Published private(set) var whoopCommandResponseCount = 0
     @Published private(set) var whoopLastPacketType = "None"
     @Published private(set) var whoopBatteryPercent: Double?
@@ -1553,6 +1556,23 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
             }
 
+            // WHOOP 5 v18 historical biometric records carry RR count@23 and
+            // little-endian millisecond intervals@24+. Keep this separate from R21.
+            if b.count > 9, b[9] == 18 {
+                do {
+                    let rr = try Whoop5RRDecoder.decodeHistoricalV18(b)
+                    if !rr.isEmpty {
+                        whoopRRIntervalsMilliseconds = rr
+                        whoopRRLastUpdatedAt = Date()
+                        whoopRRSource = "WHOOP 5.0 historical v18 · \(rr.count) interval(s) · milliseconds"
+                    }
+                    return "HISTORICAL_DATA v18 · RR \(rr.map(String.init).joined(separator: ",")) ms · CRC valid"
+                } catch {
+                    whoopRRSource = "Historical v18 RR decode rejected · \(error)"
+                    return "HISTORICAL_DATA v18 · RR decode rejected · \(error) · CRC valid"
+                }
+            }
+
             // WHOOP 5 R22 can carry the same 1,244-byte R21 IMU body inside
             // historical type 47 (inner type 0x2F, revision 21). This is the
             // observed high-rate offload path; command ACKs alone do not prove
@@ -1588,15 +1608,28 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopIMUStatus = "Historical WHOOP 5 frame retained · \(b.count) bytes · inner revision \(b.count > 9 ? Int(b[9]) : -1) · R21 decode not matched"
             return "HISTORICAL_DATA(0x2F) · \(b.count) bytes · raw retained"
 
-        case 40: // REALTIME_DATA; protocol inner[8] == complete-frame byte[16]
+        case 40: // REALTIME_DATA; WHOOP 5 offsets: HR@16, RR count@17, RR u16-ms words@18+
             whoopRealtimePacketCount += 1
             guard b.count > 16 else { return "REALTIME_DATA · too short for HR field · CRC valid" }
             let bpm = Int(b[16])
             guard (1...250).contains(bpm) else {
                 return "REALTIME_DATA · HR byte \(bpm) outside plausible range · rejected · CRC valid"
             }
+            do {
+                let rr = try Whoop5RRDecoder.decodeRealtime(b)
+                if !rr.isEmpty {
+                    whoopRRIntervalsMilliseconds = rr
+                    whoopRRLastUpdatedAt = Date()
+                    whoopRRSource = "WHOOP 5.0 realtime · \(rr.count) interval(s) · milliseconds"
+                }
+            } catch {
+                whoopRRSource = "Realtime RR decode rejected · \(error)"
+            }
             recordHeartRateSample(bpm, source: "WHOOP5 REALTIME_DATA")
-            return "REALTIME_DATA · HR \(bpm) bpm decoded at frame offset 16 · CRC valid"
+            let rrSummary = whoopRRIntervalsMilliseconds.isEmpty
+                ? "RR unavailable"
+                : "RR \(whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms"
+            return "REALTIME_DATA · HR \(bpm) bpm · \(rrSummary) · CRC valid"
 
         case 48: // EVENT
             guard b.count >= 20 else { return "EVENT · truncated · CRC valid" }
