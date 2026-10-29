@@ -88,6 +88,15 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopEventPacketCount = 0
     @Published private(set) var whoopLastEventID: Int?
     @Published private(set) var whoopLastEventFrameHex = "none"
+    /// Gen5 Type-48 event evidence, separated by the notifying GATT characteristic.
+    @Published private(set) var whoopEventCountsByChannel: [String: Int] = [:]
+    @Published private(set) var whoopEvent33Count = 0
+    @Published private(set) var whoopEvent34Count = 0
+    @Published private(set) var whoopLastEventChannel = "none"
+    @Published private(set) var whoopLastEvent33FrameHex = "none"
+    @Published private(set) var whoopLastEvent33At: Date?
+    @Published private(set) var whoopLastEvent34FrameHex = "none"
+    @Published private(set) var whoopLastEvent34At: Date?
     /// True only after at least one CRC-valid type-40 HR frame in this connection.
     private var whoop5HRDataObserved = false
     @Published private(set) var whoopConnectionGeneration = 0
@@ -773,6 +782,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP realtime HR enable command sent: \(whoop5HRStreamEnableSent ? "yes" : "no")",
             "WHOOP realtime HR data observed (type 40): \(whoop5HRDataObserved ? "yes" : "no")",
             "WHOOP realtime HR ON event confirmed: \(whoop5HRStreamConfirmed ? "yes" : "no")",
+            "WHOOP Type-48 EVENT counts by channel: \(whoopEventCountsByChannel.keys.sorted().map { "\($0)=\(whoopEventCountsByChannel[$0] ?? 0)" }.joined(separator: ", ").isEmpty ? "none" : whoopEventCountsByChannel.keys.sorted().map { "\($0)=\(whoopEventCountsByChannel[$0] ?? 0)" }.joined(separator: ", "))",
+            "WHOOP event IDs · total: \(whoopEventPacketCount) · ID 33: \(whoopEvent33Count) · ID 34: \(whoopEvent34Count) · last ID: \(whoopLastEventID.map(String.init) ?? "none") · last channel: \(whoopLastEventChannel)",
+            "WHOOP last Event 33: \(whoopLastEvent33At.map { ISO8601DateFormatter().string(from: $0) } ?? "not observed") · \(whoopLastEvent33FrameHex)",
+            "WHOOP last Event 34: \(whoopLastEvent34At.map { ISO8601DateFormatter().string(from: $0) } ?? "not observed") · \(whoopLastEvent34FrameHex)",
             "WHOOP automatic IMU request: \(whoop5AutoIMUStartRequested ? "yes" : "no")",
             "WHOOP automatic IMU enabled: \(whoop5AutoIMUEnabled ? "yes" : "no")",
             "WHOOP IMU frames: \(whoopIMUFrameCount) · samples: \(whoopIMUSampleCount) · live buffer: \(liveWhoopIMUSamples.count) · workout samples: \(workoutWhoopIMUSamples.count) · status: \(whoopIMUStatus)",
@@ -983,6 +996,14 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopEventPacketCount = 0
         whoopLastEventID = nil
         whoopLastEventFrameHex = "none"
+        whoopEventCountsByChannel.removeAll()
+        whoopEvent33Count = 0
+        whoopEvent34Count = 0
+        whoopLastEventChannel = "none"
+        whoopLastEvent33FrameHex = "none"
+        whoopLastEvent33At = nil
+        whoopLastEvent34FrameHex = "none"
+        whoopLastEvent34At = nil
         whoopIMUFrameCount = 0
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
@@ -1422,7 +1443,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     incoming[$0] == 0xAA && incoming[$0 + 1] == 0x01
                 }
             guard incoming.first == 0xAA || containsFrameMarker else {
-                return diagnoseWhoop5Frame(chunk, peripheral: peripheral)
+                return diagnoseWhoop5Frame(chunk, channel: channel, peripheral: peripheral)
             }
         }
         buffer.append(chunk)
@@ -1458,7 +1479,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             guard bytes.count >= frameLength else { break }
             let completeFrame = Data(bytes.prefix(frameLength))
             buffer.removeFirst(frameLength)
-            diagnostics.append(diagnoseWhoop5Frame(completeFrame, peripheral: peripheral))
+            diagnostics.append(diagnoseWhoop5Frame(completeFrame, channel: channel, peripheral: peripheral))
         }
 
         if buffer.count > 8192 {
@@ -1485,7 +1506,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
     /// WHOOP 5.0 frame validation and packet routing.
     /// The frame header uses CRC16-Modbus; the padded inner payload uses CRC32.
-    private func diagnoseWhoop5Frame(_ data: Data, peripheral: CBPeripheral) -> String {
+    private func diagnoseWhoop5Frame(_ data: Data, channel: String, peripheral: CBPeripheral) -> String {
         let b = [UInt8](data)
         guard b.count >= 13 else { return "Fragment/short frame · \(b.count) bytes" }
         guard b[0] == 0xAA, b[1] == 0x01 else {
@@ -1717,9 +1738,16 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             guard b.count >= 20 else { return "EVENT · truncated · CRC valid" }
             let eventID = Int(b[10]) | (Int(b[11]) << 8)
             whoopEventPacketCount += 1
+            whoopEventCountsByChannel[channel, default: 0] += 1
             whoopLastEventID = eventID
-            whoopLastEventFrameHex = b.map { String(format: "%02X", $0) }.joined(separator: " ")
+            whoopLastEventChannel = channel
+            let eventFrameHex = b.map { String(format: "%02X", $0) }.joined(separator: " ")
+            whoopLastEventFrameHex = eventFrameHex
             if eventID == 33 {
+                whoopEvent33Count += 1
+                whoopLastEvent33At = Date()
+                whoopLastEvent33FrameHex = eventFrameHex
+                recordVendorTimeline("EVENT 33 observed · channel=\(channel) · CRC valid")
                 whoop5HRStreamConfirmed = true
                 whoopSessionPhase = "Realtime HR stream confirmed · generation \(whoopConnectionGeneration)"
                 recordVendorTimeline("WHOOP realtime HR active event 33 received")
@@ -1728,6 +1756,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid · realtime HR active; IMU activation withheld pending protocol verification"
             }
             if eventID == 34 {
+                whoopEvent34Count += 1
+                whoopLastEvent34At = Date()
+                whoopLastEvent34FrameHex = eventFrameHex
+                recordVendorTimeline("EVENT 34 observed · channel=\(channel) · CRC valid")
                 whoop5HRStreamConfirmed = false
                 whoopSessionPhase = "Realtime HR stream stopped · event 34 received · generation \(whoopConnectionGeneration)"
                 lastBLEEvent = "WHOOP event 34 · BLE_REALTIME_HR_OFF"
