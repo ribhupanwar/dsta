@@ -82,6 +82,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     /// Historical type-47/v18 intervals are kept separate from the live stream.
     @Published private(set) var whoopHistoricalRRIntervalsMilliseconds: [Int] = []
     @Published private(set) var whoopHistoricalRRLastUpdatedAt: Date?
+    @Published private(set) var whoopHistoricalHeartRateBPM: Int?
+    @Published private(set) var whoopHistoricalTimestampLastUpdatedAt: Date?
     @Published private(set) var whoopHistoricalRRSource = "No historical WHOOP RR intervals decoded yet"
     @Published private(set) var whoopHistorySyncStatus = "Waiting for WHOOP 5 historical sync request"
     @Published private(set) var whoopRRLastUpdatedAt: Date?
@@ -858,7 +860,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP RR state: \(whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · source: \(whoopRRSource) · last RR update: \(whoopRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP standard 2A37 RR: \(whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · last update: \(whoopStandardRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP historical sync: \(whoopHistorySyncStatus)",
-            "WHOOP historical Type-47 v18 archive: \(historicalRRArchiveRecordCount) raw frames · source: \(whoopHistoricalRRSource) · physiological timestamp unverified",
+            "WHOOP historical Type-47 v18 archive: \(historicalRRArchiveRecordCount) raw frames · latest HR: \(whoopHistoricalHeartRateBPM.map(String.init) ?? "none") bpm · physiological timestamp: \(whoopHistoricalTimestampLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none") · source: \(whoopHistoricalRRSource)",
             "WHOOP IMU recent CRC-valid raw frames (oldest first):",
         ]
         lines.append(contentsOf: whoopIMURawFrameHistory.isEmpty ? ["  none"] : whoopIMURawFrameHistory.map { "  \($0)" })
@@ -1895,6 +1897,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 let receivedAt = Date()
                 let rawHex = b.map { String(format: "%02X", $0) }.joined()
                 var rr: [Int] = []
+                let physiologicalTimestamp = try? Whoop5RRDecoder.decodeHistoricalTimestampV18(b)
+                let historicalHeartRateBPM = try? Whoop5RRDecoder.decodeHistoricalHeartRateV18(b)
+                whoopHistoricalTimestampLastUpdatedAt = physiologicalTimestamp
+                whoopHistoricalHeartRateBPM = historicalHeartRateBPM
                 var decodeError: String?
 
                 do {
@@ -1919,7 +1925,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     revision: 18,
                     intervalsMilliseconds: rr,
                     rawFrameHex: rawHex,
-                    physiologicalTimestamp: nil,
+                    heartRateBPM: historicalHeartRateBPM,
+                    physiologicalTimestamp: physiologicalTimestamp,
                     decodeError: decodeError
                 )
                 if let support = FileManager.default.urls(
@@ -1933,7 +1940,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         if let decodeError {
                             whoopHistoricalRRSource = "Type-47 v18 raw frame archived · candidate RR decode rejected · \(decodeError) · packets \(count)"
                         } else {
-                            whoopHistoricalRRSource = "Type-47 v18 RR candidate archived · \(rr.count) intervals · receipt time only · packets \(count)"
+                            whoopHistoricalRRSource = "Type-47 v18 archived · \(rr.count) RR intervals · HR \(historicalHeartRateBPM.map(String.init) ?? "unavailable") bpm · band timestamp \(physiologicalTimestamp.map { ISO8601DateFormatter().string(from: $0) } ?? "unverified") · packets \(count)"
                         }
                     } catch {
                         whoopHistoricalRRSource = "Historical v18 raw frame captured · archive failed · \(error.localizedDescription)"
@@ -1945,7 +1952,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 if let decodeError {
                     return "HISTORICAL_DATA v18 · raw frame retained · RR candidate rejected · \(decodeError) · CRC valid"
                 }
-                return "HISTORICAL_DATA v18 · RR candidate \(rr.map(String.init).joined(separator: ",")) ms · receipt timestamp only · CRC valid"
+                return "HISTORICAL_DATA v18 · HR \(historicalHeartRateBPM.map(String.init) ?? "unavailable") bpm · RR \(rr.map(String.init).joined(separator: ",")) ms · band time \(physiologicalTimestamp.map { ISO8601DateFormatter().string(from: $0) } ?? "unverified") · CRC valid"
             }
 
             // WHOOP 5 R22 can carry the same 1,244-byte R21 IMU body inside
