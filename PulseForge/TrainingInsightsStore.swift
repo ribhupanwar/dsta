@@ -165,9 +165,12 @@ final class TrainingInsightsStore: ObservableObject {
             let minutes = workouts.reduce(0.0) { $0 + $1.duration / 60 }
             // A defensible cardiovascular load needs workout HR samples and a
             // user-measured max HR. Until both are available, leave it blank.
-            guard let self,
-                  let maxHR = UserDefaults.standard.integer(forKey: "pulseforge.running.maxHeartRate"),
-                  maxHR > 0 else {
+            guard let self else {
+                completion(workouts.count, minutes > 0 ? minutes : nil, nil)
+                return
+            }
+            let maxHR = UserDefaults.standard.integer(forKey: "pulseforge.running.maxHeartRate")
+            guard maxHR > 0 else {
                 completion(workouts.count, minutes > 0 ? minutes : nil, nil)
                 return
             }
