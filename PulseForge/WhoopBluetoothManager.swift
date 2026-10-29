@@ -1285,6 +1285,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return
         }
         pendingCharacteristicServices = Set(services.map { ObjectIdentifier($0) })
+        recordVendorTimeline("services discovered · \(services.count) · \(services.map { $0.uuid.uuidString }.joined(separator: ","))")
         whoopSessionPhase = "Discovering characteristics · \(services.count) services"
         guard !services.isEmpty else {
             pendingCharacteristicServices.removeAll()
@@ -1877,6 +1878,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             hrTimingFirstSampleAt = timestamp
             let elapsed = hrTimingConnectionAt.map { timestamp.timeIntervalSince($0) } ?? 0
             hrTimingEvents.append(String(format: "first HR +%.3fs (%@)", elapsed, source))
+            recordVendorTimeline("first accepted HR sample · \(source) · \(bpm) bpm · +\(String(format: "%.3f", elapsed))s")
         }
         let sample = LiveHeartRateSample(timestamp: timestamp, bpm: bpm)
         liveHeartRateSamples.append(sample)
@@ -1986,6 +1988,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         }
         pendingCharacteristicServices.remove(ObjectIdentifier(service))
         if pendingCharacteristicServices.isEmpty {
+            recordVendorTimeline("all service characteristic discovery callbacks completed · descriptors may still be pending")
             // Do not start the WHOOP session while CoreBluetooth is still
             // discovering characteristics on other GATT services. The old
             // per-service trigger could send CLIENT_HELLO before the complete
