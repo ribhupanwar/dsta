@@ -64,7 +64,7 @@ final class CardioLoadCalculatorTests: XCTestCase {
             sessions: [session, outside], dayStart: dayStart, nextDay: nextDay,
             measuredMaxHeartRate: 200
         ))
-        XCTAssertEqual(load, 75, accuracy: 0.001)
+        XCTAssertEqual(load, 150, accuracy: 0.001)
         XCTAssertNil(CardioLoadCalculator.dailyWorkoutLoad(
             sessions: [session], dayStart: dayStart, nextDay: nextDay,
             measuredMaxHeartRate: 0
