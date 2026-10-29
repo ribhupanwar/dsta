@@ -2117,6 +2117,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         whoopEventProbeStatus = "OFF command sent · waiting for Event 34, then automatic ON"
         recordVendorTimeline("Event probe OFF write requested · opcode=03 payload=00 · seq=\(sequence)")
         peripheral.writeValue(frame, for: command, type: .withResponse)
+        // Independent failsafe: restore HR even if the write/response callback is delayed or absent.
+        scheduleWhoopEventProbeRearm(after: 2.0)
     }
 
     private func scheduleWhoopEventProbeRearm(after delay: TimeInterval) {
