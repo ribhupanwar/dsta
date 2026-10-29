@@ -981,6 +981,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HRStallRecoveryWorkItem?.cancel()
         whoop5HRStallRecoveryWorkItem = nil
         whoop5HRStallRecoveryAttempted = false
+        whoop5ClockSyncWorkItem?.cancel()
+        whoop5ClockSyncWorkItem = nil
+        whoop5ClockSyncStarted = false
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
@@ -1096,6 +1099,13 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HelloWritePending = false
         whoop5HelloWriteAcknowledged = false
         whoop5PostHelloNotifyRetryAttempted.removeAll()
+        whoop5HRStallRecoveryWorkItem?.cancel()
+        whoop5HRStallRecoveryWorkItem = nil
+        whoop5HRStallRecoveryAttempted = false
+        whoop5ClockSyncWorkItem?.cancel()
+        whoop5ClockSyncWorkItem = nil
+        whoop5ClockSyncStarted = false
+        whoop5IMUModeEnablePending = nil
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
