@@ -1,9 +1,12 @@
 import Foundation
 
-/// WHOOP 5.0 RR interval decoder.
+/// Candidate WHOOP 5.0 RR interval decoder; field offsets are not yet IPA-verified.
 ///
-/// Offsets and units are based on NOOP's real captured type-40 and v18 type-47
-/// fixtures. The caller must validate the outer WHOOP frame CRC before calling.
+/// Current offsets/units come from NOOP's captured type-40 and v18 type-47 fixtures.
+/// Static inspection of WHOOP 5.75.0 confirms related packet abstractions and RR
+/// symbols, but does not expose enough field-level layout to independently verify
+/// these offsets. Keep this provenance explicit until matched to WHOOP device captures.
+/// The caller must validate the outer WHOOP frame CRC before calling.
 enum Whoop5RRDecoder {
     enum DecodeError: Error, Equatable {
         case invalidFrame
@@ -25,8 +28,9 @@ enum Whoop5RRDecoder {
         return try decodeWords(frame, countOffset: 17, wordsOffset: 18)
     }
 
-    /// HISTORICAL_DATA v18 (type 47): version @9, HR @22, count @23,
-    /// u16 little-endian RR ms @24. Other historical versions use other layouts.
+    /// Candidate HISTORICAL_DATA v18 layout (type 47), currently NOOP-fixture-derived:
+    /// version @9, HR @22, count @23, u16 little-endian RR ms @24.
+    /// Other historical versions use other layouts.
     static func decodeHistoricalV18(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 28, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
