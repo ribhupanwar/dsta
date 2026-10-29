@@ -539,6 +539,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5AutoIMUStartRequested = false
     private var whoop5AutoIMUEnabled = false
     private var whoop5RawStreamStopWorkItem: DispatchWorkItem?
+    private var whoop5RawStreamRearmWorkItem: DispatchWorkItem?
     private var whoop5PendingWrites: [String] = []
     private var whoop5NextCommandSequence: UInt8 = 2
     private var whoop5HistorySyncStarted = false
@@ -1107,6 +1108,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5AutoIMUEnabled = false
         whoop5RawStreamStopWorkItem?.cancel()
         whoop5RawStreamStopWorkItem = nil
+        whoop5RawStreamRearmWorkItem?.cancel()
+        whoop5RawStreamRearmWorkItem = nil
         // Keep the last known battery reading across BLE reconnects; WHOOP does not
         // necessarily emit BATTERY_LEVEL on every connection.
         whoopEventPacketCount = 0
@@ -1720,9 +1723,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoop5AutoIMUEnabled = false
                 whoop5AutoIMUStartRequested = false
                 whoopIMUStatus = result == 1
-                    ? "Bounded raw stream stopped · awaiting next session"
+                    ? "Bounded raw stream stopped · scheduling next 60-second window"
                     : "STOP_RAW_DATA rejected · \(resultName)"
                 recordVendorTimeline("STOP_RAW_DATA(82) response · \(resultName)")
+                if result == 1 {
+                    scheduleWhoop5RawStreamRearm(for: peripheral, after: 3)
+                }
                 return "COMMAND_RESPONSE · STOP_RAW_DATA(82) · \(resultName)"
             }
             if command == 145 {
@@ -2218,6 +2224,25 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         whoop5RawStreamStopWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
         recordVendorTimeline("STOP_RAW_DATA safety stop scheduled · after \(Int(seconds))s")
+    }
+
+    /// Restart the bounded raw stream after a confirmed safety stop.
+    /// Each window remains limited to 60 seconds; reconnect/disconnect cancels re-arm.
+    private func scheduleWhoop5RawStreamRearm(for peripheral: CBPeripheral, after seconds: TimeInterval) {
+        whoop5RawStreamRearmWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self, weak peripheral] in
+            guard let self, let peripheral,
+                  self.connectedPeripheral?.identifier == peripheral.identifier,
+                  peripheral.state == .connected,
+                  self.whoop5HRStreamConfirmed,
+                  self.whoop5HelloWriteAcknowledged,
+                  !self.whoop5AutoIMUEnabled,
+                  !self.whoop5AutoIMUStartRequested else { return }
+            self.recordVendorTimeline("Bounded motion stream re-arm · next 60-second window")
+            self.sendWhoop5RawDataStart(to: peripheral, durationMilliseconds: 60_000)
+        }
+        whoop5RawStreamRearmWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
     }
 
     /// Stop Gen5 raw streaming (STOP_RAW_DATA = 0x52, body [0x01]).
