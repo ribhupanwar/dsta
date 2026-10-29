@@ -845,13 +845,13 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP latest CRC-valid raw IMU frame hex (outer type 43 · inner 0x2B/R21): \(whoopIMULastRawFrameHex)",
             "WHOOP RR state: \(whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · source: \(whoopRRSource) · last RR update: \(whoopRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
-            "WHOOP historical Type-47 v18 archive: \\(historicalRRArchiveRecordCount) raw frames · source: \\(whoopHistoricalRRSource) · physiological timestamp unverified",
+            "WHOOP historical Type-47 v18 archive: \(historicalRRArchiveRecordCount) raw frames · source: \(whoopHistoricalRRSource) · physiological timestamp unverified",
             "WHOOP IMU recent CRC-valid raw frames (oldest first):",
         ]
         lines.append(contentsOf: whoopIMURawFrameHistory.isEmpty ? ["  none"] : whoopIMURawFrameHistory.map { "  \($0)" })
         lines.append("")
         lines.append("WHOOP realtime Type-40 raw frames (oldest first):")
-        lines.append(contentsOf: whoopRealtimeRRRawFrameHistory.isEmpty ? ["  No Type-40 raw frames captured"] : whoopRealtimeRRRawFrameHistory.map { "  \\($0)" })
+        lines.append(contentsOf: whoopRealtimeRRRawFrameHistory.isEmpty ? ["  No Type-40 raw frames captured"] : whoopRealtimeRRRawFrameHistory.map { "  \($0)" })
         lines.append(contentsOf: [
             "WHOOP protocol diagnosis: \(whoopProtocolDiagnostics)",
             "WHOOP packet counts · realtime: \(whoopRealtimePacketCount) · command responses: \(whoopCommandResponseCount)",
