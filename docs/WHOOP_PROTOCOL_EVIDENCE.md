@@ -84,3 +84,17 @@ The WHOOP IPA evidence does **not** yet prove that these UUID-role mappings, the
 4. Only then change packet/handshake behaviour. Keep live Type-40 RR/RMSSD separate from overnight HRV and sleep calculations; do not publish unverified Recovery, Sleep or Strain scores.
 
 No protocol behaviour was changed by this evidence audit.
+
+
+## Hello resource byte comparison (2026-10-29 follow-up)
+
+A byte-for-byte comparison of the two extracted 144-byte resources found:
+
+- Offset 9 changes from `0x03` to `0x04`, consistent with the resource revision names.
+- Offsets 23–87 differ across a contiguous region. The bytes in this region include printable ASCII and a shifted NUL terminator; it is not a one-byte revision toggle.
+- Additional differences occur at offsets 90–91, 94–95, 98–99, 102–103, 110–117, 122–124, 127–128, 131–132, and 135–136.
+- The common 144-byte length and header prefix are observed; the differing regions are observed by direct byte comparison.
+
+**Interpretation limit:** these offsets are byte-difference coordinates only. Without resolving the WHOOP executable's resource loader, packet serializer, and revision-specific field definitions, we cannot label these ranges as device ID, firmware, capabilities, CRC, or outbound command fields. Do not copy either blob into PulseForge or derive a CLIENT_HELLO from it yet.
+
+**Next reverse-engineering step:** inspect the executable's references to `HelloPacketRev3` / `HelloPacketRev4`, `HelloInfoProviding`, and `HelloResponsePacket`; establish whether the resources are loaded as a request, template, or response-side structure, then map the serializer and response parser before changing BLE writes.
