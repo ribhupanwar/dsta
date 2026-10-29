@@ -25,6 +25,21 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(try Whoop5RRDecoder.decodeHistoricalV18(frame), [602, 613])
     }
 
+    func testRealtimePacketWithZeroRRCountReturnsNoIntervals() throws {
+        // A valid type-40 HR frame may omit RR data; never synthesize RR values.
+        var frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
+        frame[17] = 0
+        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtime(frame), [])
+    }
+
+    func testRealtimePacketRejectsRRCountAboveProtocolLimit() {
+        var frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
+        frame[17] = 33
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtime(frame)) { error in
+            XCTAssertEqual(error as? Whoop5RRDecoder.DecodeError, .invalidIntervalCount(33))
+        }
+    }
+
     func testRejectsWrongRecordType() {
         let frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
         XCTAssertThrowsError(try Whoop5RRDecoder.decodeHistoricalV18(frame))
