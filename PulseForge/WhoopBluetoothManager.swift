@@ -71,6 +71,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var lastWhoopRealtimeHRAt: Date?
     /// Latest RR intervals from the realtime type-40 stream only.
     @Published private(set) var whoopRRIntervalsMilliseconds: [Int] = []
+    /// Recent CRC-valid Type-40 frames, retained verbatim for independent layout verification.
+    @Published private(set) var whoopRealtimeRRRawFrameHistory: [String] = []
     /// Rolling realtime RR window for live diagnostics; never used as overnight HRV.
     @Published private(set) var whoopRRWindowMilliseconds: [Int] = []
     /// Short-window RMSSD from live type-40 RR only; never overnight HRV.
@@ -847,6 +849,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU recent CRC-valid raw frames (oldest first):",
         ]
         lines.append(contentsOf: whoopIMURawFrameHistory.isEmpty ? ["  none"] : whoopIMURawFrameHistory.map { "  \($0)" })
+        lines.append("")
+        lines.append("WHOOP realtime Type-40 raw frames (oldest first):")
+        lines.append(contentsOf: whoopRealtimeRRRawFrameHistory.isEmpty ? ["  No Type-40 raw frames captured"] : whoopRealtimeRRRawFrameHistory.map { "  \\($0)" })
         lines.append(contentsOf: [
             "WHOOP protocol diagnosis: \(whoopProtocolDiagnostics)",
             "WHOOP packet counts · realtime: \(whoopRealtimePacketCount) · command responses: \(whoopCommandResponseCount)",
@@ -1870,6 +1875,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
         case 40: // REALTIME_DATA; WHOOP 5 offsets: HR@16, RR count@17, RR u16-ms words@18+
             whoopRealtimePacketCount += 1
+            let capturedAt = ISO8601DateFormatter().string(from: Date())
+            let rawHex = b.map { String(format: "%02X", $0) }.joined()
+            whoopRealtimeRRRawFrameHistory.append("\(capturedAt) · type=40 · \(b.count) bytes · HEX: \(rawHex)")
+            if whoopRealtimeRRRawFrameHistory.count > 20 {
+                whoopRealtimeRRRawFrameHistory.removeFirst(whoopRealtimeRRRawFrameHistory.count - 20)
+            }
             guard b.count > 16 else { return "REALTIME_DATA · too short for HR field · CRC valid" }
             let bpm = Int(b[16])
             guard (1...250).contains(bpm) else {
