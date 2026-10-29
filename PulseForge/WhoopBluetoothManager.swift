@@ -71,6 +71,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var lastWhoopRealtimeHRAt: Date?
     /// Latest RR intervals from the realtime type-40 stream only.
     @Published private(set) var whoopRRIntervalsMilliseconds: [Int] = []
+    @Published private(set) var whoopStandardRRIntervalsMilliseconds: [Int] = []
+    @Published private(set) var whoopStandardRRLastUpdatedAt: Date?
+    /// Recent CRC-valid Type-40 frames, retained verbatim for independent layout verification.
+    @Published private(set) var whoopRealtimeRRRawFrameHistory: [String] = []
     /// Rolling realtime RR window for live diagnostics; never used as overnight HRV.
     @Published private(set) var whoopRRWindowMilliseconds: [Int] = []
     /// Short-window RMSSD from live type-40 RR only; never overnight HRV.
@@ -78,7 +82,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     /// Historical type-47/v18 intervals are kept separate from the live stream.
     @Published private(set) var whoopHistoricalRRIntervalsMilliseconds: [Int] = []
     @Published private(set) var whoopHistoricalRRLastUpdatedAt: Date?
+    @Published private(set) var whoopHistoricalHeartRateBPM: Int?
+    @Published private(set) var whoopHistoricalTimestampLastUpdatedAt: Date?
     @Published private(set) var whoopHistoricalRRSource = "No historical WHOOP RR intervals decoded yet"
+    @Published private(set) var whoopHistorySyncStatus = "Waiting for WHOOP 5 historical sync request"
     @Published private(set) var whoopRRLastUpdatedAt: Date?
     @Published private(set) var whoopRRSource = "No WHOOP RR intervals decoded yet"
     @Published private(set) var whoopCommandResponseCount = 0
@@ -407,7 +414,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                     }
                     builder.finishWorkout { workout, finishError in
                         DispatchQueue.main.async {
-                            if let workout {
+                            if workout != nil {
                                 exportedIDs.insert(record.id.uuidString)
                                 UserDefaults.standard.set(Array(exportedIDs), forKey: exportedKey)
                                 self.healthKitExportStatus = "Saved to Apple Health · \(heartRateSamples.count) HR samples"
@@ -532,6 +539,14 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5RawStreamStopWorkItem: DispatchWorkItem?
     private var whoop5PendingWrites: [String] = []
     private var whoop5NextCommandSequence: UInt8 = 2
+    private var whoop5HistorySyncStarted = false
+    private var whoop5HistorySyncRequested = false
+    private var whoop5HistoryClockSequence: UInt8?
+    private var whoop5HistoryRangeSequence: UInt8?
+    private var whoop5HistoryRequestSequence: UInt8?
+    private var whoop5HelloRevision: Int?
+    private var whoop5HelloTimestampSeconds: UInt32?
+    private var whoop5HelloTimestampSubseconds: UInt32?
     private var hrTimingConnectionAt: Date?
     private var hrTimingStandardNotifyRequestedAt: Date?
     private var hrTimingStandardNotifyEnabledAt: Date?
@@ -767,6 +782,33 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         }
     }
 
+    /// JSON export of CRC-valid Type-47 v18 frames captured from the connected band.
+    /// Includes raw frame hex, phone receipt time, candidate RR values, and decode errors.
+    /// Physiological timestamps remain nil until the packet layout is independently verified.
+    var historicalRRArchiveExport: String {
+        guard let support = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return "[]" }
+        let archiveURL = support
+            .appendingPathComponent("PulseForge", isDirectory: true)
+            .appendingPathComponent("historical-whoop-rr-v1.json")
+        guard let data = try? Data(contentsOf: archiveURL),
+              let contents = String(data: data, encoding: .utf8) else {
+            return "[]"
+        }
+        return contents
+    }
+
+    var historicalRRArchiveRecordCount: Int {
+        guard let support = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return 0 }
+        let archiveURL = support
+            .appendingPathComponent("PulseForge", isDirectory: true)
+            .appendingPathComponent("historical-whoop-rr-v1.json")
+        return HistoricalRRPacketArchive.load(from: archiveURL).count
+    }
+
     var diagnosticSnapshot: String {
         var lines = [
             "GATT summary: \(gattCapabilitySummary)",
@@ -816,9 +858,15 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP latest CRC-valid raw IMU frame hex (outer type 43 · inner 0x2B/R21): \(whoopIMULastRawFrameHex)",
             "WHOOP RR state: \(whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · source: \(whoopRRSource) · last RR update: \(whoopRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
+            "WHOOP standard 2A37 RR: \(whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · last update: \(whoopStandardRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
+            "WHOOP historical sync: \(whoopHistorySyncStatus)",
+            "WHOOP historical Type-47 v18 archive: \(historicalRRArchiveRecordCount) raw frames · latest HR: \(whoopHistoricalHeartRateBPM.map(String.init) ?? "none") bpm · physiological timestamp: \(whoopHistoricalTimestampLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none") · source: \(whoopHistoricalRRSource)",
             "WHOOP IMU recent CRC-valid raw frames (oldest first):",
         ]
         lines.append(contentsOf: whoopIMURawFrameHistory.isEmpty ? ["  none"] : whoopIMURawFrameHistory.map { "  \($0)" })
+        lines.append("")
+        lines.append("WHOOP realtime Type-40 raw frames (oldest first):")
+        lines.append(contentsOf: whoopRealtimeRRRawFrameHistory.isEmpty ? ["  No Type-40 raw frames captured"] : whoopRealtimeRRRawFrameHistory.map { "  \($0)" })
         lines.append(contentsOf: [
             "WHOOP protocol diagnosis: \(whoopProtocolDiagnostics)",
             "WHOOP packet counts · realtime: \(whoopRealtimePacketCount) · command responses: \(whoopCommandResponseCount)",
@@ -1090,12 +1138,23 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         liveWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoopRRIntervalsMilliseconds.removeAll()
+        whoopStandardRRIntervalsMilliseconds.removeAll()
+        whoopStandardRRLastUpdatedAt = nil
         whoopRRWindowMilliseconds.removeAll()
         whoopLiveRMSSDMilliseconds = nil
         whoopRRLastUpdatedAt = nil
         whoopRRSource = "Waiting for WHOOP RR intervals"
         whoop5PendingWrites.removeAll()
         whoop5NextCommandSequence = 2
+        whoop5HistorySyncStarted = false
+        whoop5HistorySyncRequested = false
+        whoop5HistoryClockSequence = nil
+        whoop5HistoryRangeSequence = nil
+        whoop5HistoryRequestSequence = nil
+        whoop5HelloRevision = nil
+        whoop5HelloTimestampSeconds = nil
+        whoop5HelloTimestampSubseconds = nil
+        whoopHistorySyncStatus = "Waiting for WHOOP 5 historical sync request"
         isStandardHeartRateNotifying = false
         liveHeartRateBPM = nil
         lastHeartRateAt = nil
@@ -1208,6 +1267,15 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopRRSource = "Waiting for WHOOP RR intervals"
         whoop5PendingWrites.removeAll()
         whoop5NextCommandSequence = 2
+        whoop5HistorySyncStarted = false
+        whoop5HistorySyncRequested = false
+        whoop5HistoryClockSequence = nil
+        whoop5HistoryRangeSequence = nil
+        whoop5HistoryRequestSequence = nil
+        whoop5HelloRevision = nil
+        whoop5HelloTimestampSeconds = nil
+        whoop5HelloTimestampSubseconds = nil
+        whoopHistorySyncStatus = "Waiting for WHOOP 5 historical sync request"
         isConnecting = false
         connectedPeripheral?.delegate = nil
         connectedPeripheral = nil
@@ -1484,19 +1552,22 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             lastBLEEvent = "Standard HR notification received · payload could not be parsed"
             return
         }
-        // Standard 2A37 is a fallback only. Prefer the WHOOP 5.0 type-40
-        // stream while it is healthy so a parallel generic notification cannot
-        // overwrite the primary source or mix its RR intervals into that window.
+        // Capture standard BLE RR independently even while WHOOP Type-40 HR is
+        // fresh. Keep sources separate; 2A37 RR must never overwrite Type-40 RR
+        // or contribute to its RMSSD window.
+        let standardRR = StandardHeartRateRRParser.parseMilliseconds(data)
+        if !standardRR.isEmpty {
+            whoopStandardRRIntervalsMilliseconds = standardRR
+            whoopStandardRRLastUpdatedAt = Date()
+        }
         let whoopRealtimeIsFresh = WhoopRealtimeFreshness.isFresh(
             lastPacketAt: lastWhoopRealtimeHRAt, now: Date(), maximumAge: 30
         )
         guard !whoopRealtimeIsFresh else {
-            lastBLEEvent = "Standard HR fallback ignored · WHOOP type-40 stream is fresh"
+            lastBLEEvent = standardRR.isEmpty
+                ? "Standard HR fallback ignored · WHOOP Type-40 fresh · 2A37 RR count 0"
+                : "Standard HR fallback ignored · WHOOP Type-40 fresh · captured \(standardRR.count) separate 2A37 RR interval(s)"
             return
-        }
-        let standardRR = StandardHeartRateRRParser.parseMilliseconds(data)
-        if !standardRR.isEmpty {
-            appendRRIntervals(standardRR, source: "WHOOP standard BLE 2A37 fallback")
         }
         recordHeartRateSample(bpm, source: "WHOOP standard BLE HR fallback")
     }
@@ -1666,9 +1737,50 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     return "COMMAND_RESPONSE · GET_HELLO success but body too short (\(b.count) bytes)"
                 }
                 recordVendorTimeline("GET_HELLO response accepted · sequence 1 · success · minimum body length met")
-                whoopSessionPhase = "GET_HELLO response parsed · requesting realtime HR"
+                // Revision-1 Gen5 HELLO carries strap RTC at body[6..13]:
+                // seconds:u32le + subseconds:u32le in 1/32768-second units.
+                whoop5HelloRevision = Int(b[13])
+                whoop5HelloTimestampSeconds = UInt32(b[19])
+                    | (UInt32(b[20]) << 8) | (UInt32(b[21]) << 16) | (UInt32(b[22]) << 24)
+                whoop5HelloTimestampSubseconds = UInt32(b[23])
+                    | (UInt32(b[24]) << 8) | (UInt32(b[25]) << 16) | (UInt32(b[26]) << 24)
+                whoop5HistorySyncRequested = true
+                whoopSessionPhase = "GET_HELLO response parsed · requesting realtime HR and historical sync"
                 sendRealtimeHrEnable(to: peripheral)
-                return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR enable requested"
+                return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR and history setup requested"
+            }
+            if command == 10, let sequence = whoop5HistoryClockSequence,
+               echoedSequence == Int(sequence) {
+                if result == 2 {
+                    whoopHistorySyncStatus = "SET_CLOCK pending · waiting for terminal response"
+                    recordVendorTimeline("Historical sync SET_CLOCK response · PENDING")
+                    return "COMMAND_RESPONSE · SET_CLOCK(10) · PENDING"
+                }
+                guard result == 1 else {
+                    whoopHistorySyncStatus = "Clock correction rejected · historical sync withheld · \(resultName)"
+                    recordVendorTimeline("Historical sync SET_CLOCK response · \(resultName) · request withheld")
+                    return "COMMAND_RESPONSE · SET_CLOCK(10) · \(resultName) · historical sync withheld"
+                }
+                recordVendorTimeline("Historical sync SET_CLOCK(10) confirmed · proceeding to GET_DATA_RANGE")
+                requestWhoop5HistoricalDataRange(to: peripheral)
+                return "COMMAND_RESPONSE · SET_CLOCK(10) SUCCESS · requesting GET_DATA_RANGE"
+            }
+            if command == 34, let sequence = whoop5HistoryRangeSequence,
+               echoedSequence == Int(sequence) {
+                recordVendorTimeline("Historical GET_DATA_RANGE(34) response · \(resultName)")
+                return "COMMAND_RESPONSE · GET_DATA_RANGE(34) · \(resultName)"
+            }
+            if command == 22, let sequence = whoop5HistoryRequestSequence,
+               echoedSequence == Int(sequence) {
+                if result == 2 {
+                    whoopHistorySyncStatus = "SEND_HISTORICAL_DATA pending · waiting for HISTORY_START"
+                } else if result == 1 {
+                    whoopHistorySyncStatus = "History request accepted · waiting for Type-47 / HISTORY markers"
+                } else {
+                    whoopHistorySyncStatus = "History request rejected · \(resultName)"
+                }
+                recordVendorTimeline("SEND_HISTORICAL_DATA(22) response · \(resultName)")
+                return "COMMAND_RESPONSE · SEND_HISTORICAL_DATA(22) · \(resultName)"
             }
             if command == 3 {
                 if let offSequence = whoopEventProbeOffSequence,
@@ -1738,20 +1850,65 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopIMUStatus = "Realtime IMU stream packet received · \(b.count) bytes · CRC valid · subtype decode pending"
             return "REALTIME_IMU_DATA_STREAM(51) · \(b.count) bytes · CRC valid · raw frame retained"
 
+        case 49: // METADATA; WHOOP 5 HISTORY_END must be acknowledged to advance the trim cursor.
+            // NOOP's hardware-backed v5 fixture establishes:
+            // meta_type @10 (2 = HISTORY_END), and end_data @21..<29 (trim cursor + next cursor).
+            // The official flow echoes these exact 8 bytes in HISTORICAL_DATA_RESULT(23),
+            // prefixed by 0x01. Do not infer timestamps from phone receipt time.
+            guard b.count >= 29 else {
+                return "METADATA · truncated frame · \\(b.count) bytes · CRC valid"
+            }
+            let metadataType = Int(b[10])
+            if metadataType == 1 {
+                whoopHistorySyncStatus = "HISTORY_START received · waiting for Type-47 records"
+            } else if metadataType == 3 {
+                whoopHistorySyncStatus = "HISTORY_COMPLETE received · historical transfer finished"
+            }
+            if metadataType == 2 { // HISTORY_END
+                let endData = Array(b[21..<29])
+                let trimCursor = UInt32(endData[0])
+                    | (UInt32(endData[1]) << 8)
+                    | (UInt32(endData[2]) << 16)
+                    | (UInt32(endData[3]) << 24)
+                guard let command = whoop5CommandCharacteristic,
+                      command.properties.contains(.write) else {
+                    recordVendorTimeline("HISTORY_END received · trim=\(trimCursor) · ACK withheld because command characteristic is unavailable")
+                    return "METADATA · HISTORY_END · trim=\(trimCursor) · ACK unavailable"
+                }
+                let sequence = whoop5NextCommandSequence
+                whoop5NextCommandSequence &+= 1
+                let payload = [UInt8(0x01)] + endData
+                let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x17, payload: payload)
+                whoop5PendingWrites.append("HISTORICAL_DATA_RESULT")
+                recordVendorTimeline("HISTORY_END ACK requested · HISTORICAL_DATA_RESULT(23) · trim=\(trimCursor) · seq=\(sequence) · exact end_data echoed")
+                peripheral.writeValue(frame, for: command, type: .withResponse)
+                return "METADATA · HISTORY_END · trim=\(trimCursor) · HISTORICAL_DATA_RESULT(23) write requested"
+            }
+            let metadataName = metadataType == 1 ? "HISTORY_START"
+                : metadataType == 3 ? "HISTORY_COMPLETE" : "metadata type \(metadataType)"
+            recordVendorTimeline("WHOOP metadata observed · \(metadataName) · CRC valid")
+            return "METADATA · \(metadataName) · CRC valid"
+
         case 47: // HISTORICAL_DATA; contains several Gen5 layouts, not all of them IMU.
             // Preserve every CRC-valid v18 frame before trusting the candidate RR offsets.
             // Receipt time is forensic metadata only; physiological time remains nil.
             if b.count > 9, b[9] == 18 {
+                whoopHistorySyncStatus = "Type-47 v18 historical frame received · decoding/archive in progress"
                 let receivedAt = Date()
                 let rawHex = b.map { String(format: "%02X", $0) }.joined()
                 var rr: [Int] = []
+                let physiologicalTimestamp = try? Whoop5RRDecoder.decodeHistoricalTimestampV18(b)
+                let historicalHeartRateBPM = try? Whoop5RRDecoder.decodeHistoricalHeartRateV18(b)
+                whoopHistoricalTimestampLastUpdatedAt = physiologicalTimestamp
+                whoopHistoricalHeartRateBPM = historicalHeartRateBPM
                 var decodeError: String?
 
                 do {
                     rr = try Whoop5RRDecoder.decodeHistoricalV18(b)
-                    if rr.isEmpty {
-                        decodeError = "Candidate v18 layout decoded zero RR intervals"
-                    } else {
+                    // A zero RR count is a successfully decoded empty interval list,
+                    // not a packet/layout failure. Preserve the raw frame and keep
+                    // the diagnostic distinct from genuine decode errors.
+                    if !rr.isEmpty {
                         // Historical/offloaded intervals must never replace the
                         // live type-40 RR window or its freshness timestamp.
                         whoopHistoricalRRIntervalsMilliseconds = rr
@@ -1768,7 +1925,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     revision: 18,
                     intervalsMilliseconds: rr,
                     rawFrameHex: rawHex,
-                    physiologicalTimestamp: nil,
+                    heartRateBPM: historicalHeartRateBPM,
+                    physiologicalTimestamp: physiologicalTimestamp,
                     decodeError: decodeError
                 )
                 if let support = FileManager.default.urls(
@@ -1782,7 +1940,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         if let decodeError {
                             whoopHistoricalRRSource = "Type-47 v18 raw frame archived · candidate RR decode rejected · \(decodeError) · packets \(count)"
                         } else {
-                            whoopHistoricalRRSource = "Type-47 v18 RR candidate archived · \(rr.count) intervals · receipt time only · packets \(count)"
+                            whoopHistoricalRRSource = "Type-47 v18 archived · \(rr.count) RR intervals · HR \(historicalHeartRateBPM.map(String.init) ?? "unavailable") bpm · band timestamp \(physiologicalTimestamp.map { ISO8601DateFormatter().string(from: $0) } ?? "unverified") · packets \(count)"
                         }
                     } catch {
                         whoopHistoricalRRSource = "Historical v18 raw frame captured · archive failed · \(error.localizedDescription)"
@@ -1794,7 +1952,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 if let decodeError {
                     return "HISTORICAL_DATA v18 · raw frame retained · RR candidate rejected · \(decodeError) · CRC valid"
                 }
-                return "HISTORICAL_DATA v18 · RR candidate \(rr.map(String.init).joined(separator: ",")) ms · receipt timestamp only · CRC valid"
+                return "HISTORICAL_DATA v18 · HR \(historicalHeartRateBPM.map(String.init) ?? "unavailable") bpm · raw RR words \(rr.map(String.init).joined(separator: ",")) · units unverified · band time \(physiologicalTimestamp.map { ISO8601DateFormatter().string(from: $0) } ?? "unverified") · CRC valid"
             }
 
             // WHOOP 5 R22 can carry the same 1,244-byte R21 IMU body inside
@@ -1842,6 +2000,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
         case 40: // REALTIME_DATA; WHOOP 5 offsets: HR@16, RR count@17, RR u16-ms words@18+
             whoopRealtimePacketCount += 1
+            let capturedAt = ISO8601DateFormatter().string(from: Date())
+            let rawHex = b.map { String(format: "%02X", $0) }.joined()
+            whoopRealtimeRRRawFrameHistory.append("\(capturedAt) · type=40 · \(b.count) bytes · HEX: \(rawHex)")
+            if whoopRealtimeRRRawFrameHistory.count > 20 {
+                whoopRealtimeRRRawFrameHistory.removeFirst(whoopRealtimeRRRawFrameHistory.count - 20)
+            }
             guard b.count > 16 else { return "REALTIME_DATA · too short for HR field · CRC valid" }
             let bpm = Int(b[16])
             guard (1...250).contains(bpm) else {
@@ -1850,10 +2014,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             do {
                 let rr = try Whoop5RRDecoder.decodeRealtime(b)
                 if rr.isEmpty {
-                    // A valid Type-40 frame can carry HR without RR intervals.
-                    // Record that observation without refreshing the last RR timestamp
-                    // or discarding the last validated RR batch/window.
-                    whoopRRSource = "WHOOP 5.0 realtime · latest Type-40 packet contained 0 RR intervals · previous RR sample retained"
+                    // Type-40 legitimately carries HR-only packets between RR-bearing
+                    // packets. Preserve the last valid RR batch and rolling window;
+                    // do not erase useful RR data or reset its freshness timestamp.
+                    // appendRRIntervals() already expires the rolling window after a
+                    // >30-second gap when the next RR-bearing packet arrives.
+                    whoopRRSource = "WHOOP 5.0 realtime · latest Type-40 packet contained 0 RR intervals · retaining last valid RR batch"
                 } else {
                     appendRRIntervals(rr, source: "WHOOP 5.0 realtime")
                 }
@@ -2172,6 +2338,98 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
+    /// Begin the Gen5 flash-history request after the realtime-HR command write.
+    /// Use the revision-1 HELLO RTC when plausible; correct it only at >=2 s drift.
+    /// Unknown HELLO layouts are never read through guessed offsets.
+    private func startWhoop5HistoricalSync(to peripheral: CBPeripheral) {
+        guard !whoop5HistorySyncStarted,
+              connectedPeripheral?.identifier == peripheral.identifier,
+              peripheral.state == .connected,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        whoop5HistorySyncStarted = true
+        whoop5HistorySyncRequested = false
+
+        if whoop5HelloRevision == 1,
+           let seconds = whoop5HelloTimestampSeconds,
+           let subseconds = whoop5HelloTimestampSubseconds,
+           seconds >= 1_600_000_000,
+           subseconds < 32_768 {
+            let strapMilliseconds = Double(seconds) * 1000.0
+                + Double(subseconds) * 1000.0 / 32_768.0
+            let driftMilliseconds = abs(Date().timeIntervalSince1970 * 1000.0 - strapMilliseconds)
+            if driftMilliseconds < 2_000 {
+                whoopHistorySyncStatus = "HELLO RTC in sync · requesting GET_DATA_RANGE"
+                recordVendorTimeline("Historical sync clock gate · HELLO RTC drift \(Int(driftMilliseconds))ms · no SET_CLOCK needed")
+                requestWhoop5HistoricalDataRange(to: peripheral)
+                return
+            }
+            recordVendorTimeline("Historical sync clock gate · HELLO RTC drift \(Int(driftMilliseconds))ms · SET_CLOCK required")
+        } else {
+            recordVendorTimeline("Historical sync clock gate · HELLO timestamp unavailable/untrusted · SET_CLOCK required")
+        }
+
+        let nowMilliseconds = Date().timeIntervalSince1970 * 1000.0
+        let epochSeconds = UInt32(nowMilliseconds / 1000.0)
+        let subsecondTicks = UInt32((nowMilliseconds.truncatingRemainder(dividingBy: 1000.0) * 32_768.0) / 1000.0)
+        let payload: [UInt8] = [
+            UInt8(epochSeconds & 0xFF),
+            UInt8((epochSeconds >> 8) & 0xFF),
+            UInt8((epochSeconds >> 16) & 0xFF),
+            UInt8((epochSeconds >> 24) & 0xFF),
+            UInt8(subsecondTicks & 0xFF),
+            UInt8((subsecondTicks >> 8) & 0xFF),
+            0, 0
+        ]
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        whoop5HistoryClockSequence = sequence
+        whoop5PendingWrites.append("SET_CLOCK_FOR_HISTORY")
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x0A, payload: payload)
+        whoopHistorySyncStatus = "SET_CLOCK sent · waiting for WHOOP command response"
+        recordVendorTimeline("Historical sync SET_CLOCK(10) requested · 8-byte Gen5 RTC payload · seq=\(sequence)")
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    /// Gen5 GET_DATA_RANGE (0x22) uses an empty semantic body.
+    private func requestWhoop5HistoricalDataRange(to peripheral: CBPeripheral) {
+        guard connectedPeripheral?.identifier == peripheral.identifier,
+              peripheral.state == .connected,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else {
+            whoopHistorySyncStatus = "GET_DATA_RANGE unavailable · command characteristic missing"
+            return
+        }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        whoop5HistoryRangeSequence = sequence
+        whoop5PendingWrites.append("GET_DATA_RANGE_FOR_HISTORY")
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x22, payload: [])
+        whoopHistorySyncStatus = "GET_DATA_RANGE sent · waiting for BLE write acknowledgement"
+        recordVendorTimeline("Historical sync GET_DATA_RANGE(34) requested · Gen5 empty body · seq=\(sequence)")
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    /// Gen5 SEND_HISTORICAL_DATA (0x16) uses an empty semantic body.
+    /// Do not reuse the Gen4 one-byte 0x00 payload on a Gen5 strap.
+    private func sendWhoop5HistoricalData(to peripheral: CBPeripheral) {
+        guard connectedPeripheral?.identifier == peripheral.identifier,
+              peripheral.state == .connected,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else {
+            whoopHistorySyncStatus = "SEND_HISTORICAL_DATA unavailable · command characteristic missing"
+            return
+        }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        whoop5HistoryRequestSequence = sequence
+        whoop5PendingWrites.append("SEND_HISTORICAL_DATA")
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x16, payload: [])
+        whoopHistorySyncStatus = "SEND_HISTORICAL_DATA sent · waiting for WHOOP history stream"
+        recordVendorTimeline("SEND_HISTORICAL_DATA(22) requested · Gen5 empty body · seq=\(sequence)")
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
     /// Gen5 outbound command envelope: CRC16-Modbus header + CRC32 padded inner.
     private func buildWhoop5CommandFrame(sequence: UInt8, opcode: UInt8, payload: [UInt8]) -> Data {
         var inner: [UInt8] = [0x23, sequence, opcode] + payload
@@ -2439,9 +2697,59 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             recordVendorTimeline("REALTIME_HR_ON write callback · acknowledged by CoreBluetooth")
             lastBLEEvent = "WHOOP realtime HR ON write acknowledged by CoreBluetooth · opcode 03"
+            if whoop5HistorySyncRequested {
+                startWhoop5HistoricalSync(to: peripheral)
+            }
             statusText = whoop5HRStreamConfirmed
                 ? "Connected · WHOOP realtime HR stream confirmed"
                 : "Connected · HR stream requested · awaiting WHOOP confirmation/data"
+            return
+        }
+
+        if kind == "SET_CLOCK_FOR_HISTORY" {
+            if let error {
+                whoopHistorySyncStatus = "SET_CLOCK write failed · \(error.localizedDescription)"
+                recordVendorTimeline("Historical sync SET_CLOCK write failed · \(error.localizedDescription)")
+                return
+            }
+            recordVendorTimeline("Historical sync SET_CLOCK write acknowledged · awaiting command response")
+            return
+        }
+        if kind == "GET_DATA_RANGE_FOR_HISTORY" {
+            if let error {
+                whoopHistorySyncStatus = "GET_DATA_RANGE write failed · \(error.localizedDescription)"
+                recordVendorTimeline("Historical sync GET_DATA_RANGE write failed · \(error.localizedDescription)")
+                return
+            }
+            whoopHistorySyncStatus = "GET_DATA_RANGE written · settling before historical request"
+            recordVendorTimeline("Historical sync GET_DATA_RANGE write acknowledged · 120ms settle")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self, weak peripheral] in
+                guard let self, let peripheral,
+                      self.connectedPeripheral?.identifier == peripheral.identifier,
+                      peripheral.state == .connected else { return }
+                self.sendWhoop5HistoricalData(to: peripheral)
+            }
+            return
+        }
+        if kind == "SEND_HISTORICAL_DATA" {
+            if let error {
+                whoopHistorySyncStatus = "SEND_HISTORICAL_DATA write failed · \(error.localizedDescription)"
+                recordVendorTimeline("Historical sync SEND_HISTORICAL_DATA write failed · \(error.localizedDescription)")
+            } else {
+                whoopHistorySyncStatus = "Historical request sent · waiting for HISTORY_START / Type-47"
+                recordVendorTimeline("SEND_HISTORICAL_DATA write acknowledged by CoreBluetooth · waiting for WHOOP history stream")
+            }
+            return
+        }
+
+        if kind == "HISTORICAL_DATA_RESULT" {
+            if let error {
+                whoopHistorySyncStatus = "HISTORY_END ACK write failed · \(error.localizedDescription)"
+                recordVendorTimeline("HISTORY_END ACK write callback · failed · \(error.localizedDescription)")
+            } else {
+                whoopHistorySyncStatus = "HISTORY_END ACK write acknowledged by CoreBluetooth · awaiting next history marker"
+                recordVendorTimeline("HISTORY_END ACK write callback · acknowledged by CoreBluetooth · awaiting strap cursor advance")
+            }
             return
         }
 

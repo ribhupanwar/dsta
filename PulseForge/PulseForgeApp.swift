@@ -58,6 +58,13 @@ struct MainTabView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .environmentObject(bluetooth)
             .environmentObject(gpsRun)
+            // High-frequency BLE/IMU publications must not animate the entire
+            // dashboard layout. Keep live values immediate while preventing
+            // implicit SwiftUI interpolation from making text/cards visibly jump.
+            .transaction { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
             ForgeTabBar(selected: $selected)
         }
         .ignoresSafeArea(.keyboard)
@@ -149,9 +156,9 @@ struct TodayDashboard: View {
                 .overlay(RoundedRectangle(cornerRadius: 22).stroke(ForgeColors.stroke, lineWidth: 1))
 
                 HStack(spacing: 9) {
-                    CompactMetric(title: "SDNN HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
-                    CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
-                    CompactMetric(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                    CompactMetric(title: "WHOOP HRV", value: "—", unit: "ms")
+                    CompactMetric(title: "WHOOP RHR", value: "—", unit: "bpm")
+                    CompactMetric(title: "SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                 }
                 LiveHeartRateCard()
                 LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE HEART RATE")
@@ -183,6 +190,7 @@ struct TodayDashboard: View {
 
 struct RecoveryDetailSheet: View {
     @EnvironmentObject private var health: HealthDataStore
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
     @EnvironmentObject private var insights: TrainingInsightsStore
     @Environment(\.dismiss) private var dismiss
 
@@ -208,11 +216,11 @@ struct RecoveryDetailSheet: View {
                         Spacer()
                     }
                     HStack(spacing: 10) {
-                        CompactMetric(title: "SDNN HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
-                        CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
-                        CompactMetric(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                        CompactMetric(title: "WHOOP RR", value: String(bluetooth.whoopRRIntervalsMilliseconds.count), unit: "intervals")
+                        CompactMetric(title: "WHOOP BATTERY", value: bluetooth.whoopBatteryPercent.map { String(format: "%.0f", $0) } ?? "—", unit: "%")
+                        CompactMetric(title: "SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                     }
-                    Text("Recovery trend and baseline history will appear as enough verified daily measurements are collected.")
+                    Text("WHOOP overnight RR/HRV and resting-HR history are not yet validated. Apple Health values are intentionally excluded.")
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(18)
@@ -500,12 +508,21 @@ struct WhoopMotionCard: View {
                 }
                 Text(bluetooth.whoopIMUStatus)
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                    .lineLimit(2).frame(height: 26, alignment: .topLeading)
                 Text("One-second signal variability is diagnostic only; sensor scale and activity classification are not yet calibrated.")
                     .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                    .lineLimit(2).frame(height: 24, alignment: .topLeading)
             }
+            // IMU notifications can arrive in rapid bursts. A fixed card height
+            // prevents live text/status changes from pushing every section below it.
+            .frame(height: 246, alignment: .top)
             .padding(16)
             .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
+            .transaction { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
         }
     }
 
@@ -752,18 +769,18 @@ struct SleepDashboard: View {
                         ScoreRing(title: "PERFORMANCE", value: nil, tint: Color(red: 0.35, green: 0.62, blue: 0.96))
                             .frame(width: 112)
                         VStack(alignment: .leading, spacing: 7) {
-                            Text(health.sleepHours.map { String(format: "%.1f h", $0) } ?? "—")
+                            Text(insights.sleepHours.map { String(format: "%.1f h", $0) } ?? "—")
                                 .font(.system(size: 34, weight: .medium, design: .rounded)).monospacedDigit()
                             Text("Time asleep").font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
-                            Text("Sleep score needs a verified sleep target and complete sleep data.")
+                            Text("Waiting for verified WHOOP-native sleep history and stage timestamps.")
                                 .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
                         }
                     }
                     Divider().overlay(ForgeColors.stroke)
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("ESTIMATED SLEEP NEED").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
-                            Text(String(format: "%.1f h", insights.sleepNeedHours)).font(.system(size: 23, weight: .semibold, design: .rounded))
+                            Text("WHOOP SLEEP NEED").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                            Text(insights.sleepNeedHours.map { String(format: "%.1f h", $0) } ?? "—").font(.system(size: 23, weight: .semibold, design: .rounded))
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 4) {
@@ -787,14 +804,14 @@ struct SleepDashboard: View {
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 SectionHeader(title: "SLEEP STAGES")
-                SleepStageBreakdown(deep: health.deepSleepMinutes, rem: health.remSleepMinutes, core: health.coreSleepMinutes, awake: health.awakeMinutes)
+                SleepStageBreakdown(deep: nil, rem: nil, core: nil, awake: nil)
                 SectionHeader(title: "SLEEP SUMMARY")
                 HStack(spacing: 10) {
-                    CompactMetric(title: "TOTAL SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
-                    CompactMetric(title: "DEEP SLEEP", value: health.deepSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
-                    CompactMetric(title: "REM SLEEP", value: health.remSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
+                    CompactMetric(title: "TOTAL SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                    CompactMetric(title: "DEEP SLEEP", value: "—", unit: "min")
+                    CompactMetric(title: "REM SLEEP", value: "—", unit: "min")
                 }
-                Text("Sleep stages are read from Apple Health. Debt is the rolling shortfall against an 8-hour target across completed nights with recorded sleep.")
+                Text("Sleep duration and debt use overlap-deduplicated Apple Health asleep intervals. Stage totals are read separately from Apple Health; WHOOP-native stage decoding is not yet verified.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
@@ -830,39 +847,13 @@ struct StrainDashboard: View {
                             Text(insights.cardioLoadPoints == nil ? "Building cardio load" : "Cardio load recorded")
                                 .font(.system(size: 18, weight: .semibold))
                             Text(insights.cardioLoadPoints == nil
-                                 ? "Add a measured maximum heart rate and record a workout with heart-rate samples."
-                                 : "Intensity-weighted workout load from Apple Health heart-rate samples. This is not a WHOOP Strain score.")
+                                 ? "Waiting for WHOOP strap HR and validated motion-derived activity load."
+                                 : "WHOOP device-only strain will appear after HR and motion load validation.")
                                 .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                         }
                     }
                 }
                 .padding(20).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
-                SectionHeader(title: "PERSONAL HEART-RATE SETUP")
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Measured maximum heart rate (bpm)")
-                        .font(.system(size: 12, weight: .medium))
-                    HStack(spacing: 9) {
-                        TextField(measuredMaxHeartRate > 0 ? String(measuredMaxHeartRate) : "Enter measured max HR", text: $maxHeartRateDraft)
-                            .keyboardType(.numberPad)
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
-                            .padding(12)
-                            .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 10))
-                        Button("SAVE") {
-                            if let value = Int(maxHeartRateDraft), (100...240).contains(value) {
-                                measuredMaxHeartRate = value
-                                maxHeartRateDraft = ""
-                                insights.refresh()
-                            }
-                        }
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 15).padding(.vertical, 12)
-                        .background(ForgeColors.lime, in: Capsule())
-                    }
-                    Text("Enter a value measured during a hard effort or clinical test. PulseForge will leave cardio load blank until this is set.")
-                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
-                }
-                .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
                 SectionHeader(title: "CARDIO LOAD")
                 HStack(spacing: 10) {
                     CompactMetric(title: "CARDIO LOAD", value: insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—", unit: "load pts")
@@ -1458,6 +1449,29 @@ struct DeviceDashboard: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
+                    if bluetooth.historicalRRArchiveRecordCount > 0 {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("TYPE-47 V18 RAW RR ARCHIVE")
+                                    .font(.system(size: 9, weight: .bold)).tracking(1)
+                                    .foregroundStyle(ForgeColors.lime)
+                                Spacer()
+                                ShareLink(item: bluetooth.historicalRRArchiveExport) {
+                                    Label("EXPORT JSON", systemImage: "square.and.arrow.up")
+                                        .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                                        .foregroundStyle(ForgeColors.lime)
+                                }
+                            }
+                            Text("\(bluetooth.historicalRRArchiveRecordCount) CRC-valid raw frame(s) saved")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.white)
+                            Text("Export includes raw hex and decode errors. Phone receipt time is not physiological time; candidate RR offsets remain unverified.")
+                                .font(.system(size: 9))
+                                .foregroundStyle(ForgeColors.muted)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
+                    }
                     VStack(alignment: .leading, spacing: 7) {
                         Text("NOTIFICATION CHANNEL STATUS")
                             .font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
