@@ -76,6 +76,8 @@ final class SleepNightCalculatorTests: XCTestCase {
         let result = SleepNightCalculator.summarize(
             intervals: intervals, now: now, calendar: calendar
         )
+        XCTAssertEqual(result.nights.count, 3, "The daytime nap must not become a separate debt night.")
+        XCTAssertEqual(try XCTUnwrap(result.sleepDebtHours), 3, accuracy: 0.001)
         XCTAssertEqual(try XCTUnwrap(result.typicalSleepHours), 7, accuracy: 0.001)
     }
 
