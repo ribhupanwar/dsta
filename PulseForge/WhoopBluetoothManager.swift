@@ -1824,12 +1824,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "COMMAND_RESPONSE · STOP_RAW_DATA(82) SUCCESS · TOGGLE_IMU_MODE OFF requested"
             }
             if command == 145 {
-                if result == 1 && echoedSequence == 1 {
+                if result == 1 && echoedHostSequence == 1 {
                     let responseHex = b.map { String(format: "%02X", $0) }.joined(separator: " ")
                     recordVendorTimeline("GET_HELLO response raw HEX · \(responseHex)")
                 }
-                guard result == 1, echoedSequence == 1 else {
-                    return "COMMAND_RESPONSE · GET_HELLO · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
+                guard result == 1, echoedHostSequence == 1 else {
+                    return "COMMAND_RESPONSE · GET_HELLO · seq echo \(echoedHostSequence) · result \(resultName) · CRC valid"
                 }
                 // Gen5 HELLO revision-1 semantic body spans 104 bytes.
                 guard b.count >= 121 else {
@@ -1850,7 +1850,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR and history setup requested"
             }
             if command == 10, let sequence = whoop5HistoryClockSequence,
-               echoedSequence == Int(sequence) {
+               echoedHostSequence == Int(sequence) {
                 if result == 2 {
                     whoopHistorySyncStatus = "SET_CLOCK pending · waiting for terminal response"
                     recordVendorTimeline("Historical sync SET_CLOCK response · PENDING")
@@ -1866,12 +1866,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "COMMAND_RESPONSE · SET_CLOCK(10) SUCCESS · requesting GET_DATA_RANGE"
             }
             if command == 34, let sequence = whoop5HistoryRangeSequence,
-               echoedSequence == Int(sequence) {
+               echoedHostSequence == Int(sequence) {
                 recordVendorTimeline("Historical GET_DATA_RANGE(34) response · \(resultName)")
                 return "COMMAND_RESPONSE · GET_DATA_RANGE(34) · \(resultName)"
             }
             if command == 22, let sequence = whoop5HistoryRequestSequence,
-               echoedSequence == Int(sequence) {
+               echoedHostSequence == Int(sequence) {
                 if result == 2 {
                     whoopHistorySyncStatus = "SEND_HISTORICAL_DATA pending · waiting for HISTORY_START"
                 } else if result == 1 {
@@ -1884,21 +1884,21 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             if command == 3 {
                 if let offSequence = whoopEventProbeOffSequence,
-                   echoedSequence == Int(offSequence) {
-                    recordVendorTimeline("Event probe OFF command response · seq=\(echoedSequence) · result=\(resultName) · 1.5s observation window")
+                   echoedHostSequence == Int(offSequence) {
+                    recordVendorTimeline("Event probe OFF command response · seq=\(echoedHostSequence) · result=\(resultName) · 1.5s observation window")
                     if result != 2 { scheduleWhoopEventProbeRearm(after: 1.5) }
-                    return "COMMAND_RESPONSE · Event probe REALTIME_HR_OFF(3) · seq \(echoedSequence) · \(resultName)"
+                    return "COMMAND_RESPONSE · Event probe REALTIME_HR_OFF(3) · seq \(echoedHostSequence) · \(resultName)"
                 }
                 if let onSequence = whoopEventProbeOnSequence,
-                   echoedSequence == Int(onSequence) {
-                    recordVendorTimeline("Event probe ON command response · seq=\(echoedSequence) · result=\(resultName)")
-                    return "COMMAND_RESPONSE · Event probe REALTIME_HR_ON(3) · seq \(echoedSequence) · \(resultName)"
+                   echoedHostSequence == Int(onSequence) {
+                    recordVendorTimeline("Event probe ON command response · seq=\(echoedHostSequence) · result=\(resultName)")
+                    return "COMMAND_RESPONSE · Event probe REALTIME_HR_ON(3) · seq \(echoedHostSequence) · \(resultName)"
                 }
                 // Realtime-HR command success is not an IMU readiness signal.
                 // Motion startup is gated exclusively by the CRC-valid Event 33 path.
                 return "COMMAND_RESPONSE · REALTIME_HR_ON(3) · \(resultName) · IMU startup remains Event-33 gated"
             }
-            return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
+            return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedHostSequence) · result \(resultName) · CRC valid"
 
         case 43: // Gen5 R21 realtime IMU buffer (0x2B); same v21 layout as historical 0x2F.
             whoopIMUFrameCount += 1
