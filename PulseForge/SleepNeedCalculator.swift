@@ -1,15 +1,63 @@
 import Foundation
 
-/// Conservative, transparent sleep-target estimate.
-/// The 8-hour base is retained; up to half of accumulated sleep debt (capped
-/// at 2 hours) is added to tonight's target to avoid demanding full repayment
-/// in one night. This is a PulseForge heuristic, not WHOOP's proprietary model.
+/// Transparent Sleep Need estimate with optional WHOOP-documented input categories.
+/// Coefficients are PulseForge heuristics, not WHOOP's unpublished formula.
 enum SleepNeedCalculator {
-    static func calculate(baseNeedHours: Double = 8,
-                          sleepDebtHours: Double?) -> Double {
-        guard baseNeedHours.isFinite, baseNeedHours > 0 else { return 8 }
-        let debt = sleepDebtHours.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 0
-        let repayment = min(2, debt * 0.5)
-        return baseNeedHours + repayment
+    struct Inputs {
+        let personalBaselineHours: Double?
+        let sleepDebtHours: Double?
+        let napMinutes: Double?
+        let strainAdjustmentHours: Double?
+    }
+
+    struct Result: Equatable {
+        let targetHours: Double
+        let baselineHours: Double
+        let debtAdjustmentHours: Double
+        let napAdjustmentHours: Double
+        let strainAdjustmentHours: Double
+    }
+
+    static func calculate(_ inputs: Inputs) -> Result {
+        // A stable personal baseline must be supplied by a future learning
+        // layer; do not infer physiological need from sleep duration alone.
+        let baseline = inputs.personalBaselineHours.flatMap {
+            $0.isFinite && (5...12).contains($0) ? $0 : nil
+        } ?? 8
+
+        let debt = inputs.sleepDebtHours.flatMap {
+            $0.isFinite && $0 > 0 ? $0 : nil
+        } ?? 0
+        let debtAdjustment = min(2, debt * 0.5)
+
+        let nap = inputs.napMinutes.flatMap {
+            $0.isFinite && $0 > 0 ? $0 : nil
+        } ?? 0
+        let napAdjustment = min(1.5, nap / 60)
+
+        let strain = inputs.strainAdjustmentHours.flatMap {
+            $0.isFinite && $0 > 0 ? $0 : nil
+        } ?? 0
+        let boundedStrain = min(1, strain)
+
+        let target = min(12, max(5, baseline + debtAdjustment - napAdjustment + boundedStrain))
+        return Result(
+            targetHours: target,
+            baselineHours: baseline,
+            debtAdjustmentHours: debtAdjustment,
+            napAdjustmentHours: napAdjustment,
+            strainAdjustmentHours: boundedStrain
+        )
+    }
+
+    /// Backwards-compatible convenience used until HealthKit nap and calibrated
+    /// strain inputs are available in the store.
+    static func calculate(baseNeedHours: Double = 8, sleepDebtHours: Double?) -> Double {
+        calculate(Inputs(
+            personalBaselineHours: baseNeedHours,
+            sleepDebtHours: sleepDebtHours,
+            napMinutes: nil,
+            strainAdjustmentHours: nil
+        )).targetHours
     }
 }
