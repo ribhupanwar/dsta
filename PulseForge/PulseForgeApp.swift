@@ -215,8 +215,8 @@ struct RecoveryDetailSheet: View {
                         Spacer()
                     }
                     HStack(spacing: 10) {
-                        CompactMetric(title: "SDNN HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
-                        CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
+                        CompactMetric(title: "WHOOP RR", value: String(bluetooth.whoopRRIntervalsMilliseconds.count), unit: "intervals")
+                        CompactMetric(title: "WHOOP BATTERY", value: bluetooth.whoopBatteryPercent.map { String(format: "%.0f", $0) } ?? "—", unit: "%")
                         CompactMetric(title: "SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                     }
                     Text("WHOOP overnight RR/HRV and resting-HR history are not yet validated. Apple Health values are intentionally excluded.")
