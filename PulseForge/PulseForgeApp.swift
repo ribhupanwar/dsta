@@ -823,8 +823,29 @@ struct SleepDashboard: View {
 struct StrainDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
     @AppStorage("pulseforge.running.maxHeartRate") private var measuredMaxHeartRate = 0
-    @State private var maxHeartRateDraft = ""
+
+    private var todayCardioLoad: Double? {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: Date())
+        guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { return nil }
+        return CardioLoadCalculator.dailyWorkoutLoad(
+            sessions: bluetooth.workoutHistory,
+            dayStart: start,
+            nextDay: end,
+            measuredMaxHeartRate: measuredMaxHeartRate
+        )
+    }
+
+    private var todaySessions: [WorkoutSessionRecord] {
+        let start = Calendar.current.startOfDay(for: Date())
+        return bluetooth.workoutHistory.filter { $0.startedAt >= start && $0.startedAt < Date() }
+    }
+
+    private var todayWorkoutMinutes: Double {
+        todaySessions.reduce(0) { $0 + $1.durationSeconds / 60 }
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -838,17 +859,17 @@ struct StrainDashboard: View {
                             Circle().trim(from: 0, to: 0)
                                 .stroke(Color(red: 0.98, green: 0.58, blue: 0.27), style: StrokeStyle(lineWidth: 9, lineCap: .round))
                                 .rotationEffect(.degrees(-90))
-                            Text(insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—")
+                            Text(todayCardioLoad.map { String(format: "%.0f", $0) } ?? "—")
                                 .font(.system(size: 39, weight: .light, design: .rounded))
                                 .monospacedDigit()
                         }
                         .frame(width: 132, height: 132)
                         VStack(alignment: .leading, spacing: 7) {
-                            Text(insights.cardioLoadPoints == nil ? "Building cardio load" : "Cardio load recorded")
+                            Text(todayCardioLoad == nil ? "Collecting workout HR" : "Cardio load recorded")
                                 .font(.system(size: 18, weight: .semibold))
-                            Text(insights.cardioLoadPoints == nil
-                                 ? "Waiting for WHOOP strap HR and validated motion-derived activity load."
-                                 : "WHOOP device-only strain will appear after HR and motion load validation.")
+                            Text(todayCardioLoad == nil
+                                 ? (measuredMaxHeartRate == 0 ? "Set your measured maximum HR in Running to unlock workout load." : "Record a WHOOP workout with valid HR samples today.")
+                                 : "Calculated from saved WHOOP workout HR samples and your measured maximum HR.")
                                 .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                         }
                     }
@@ -856,9 +877,9 @@ struct StrainDashboard: View {
                 .padding(20).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 SectionHeader(title: "CARDIO LOAD")
                 HStack(spacing: 10) {
-                    CompactMetric(title: "CARDIO LOAD", value: insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—", unit: "load pts")
-                    CompactMetric(title: "ACTIVITIES", value: String(insights.workoutCountToday), unit: "today")
-                    CompactMetric(title: "DURATION", value: insights.workoutMinutesToday.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
+                    CompactMetric(title: "CARDIO LOAD", value: todayCardioLoad.map { String(format: "%.0f", $0) } ?? "—", unit: "load pts")
+                    CompactMetric(title: "ACTIVITIES", value: String(todaySessions.count), unit: "today")
+                    CompactMetric(title: "DURATION", value: todaySessions.isEmpty ? "—" : String(format: "%.0f", todayWorkoutMinutes), unit: "min")
                 }
                 SectionHeader(title: "LATEST RUN")
                 VStack(spacing: 13) {
@@ -882,7 +903,14 @@ struct StrainDashboard: View {
                 }
                 .font(.system(size: 13, weight: .medium))
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
-                Text("Cardio-load points use workout HR samples and your saved measured max HR. WHOOP-style strain remains blank until its model is validated.")
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("WHOOP STRAIN · NOT YET SCORED")
+                        .font(.system(size: 9, weight: .bold)).tracking(0.8)
+                        .foregroundStyle(ForgeColors.muted)
+                    Text("PulseForge cardio-load points are an auditable workout-HR estimate, not WHOOP's proprietary nonlinear 0–21 Strain score. Full-day strain needs continuous all-day HR coverage and validated activity load.")
+                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                }
+                .padding(14).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 14))
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
