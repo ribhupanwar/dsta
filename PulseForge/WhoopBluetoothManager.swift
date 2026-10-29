@@ -2742,6 +2742,18 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return
         }
 
+        if kind == "HISTORICAL_DATA_RESULT" {
+            switch HistoricalAckWriteState.resolve(errorDescription: error?.localizedDescription) {
+            case .failed(let message):
+                whoopHistorySyncStatus = "HISTORY_END ACK write failed · \(message) · no band progress inferred"
+                recordVendorTimeline("HISTORICAL_DATA_RESULT(23) write callback · failed · \(message) · awaiting retry")
+            case .acknowledgedAwaitingBandProgress:
+                whoopHistorySyncStatus = "HISTORY_END ACK write acknowledged by CoreBluetooth · awaiting band-side history progress"
+                recordVendorTimeline("HISTORICAL_DATA_RESULT(23) write callback · CoreBluetooth acknowledged · awaiting HISTORY_START / next Type-47 / cursor evidence")
+            }
+            return
+        }
+
         guard kind == "CLIENT_HELLO" else { return }
         whoop5HelloWritePending = false
         if let error {
