@@ -1882,7 +1882,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoop5PendingWrites.append("HISTORICAL_DATA_RESULT")
                 recordVendorTimeline("HISTORY_END ACK requested · HISTORICAL_DATA_RESULT(23) · trim=\(trimCursor) · seq=\(sequence) · exact end_data echoed")
                 peripheral.writeValue(frame, for: command, type: .withResponse)
-                return "METADATA · HISTORY_END · trim=\(trimCursor) · HISTORICAL_DATA_RESULT(23) ACK sent"
+                return "METADATA · HISTORY_END · trim=\(trimCursor) · HISTORICAL_DATA_RESULT(23) write requested"
             }
             let metadataName = metadataType == 1 ? "HISTORY_START"
                 : metadataType == 3 ? "HISTORY_COMPLETE" : "metadata type \(metadataType)"
@@ -2738,6 +2738,17 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             } else {
                 whoopHistorySyncStatus = "Historical request sent · waiting for HISTORY_START / Type-47"
                 recordVendorTimeline("SEND_HISTORICAL_DATA write acknowledged by CoreBluetooth · waiting for WHOOP history stream")
+            }
+            return
+        }
+
+        if kind == "HISTORICAL_DATA_RESULT" {
+            if let error {
+                whoopHistorySyncStatus = "HISTORY_END ACK write failed · \(error.localizedDescription)"
+                recordVendorTimeline("HISTORY_END ACK write callback · failed · \(error.localizedDescription)")
+            } else {
+                whoopHistorySyncStatus = "HISTORY_END ACK write acknowledged by CoreBluetooth · awaiting next history marker"
+                recordVendorTimeline("HISTORY_END ACK write callback · acknowledged by CoreBluetooth · awaiting strap cursor advance")
             }
             return
         }
