@@ -9,9 +9,19 @@ final class TrainingInsightsStore: ObservableObject {
     @Published private(set) var sleepHours: Double?
     @Published private(set) var sleepDebtHours: Double?
     @Published private(set) var sleepNeedHours: Double = 8
+    @Published private(set) var sleepPerformanceScore: Int?
+    @Published private(set) var sleepStatus = "Waiting for a completed sleep record"
+    @Published private(set) var sleepNightsCount = 0
     @Published private(set) var recoveryScore: Int?
     @Published private(set) var recoveryStatus = "Waiting for HRV and resting-HR baseline"
+    @Published private(set) var hrvDeviationPercent: Double?
+    @Published private(set) var restingHRDeviationBPM: Double?
+    @Published private(set) var recoveryBaselineDays = 0
     @Published private(set) var cardioLoadPoints: Double?
+    @Published private(set) var whoopCardioLoadPointsToday: Double?
+    @Published private(set) var whoopWorkoutMinutesToday: Double = 0
+    @Published private(set) var whoopWorkoutSampleCountToday = 0
+    @Published private(set) var whoopSensorLoadStatus = "Waiting for WHOOP workout HR samples"
     @Published private(set) var workoutCountToday = 0
     @Published private(set) var workoutMinutesToday: Double?
     @Published private(set) var lastUpdated: Date?
@@ -20,6 +30,72 @@ final class TrainingInsightsStore: ObservableObject {
     private let healthStore = HKHealthStore()
     private let calendar = Calendar.current
     private let sleepTargetMinutes = 8.0 * 60.0
+    private var lastWhoopWorkoutHR: (timestamp: Date, bpm: Int)?
+    private var loadedWhoopLoadDay: String?
+    private let whoopLoadPointsKey = "pulseforge.whoop.dailyLoad.points"
+    private let whoopLoadMinutesKey = "pulseforge.whoop.dailyLoad.minutes"
+    private let whoopLoadSamplesKey = "pulseforge.whoop.dailyLoad.samples"
+    private let whoopLoadDayKey = "pulseforge.whoop.dailyLoad.day"
+
+    /// Ingest timestamped HR directly from the connected WHOOP BLE stream.
+    /// Only samples inside an explicitly recorded workout contribute to load.
+    func ingestWhoopHeartRate(_ bpm: Int, at timestamp: Date, workoutActive: Bool) {
+        loadWhoopDailyLoadIfNeeded(for: timestamp)
+        guard workoutActive else {
+            lastWhoopWorkoutHR = nil
+            return
+        }
+        if let previous = lastWhoopWorkoutHR {
+            let gap = timestamp.timeIntervalSince(previous.timestamp)
+            if gap > 0 && gap <= 10 {
+                let maxHR = UserDefaults.standard.string(forKey: "pulseforge.running.maxHeartRate")
+                    .flatMap(Double.init)
+                if let maxHR, maxHR > 0 {
+                    let intensity = min(1, max(0, Double(previous.bpm) / maxHR))
+                    let points = gap / 60 * intensity * 100
+                    whoopCardioLoadPointsToday = (whoopCardioLoadPointsToday ?? 0) + points
+                    UserDefaults.standard.set(whoopCardioLoadPointsToday, forKey: whoopLoadPointsKey)
+                }
+                whoopWorkoutMinutesToday += gap / 60
+                whoopWorkoutSampleCountToday += 1
+                UserDefaults.standard.set(whoopWorkoutMinutesToday, forKey: whoopLoadMinutesKey)
+                UserDefaults.standard.set(whoopWorkoutSampleCountToday, forKey: whoopLoadSamplesKey)
+                whoopSensorLoadStatus = maxHRDescription()
+            } else if gap > 10 {
+                whoopSensorLoadStatus = "WHOOP HR gap detected · interval excluded from load"
+            }
+        }
+        lastWhoopWorkoutHR = (timestamp, bpm)
+    }
+
+    private func maxHRDescription() -> String {
+        let hasMaxHR = UserDefaults.standard.string(forKey: "pulseforge.running.maxHeartRate")
+            .flatMap(Double.init).map { $0 > 0 } ?? false
+        return hasMaxHR
+            ? "Direct WHOOP BLE HR · recorded workout samples · measured max HR model"
+            : "Direct WHOOP BLE HR received · enter measured max HR to calculate load"
+    }
+
+    private func loadWhoopDailyLoadIfNeeded(for date: Date) {
+        let day = ISO8601DateFormatter().string(from: calendar.startOfDay(for: date))
+        guard loadedWhoopLoadDay != day else { return }
+        loadedWhoopLoadDay = day
+        lastWhoopWorkoutHR = nil
+        let savedDay = UserDefaults.standard.string(forKey: whoopLoadDayKey)
+        if savedDay == day {
+            whoopCardioLoadPointsToday = UserDefaults.standard.object(forKey: whoopLoadPointsKey) as? Double
+            whoopWorkoutMinutesToday = UserDefaults.standard.double(forKey: whoopLoadMinutesKey)
+            whoopWorkoutSampleCountToday = UserDefaults.standard.integer(forKey: whoopLoadSamplesKey)
+        } else {
+            whoopCardioLoadPointsToday = nil
+            whoopWorkoutMinutesToday = 0
+            whoopWorkoutSampleCountToday = 0
+            UserDefaults.standard.set(day, forKey: whoopLoadDayKey)
+            UserDefaults.standard.removeObject(forKey: whoopLoadPointsKey)
+            UserDefaults.standard.set(0.0, forKey: whoopLoadMinutesKey)
+            UserDefaults.standard.set(0, forKey: whoopLoadSamplesKey)
+        }
+    }
 
     func refresh() {
         guard HKHealthStore.isHealthDataAvailable(), !isRefreshing else { return }
@@ -27,16 +103,22 @@ final class TrainingInsightsStore: ObservableObject {
         let group = DispatchGroup()
 
         group.enter()
-        loadSleep { [weak self] hours, debt in
+        loadSleep { [weak self] hours, debt, performance, status, nights in
             self?.sleepHours = hours
             self?.sleepDebtHours = debt
+            self?.sleepPerformanceScore = performance
+            self?.sleepStatus = status
+            self?.sleepNightsCount = nights
             group.leave()
         }
 
         group.enter()
-        loadRecovery { [weak self] score, status in
+        loadRecovery { [weak self] score, status, hrvDelta, rhrDelta, baselineDays in
             self?.recoveryScore = score
             self?.recoveryStatus = status
+            self?.hrvDeviationPercent = hrvDelta
+            self?.restingHRDeviationBPM = rhrDelta
+            self?.recoveryBaselineDays = baselineDays
             group.leave()
         }
 
@@ -54,9 +136,16 @@ final class TrainingInsightsStore: ObservableObject {
         }
     }
 
-    private func loadSleep(completion: @escaping (Double?, Double?) -> Void) {
+    private func preferredHealthSource<T: HKSample>(_ samples: [T]) -> ([T], String) {
+        let whoopSamples = samples.filter { $0.sourceRevision.source.bundleIdentifier == "com.whoop.iphone" }
+        if !whoopSamples.isEmpty { return (whoopSamples, "WHOOP via Apple Health") }
+        let names = Array(Set(samples.map { $0.sourceRevision.source.name })).sorted()
+        return (samples, names.isEmpty ? "No HealthKit source data" : names.joined(separator: ", "))
+    }
+
+    private func loadSleep(completion: @escaping (Double?, Double?, Int?, String, Int) -> Void) {
         guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
-            completion(nil, nil)
+            completion(nil, nil, nil, "Sleep analysis is unavailable on this device", 0)
             return
         }
         let end = Date()
@@ -65,15 +154,17 @@ final class TrainingInsightsStore: ObservableObject {
         let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit,
                                   sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) {
             [weak self] _, samples, _ in
-            guard let self else { completion(nil, nil); return }
+            guard let self else { completion(nil, nil, nil, "Sleep data could not be loaded", 0); return }
             let asleepValues: Set<Int> = [
                 HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
                 HKCategoryValueSleepAnalysis.asleepCore.rawValue,
                 HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
                 HKCategoryValueSleepAnalysis.asleepREM.rawValue
             ]
-            let asleep = (samples as? [HKCategorySample] ?? [])
+            let allSleepSamples = (samples as? [HKCategorySample] ?? [])
                 .filter { asleepValues.contains($0.value) }
+            let preferredSleep = self.preferredHealthSource(allSleepSamples)
+            let asleep = preferredSleep.0
                 .map { DateInterval(start: $0.startDate, end: $0.endDate) }
                 .sorted { $0.start < $1.start }
 
@@ -108,14 +199,24 @@ final class TrainingInsightsStore: ObservableObject {
             let debtMinutes = completedNights.reduce(0.0) { partial, night in
                 partial + max(0, self.sleepTargetMinutes - (minutesByNight[night] ?? 0))
             }
+            let performance = latestHours.map { Int((min(1.25, max(0, $0 / self.sleepTargetMinutes * 60)) * 100).rounded()) }
+            let status: String
+            if latestHours == nil {
+                status = "No completed sleep record found"
+            } else if let performance {
+                status = "Sleep performance · \(performance)% · \(preferredSleep.1)"
+            } else {
+                status = "Waiting for a completed sleep record"
+            }
             DispatchQueue.main.async {
-                completion(latestHours, completedNights.isEmpty ? nil : debtMinutes / 60)
+                completion(latestHours, completedNights.isEmpty ? nil : debtMinutes / 60,
+                           performance, status, completedNights.count)
             }
         }
         healthStore.execute(query)
     }
 
-    private func loadRecovery(completion: @escaping (Int?, String) -> Void) {
+    private func loadRecovery(completion: @escaping (Int?, String, Double?, Double?, Int) -> Void) {
         let group = DispatchGroup()
         var hrvSamples: [HKQuantitySample] = []
         var rhrSamples: [HKQuantitySample] = []
@@ -125,17 +226,23 @@ final class TrainingInsightsStore: ObservableObject {
         loadQuantity(.restingHeartRate, days: 8) { rhrSamples = $0; group.leave() }
         group.notify(queue: .main) {
             let today = self.calendar.startOfDay(for: Date())
-            let currentHRV = hrvSamples.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
-            let currentRHR = rhrSamples.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
-            let baselineHRVValues = hrvSamples.filter { $0.endDate < today }.map {
-                $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
-            }
-            let baselineRHRValues = rhrSamples.filter { $0.endDate < today }.map {
+            let preferredHRV = self.preferredHealthSource(hrvSamples)
+            let preferredRHR = self.preferredHealthSource(rhrSamples)
+            let selectedHRV = preferredHRV.0
+            let selectedRHR = preferredRHR.0
+            let currentHRV = selectedHRV.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
+            let currentRHR = selectedRHR.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
+            let baselineHRVSamples = selectedHRV.filter { $0.endDate < today }
+            let baselineRHRValues = selectedRHR.filter { $0.endDate < today }.map {
                 $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
             }
+            let baselineHRVValues = baselineHRVSamples.map {
+                $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
+            }
             guard let currentHRV, let currentRHR,
-                  !baselineHRVValues.isEmpty, !baselineRHRValues.isEmpty else {
-                completion(nil, "Need today's HRV + resting HR and prior-day baselines")
+                  baselineHRVValues.count >= 3, baselineRHRValues.count >= 3 else {
+                completion(nil, "Need today's HRV + resting HR and at least 3 prior baseline readings", nil, nil,
+                           min(baselineHRVValues.count, baselineRHRValues.count))
                 return
             }
             let hrvNow = currentHRV.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
@@ -143,13 +250,17 @@ final class TrainingInsightsStore: ObservableObject {
             let hrvBaseline = baselineHRVValues.reduce(0, +) / Double(baselineHRVValues.count)
             let rhrBaseline = baselineRHRValues.reduce(0, +) / Double(baselineRHRValues.count)
             guard hrvBaseline > 0, rhrBaseline > 0 else {
-                completion(nil, "Baseline data is not valid yet")
+                completion(nil, "Baseline data is not valid yet", nil, nil, min(baselineHRVValues.count, baselineRHRValues.count))
                 return
             }
-            let hrvComponent = min(100, max(0, 50 + 50 * ((hrvNow / hrvBaseline) - 1) / 0.30))
-            let rhrComponent = min(100, max(0, 50 + 5 * (rhrBaseline - rhrNow)))
+            let hrvDelta = (hrvNow / hrvBaseline - 1) * 100
+            let rhrDelta = rhrNow - rhrBaseline
+            let hrvComponent = min(100, max(0, 50 + (hrvDelta / 30) * 50))
+            let rhrComponent = min(100, max(0, 50 - rhrDelta * 5))
             let score = Int((0.60 * hrvComponent + 0.40 * rhrComponent).rounded())
-            completion(score, "PulseForge estimate · HRV 60% + resting HR 40%")
+            completion(score,
+                       "PulseForge estimate · HRV 60% + resting HR 40% · \(preferredHRV.1) / \(preferredRHR.1) · \(min(baselineHRVValues.count, baselineRHRValues.count)) baseline readings",
+                       hrvDelta, rhrDelta, min(baselineHRVValues.count, baselineRHRValues.count))
         }
     }
 
@@ -224,7 +335,8 @@ final class TrainingInsightsStore: ObservableObject {
                     let nextGap = index + 1 < values.count
                         ? values[index + 1].startDate.timeIntervalSince(sample.startDate)
                         : sample.endDate.timeIntervalSince(sample.startDate)
-                    let minutes = min(1.0, max(0, nextGap) / 60)
+                    let sampleCoverage = max(sample.endDate.timeIntervalSince(sample.startDate), nextGap)
+                    let minutes = min(5.0, max(0, sampleCoverage) / 60)
                     let intensity = min(1, max(0, bpm / Double(maxHR)))
                     lock.lock()
                     totalLoad += minutes * intensity * 100

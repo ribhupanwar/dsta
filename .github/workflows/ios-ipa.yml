@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feature/whoop5-r21-history-offload
     paths:
       - "PulseForge/**"
       - "project.yml"

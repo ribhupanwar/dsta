@@ -2,6 +2,16 @@ import Foundation
 import CoreBluetooth
 import Combine
 import HealthKit
+import CryptoKit
+
+enum WhoopHistoricalFrameIdentity {
+    /// Stable full-payload identity: transport headers alone are not unique enough
+    /// because two records can share timestamps/sequence metadata but differ in samples.
+    static func key(_ frame: [UInt8], deviceID: String) -> String {
+        let digest = SHA256.hash(data: Data(frame))
+        return deviceID + ":" + digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
 
 struct DiscoveredWearable: Identifiable {
     let peripheral: CBPeripheral
@@ -101,10 +111,28 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopIMULastFrameAt: Date?
     @Published private(set) var whoopIMUStatus = "Waiting for WHOOP motion stream"
     @Published private(set) var whoopIMULastRawFrameHex = "none"
+    @Published private(set) var whoopHistoricalRecordCount = 0
+    @Published private(set) var whoopHistoricalIMUFrameCount = 0
+    @Published private(set) var whoopHistoricalIMUSampleCount = 0
+    @Published private(set) var whoopHistoricalLayout18FrameCount = 0
+    @Published private(set) var whoopHistoricalLayout21FrameCount = 0
+    @Published private(set) var whoopHistoricalIMUStreamFrameCount = 0
+    @Published private(set) var whoopHistoricalOffloadStatus = "Historical IMU offload not requested"
     private var whoopIMURawFrameHistory: [String] = []
     @Published private(set) var liveWhoopIMUSamples: [WhoopIMUSample] = []
+    @Published private(set) var historicalWhoopIMUSamples: [WhoopIMUSample] = []
     @Published private(set) var workoutWhoopIMUSamples: [WhoopIMUSample] = []
     private var lastWhoopIMUPersistedSampleCount = 0
+    private var whoop5HistoricalRequestSent = false
+    private var whoop5HistoricalOffloadActive = false
+    private var whoop5ClockSyncStarted = false
+    private var whoop5ClockSyncWorkItem: DispatchWorkItem?
+    private var whoop5HistoricalChunkFrames: [[UInt8]] = []
+    // De-duplicate repeated chunks during this process lifetime. The durable archive remains
+    // append-only; a strap that replays an unacked chunk cannot inflate the in-memory counters.
+    private var whoop5HistoricalPersistedFrameKeys = Set<String>()
+    // Count each CRC-valid historical transport frame once per connection, including unknown layouts.
+    private var whoopHistoricalRecordKeys = Set<String>()
 
     var freshHeartRateBPM: Int? {
         guard connectedName != nil, let lastHeartRateAt,
@@ -485,6 +513,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5HRStreamConfirmed = false
     private var whoop5AutoIMUStartRequested = false
     private var whoop5AutoIMUEnabled = false
+    private var whoop5IMUModeEnablePending: Bool?
     private var whoop5RawStreamStopWorkItem: DispatchWorkItem?
     private var whoop5PendingWrites: [String] = []
     private var whoop5NextCommandSequence: UInt8 = 2
@@ -761,7 +790,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU frames: \(whoopIMUFrameCount) · samples: \(whoopIMUSampleCount) · live buffer: \(liveWhoopIMUSamples.count) · workout samples: \(workoutWhoopIMUSamples.count) · status: \(whoopIMUStatus)",
             "WHOOP latest IMU sample: \(liveWhoopIMUSamples.last.map { String(format: "A %.3f, %.3f, %.3f g · G %.1f, %.1f, %.1f dps", $0.accelerationXG, $0.accelerationYG, $0.accelerationZG, $0.rotationXDPS, $0.rotationYDPS, $0.rotationZDPS) } ?? "none")",
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
-            "WHOOP latest CRC-valid raw IMU frame hex (type 47/51): \(whoopIMULastRawFrameHex)",
+            "WHOOP historical frames received: \(whoopHistoricalRecordCount) · decoded R21 IMU frames: \(whoopHistoricalIMUFrameCount) · decoded samples: \(whoopHistoricalIMUSampleCount)",
+            "WHOOP historical layouts · v18 summary frames: \(whoopHistoricalLayout18FrameCount) · v21 six-axis candidates: \(whoopHistoricalLayout21FrameCount) · type-52 IMU stream packets: \(whoopHistoricalIMUStreamFrameCount)",
+            "WHOOP latest CRC-valid raw IMU frame hex (type 47/51/52): \(whoopIMULastRawFrameHex)",
             "WHOOP IMU recent CRC-valid raw frames (oldest first):",
         ]
         lines.append(contentsOf: whoopIMURawFrameHistory.isEmpty ? ["  none"] : whoopIMURawFrameHistory.map { "  \($0)" })
@@ -950,10 +981,14 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HRStallRecoveryWorkItem?.cancel()
         whoop5HRStallRecoveryWorkItem = nil
         whoop5HRStallRecoveryAttempted = false
+        whoop5ClockSyncWorkItem?.cancel()
+        whoop5ClockSyncWorkItem = nil
+        whoop5ClockSyncStarted = false
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
         whoop5AutoIMUEnabled = false
+        whoop5IMUModeEnablePending = nil
         whoop5RawStreamStopWorkItem?.cancel()
         whoop5RawStreamStopWorkItem = nil
         // Keep the last known battery reading across BLE reconnects; WHOOP does not
@@ -966,6 +1001,18 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMULastFrameAt = nil
         whoopIMULastRawFrameHex = "none"
         whoopIMURawFrameHistory.removeAll()
+        whoopHistoricalRecordCount = 0
+        whoopHistoricalRecordKeys.removeAll()
+        whoopHistoricalIMUFrameCount = 0
+        whoopHistoricalIMUSampleCount = 0
+        whoopHistoricalLayout18FrameCount = 0
+        whoopHistoricalLayout21FrameCount = 0
+        whoopHistoricalIMUStreamFrameCount = 0
+        historicalWhoopIMUSamples.removeAll()
+        whoop5HistoricalRequestSent = false
+        whoop5HistoricalOffloadActive = false
+        whoop5HistoricalChunkFrames.removeAll()
+        whoopHistoricalOffloadStatus = "Waiting for WHOOP historical motion offload"
         liveWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoop5PendingWrites.removeAll()
@@ -1052,6 +1099,13 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HelloWritePending = false
         whoop5HelloWriteAcknowledged = false
         whoop5PostHelloNotifyRetryAttempted.removeAll()
+        whoop5HRStallRecoveryWorkItem?.cancel()
+        whoop5HRStallRecoveryWorkItem = nil
+        whoop5HRStallRecoveryAttempted = false
+        whoop5ClockSyncWorkItem?.cancel()
+        whoop5ClockSyncWorkItem = nil
+        whoop5ClockSyncStarted = false
+        whoop5IMUModeEnablePending = nil
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
         whoop5AutoIMUStartRequested = false
@@ -1061,6 +1115,21 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMUFrameCount = 0
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
+        whoopHistoricalRecordCount = 0
+        whoopHistoricalRecordKeys.removeAll()
+        whoopHistoricalIMUFrameCount = 0
+        whoopHistoricalIMUSampleCount = 0
+        whoopHistoricalLayout18FrameCount = 0
+        whoopHistoricalLayout21FrameCount = 0
+        whoopHistoricalIMUStreamFrameCount = 0
+        historicalWhoopIMUSamples.removeAll()
+        whoop5HistoricalRequestSent = false
+        whoop5HistoricalOffloadActive = false
+        whoop5ClockSyncStarted = false
+        whoop5ClockSyncWorkItem?.cancel()
+        whoop5ClockSyncWorkItem = nil
+        whoop5HistoricalChunkFrames.removeAll()
+        whoopHistoricalOffloadStatus = "Waiting for WHOOP historical motion offload"
         liveWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoop5PendingWrites.removeAll()
@@ -1440,28 +1509,54 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     whoopIMUStatus = "START_RAW_DATA pending · awaiting final response"
                     return "COMMAND_RESPONSE · START_RAW_DATA(81) · PENDING"
                 }
-                whoop5AutoIMUEnabled = result == 1
-                if result == 1 {
-                    whoopIMUStatus = "Bounded raw stream accepted · waiting for Gen5 R21 packets (type 43)"
-                    scheduleWhoop5RawStreamStop(for: peripheral, after: 60)
-                } else {
+                guard result == 1 else {
                     whoop5AutoIMUStartRequested = false
                     whoopIMUStatus = "START_RAW_DATA rejected · \(resultName)"
+                    recordVendorTimeline("START_RAW_DATA(81) rejected · \(resultName)")
+                    return "COMMAND_RESPONSE · START_RAW_DATA(81) · \(resultName)"
                 }
-                recordVendorTimeline("START_RAW_DATA(81) response · \(resultName)")
-                return "COMMAND_RESPONSE · START_RAW_DATA(81) · \(resultName)"
+                recordVendorTimeline("START_RAW_DATA(81) accepted · enabling live IMU mode")
+                sendWhoop5IMUModeToggle(to: peripheral, enabled: true)
+                return "COMMAND_RESPONSE · START_RAW_DATA(81) SUCCESS · TOGGLE_IMU_MODE requested"
+            }
+            if command == 106 {
+                guard result != 2 else {
+                    whoopIMUStatus = "TOGGLE_IMU_MODE pending · awaiting final response"
+                    return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · PENDING"
+                }
+                let enabling = whoop5IMUModeEnablePending ?? !whoop5AutoIMUEnabled
+                whoop5IMUModeEnablePending = nil
+                if result == 1 {
+                    whoop5AutoIMUEnabled = enabling
+                    if enabling {
+                        whoopIMUStatus = "Live IMU mode enabled · awaiting type-43 R21 frames"
+                        recordVendorTimeline("TOGGLE_IMU_MODE(106) ON accepted · waiting for type-43 IMU")
+                        scheduleWhoop5RawStreamStop(for: peripheral, after: 60)
+                    } else {
+                        whoop5AutoIMUStartRequested = false
+                        whoopIMUStatus = "Live IMU mode disabled · bounded capture complete"
+                        recordVendorTimeline("TOGGLE_IMU_MODE(106) OFF accepted")
+                    }
+                } else {
+                    if enabling { whoop5AutoIMUStartRequested = false }
+                    whoopIMUStatus = "TOGGLE_IMU_MODE rejected · \(resultName)"
+                    recordVendorTimeline("TOGGLE_IMU_MODE(106) \(enabling ? "ON" : "OFF") rejected · \(resultName)")
+                }
+                return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) \(enabling ? "ON" : "OFF") · \(resultName)"
             }
             if command == 82 {
                 if result == 2 {
                     whoopIMUStatus = "STOP_RAW_DATA pending · awaiting final response"
                     return "COMMAND_RESPONSE · STOP_RAW_DATA(82) · PENDING"
                 }
-                whoop5AutoIMUEnabled = false
-                whoop5AutoIMUStartRequested = false
-                whoopIMUStatus = result == 1
-                    ? "Bounded raw stream stopped · awaiting next session"
-                    : "STOP_RAW_DATA rejected · \(resultName)"
-                recordVendorTimeline("STOP_RAW_DATA(82) response · \(resultName)")
+                if result == 1 {
+                    recordVendorTimeline("STOP_RAW_DATA(82) accepted · disabling live IMU mode")
+                    sendWhoop5IMUModeToggle(to: peripheral, enabled: false)
+                } else {
+                    whoop5AutoIMUEnabled = false
+                    whoop5AutoIMUStartRequested = false
+                    whoopIMUStatus = "STOP_RAW_DATA rejected · \(resultName)"
+                }
                 return "COMMAND_RESPONSE · STOP_RAW_DATA(82) · \(resultName)"
             }
             if command == 145 {
@@ -1478,17 +1573,46 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     return "COMMAND_RESPONSE · GET_HELLO success but body too short (\(b.count) bytes)"
                 }
                 recordVendorTimeline("GET_HELLO response accepted · sequence 1 · success · minimum body length met")
-                whoopSessionPhase = "GET_HELLO response parsed · requesting realtime HR"
-                sendRealtimeHrEnable(to: peripheral)
-                return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR enable requested"
+                whoopSessionPhase = "GET_HELLO response parsed · syncing strap clock before history"
+                sendWhoop5ClockSyncBeforeHistory(to: peripheral)
+                return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · SET_CLOCK/GET_CLOCK requested before HR and history"
+            }
+            if command == 10 || command == 11 {
+                let name = command == 10 ? "SET_CLOCK" : "GET_CLOCK"
+                recordVendorTimeline("\(name) response · seq=\(echoedSequence) · \(resultName) · CRC valid")
+                return "COMMAND_RESPONSE · \(name)(\(command)) · \(resultName)"
             }
             if command == 3 {
                 guard result == 1 else {
-                    return "COMMAND_RESPONSE · REALTIME_HR_ON(3) · \(resultName) · bounded raw stream withheld"
+                    return "COMMAND_RESPONSE · REALTIME_HR_ON(3) · \(resultName) · historical motion request withheld"
                 }
-                whoopIMUStatus = "HR active · awaiting WHOOP 5 R22 historical R21 IMU buffers (type 47 / inner 0x2F)"
-                recordVendorTimeline("IMU live raw commands 81/106 withheld · 5.0 firmware evidence shows accepted-but-inert; decode R22 R21 offload when present")
-                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · HR active; high-rate IMU awaits R22 offload"
+                whoopIMUStatus = "HR active · requesting bounded live motion capture"
+                recordVendorTimeline("REALTIME_HR_ON accepted · starting bounded raw IMU sequence independently of EVENT 33")
+                sendWhoop5RawDataStart(to: peripheral)
+                sendWhoop5HistoricalDataRequest(to: peripheral)
+                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · live and historical motion requested"
+            }
+            if command == 22 {
+                if result == 2 {
+                    whoopHistoricalOffloadStatus = "SEND_HISTORICAL_DATA pending · awaiting strap stream"
+                } else if result == 1 {
+                    whoopHistoricalOffloadStatus = "SEND_HISTORICAL_DATA accepted · waiting for history frames"
+                } else {
+                    whoop5HistoricalRequestSent = false
+                    whoop5HistoricalOffloadActive = false
+                    whoopHistoricalOffloadStatus = "Historical request rejected · \(resultName)"
+                }
+                return "COMMAND_RESPONSE · SEND_HISTORICAL_DATA(22) · \(resultName)"
+            }
+            if command == 23 {
+                if result == 2 {
+                    whoopHistoricalOffloadStatus = "History ACK pending · strap has not confirmed trim yet"
+                } else if result == 1 {
+                    recordVendorTimeline("HISTORICAL_DATA_RESULT(23) accepted · trim advanced")
+                } else {
+                    whoopHistoricalOffloadStatus = "History ACK response · \(resultName) · strap may replay chunk"
+                }
+                return "COMMAND_RESPONSE · HISTORICAL_DATA_RESULT(23) · \(resultName)"
             }
             return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
 
@@ -1539,20 +1663,29 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopIMUStatus = "Realtime IMU stream packet received · \(b.count) bytes · CRC valid · subtype decode pending"
             return "REALTIME_IMU_DATA_STREAM(51) · \(b.count) bytes · CRC valid · raw frame retained"
 
-        case 47: // HISTORICAL_DATA; Gen5 R21 offload buffers share the R21 body layout.
-            whoopIMUFrameCount += 1
-            whoopIMULastFrameAt = Date()
+        case 47: // HISTORICAL_DATA; count received records separately from decoded six-axis IMU.
+            let historyKey = whoop5HistoricalFrameKey(b)
+            let isNewHistoricalRecord = whoopHistoricalRecordKeys.insert(historyKey).inserted
+            if isNewHistoricalRecord {
+                whoopHistoricalRecordCount += 1
+                if b.count > 9 {
+                    if b[9] == 18 { whoopHistoricalLayout18FrameCount += 1 }
+                    if b[9] == 21 { whoopHistoricalLayout21FrameCount += 1 }
+                }
+            }
             whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
             let capturedAt = ISO8601DateFormatter().string(from: Date())
             whoopIMURawFrameHistory.append("type=47 · \(capturedAt) · \(whoopIMULastRawFrameHex)")
             if whoopIMURawFrameHistory.count > 4 {
                 whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
             }
+            if whoop5HistoricalRequestSent || whoop5HistoricalOffloadActive {
+                whoop5HistoricalChunkFrames.append(b)
+            }
+            guard isNewHistoricalRecord else {
+                return "HISTORICAL_DATA(47) · duplicate record ignored for decoded counters"
+            }
 
-            // WHOOP 5 R22 can carry the same 1,244-byte R21 IMU body inside
-            // historical type 47 (inner type 0x2F, revision 21). This is the
-            // observed high-rate offload path; command ACKs alone do not prove
-            // that live raw streaming (0x2B) or IMU mode (106) is active.
             if b.count == 1244, b[8] == 0x2F, b[9] == 21 {
                 do {
                     let decoded = try Gen5R21IMUDecoder.decode(b)
@@ -1560,20 +1693,16 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         whoopIMUStatus = "Historical Gen5 R21 buffer valid · no paired samples"
                         return "HISTORICAL_R21_IMU(0x2F) · no paired samples · CRC valid"
                     }
-                    liveWhoopIMUSamples.append(contentsOf: decoded)
-                    if liveWhoopIMUSamples.count > 2000 {
-                        liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 2000)
+                    // Historical timestamps must never be inserted into the live stream or the
+                    // currently-recording workout. Keep the historical lane separate.
+                    historicalWhoopIMUSamples.append(contentsOf: decoded)
+                    if historicalWhoopIMUSamples.count > 5000 {
+                        historicalWhoopIMUSamples.removeFirst(historicalWhoopIMUSamples.count - 5000)
                     }
-                    if workoutIsRecording {
-                        workoutWhoopIMUSamples.append(contentsOf: decoded)
-                    }
-                    whoopIMUSampleCount += decoded.count
-                    if workoutIsRecording,
-                       workoutWhoopIMUSamples.count - lastWhoopIMUPersistedSampleCount >= 500 {
-                        persistWorkoutSession()
-                    }
-                    whoopIMUStatus = "Gen5 R21 offload decoded · \(decoded.count) paired samples · 100 Hz"
-                    recordVendorTimeline("HISTORICAL R21 IMU decoded · \(decoded.count) samples · type 47 · 100 Hz")
+                    whoopHistoricalIMUFrameCount += 1
+                    whoopHistoricalIMUSampleCount += decoded.count
+                    whoopIMUStatus = "Historical Gen5 R21 decoded · \(decoded.count) samples · 100 Hz"
+                    recordVendorTimeline("HISTORICAL R21 IMU decoded · \(decoded.count) samples · type 47 · layout 21")
                     return "HISTORICAL_R21_IMU(0x2F) · decoded \(decoded.count) samples · CRC valid"
                 } catch {
                     whoopIMUStatus = "Historical Gen5 R21 candidate rejected · \(error) · raw retained"
@@ -1581,8 +1710,30 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 }
             }
 
-            whoopIMUStatus = "Historical WHOOP 5 frame retained · \(b.count) bytes · inner revision \(b.count > 9 ? Int(b[9]) : -1) · R21 decode not matched"
-            return "HISTORICAL_DATA(0x2F) · \(b.count) bytes · raw retained"
+            whoopIMUStatus = "Historical WHOOP 5 record retained · \(b.count) bytes · layout \(b.count > 9 ? Int(b[9]) : -1) · not a v21 IMU buffer"
+            return "HISTORICAL_DATA(47) · \(b.count) bytes · layout \(b.count > 9 ? Int(b[9]) : -1) · raw retained"
+
+        case 52: // HISTORICAL_IMU_DATA_STREAM; count received records, but do not guess its sample schema.
+            let historyKey = whoop5HistoricalFrameKey(b)
+            if whoopHistoricalRecordKeys.insert(historyKey).inserted {
+                whoopHistoricalRecordCount += 1
+                whoopHistoricalIMUStreamFrameCount += 1
+            }
+            whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
+            let capturedAt = ISO8601DateFormatter().string(from: Date())
+            whoopIMURawFrameHistory.append("type=52 · \(capturedAt) · \(whoopIMULastRawFrameHex)")
+            if whoopIMURawFrameHistory.count > 4 {
+                whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
+            }
+            if whoop5HistoricalRequestSent || whoop5HistoricalOffloadActive {
+                whoop5HistoricalChunkFrames.append(b)
+            }
+            whoopIMUStatus = "Historical IMU stream packet type 52 · \(b.count) bytes · raw retained; decoder not yet verified"
+            recordVendorTimeline("HISTORICAL_IMU_DATA_STREAM(52) received · \(b.count) bytes · archived raw before trim ACK")
+            return "HISTORICAL_IMU_DATA_STREAM(52) · \(b.count) bytes · raw retained; decode pending"
+
+        case 49: // METADATA: HISTORY_START / HISTORY_END / HISTORY_COMPLETE.
+            return handleWhoop5HistoricalMetadata(b, peripheral: peripheral)
 
         case 40: // REALTIME_DATA; protocol inner[8] == complete-frame byte[16]
             whoopRealtimePacketCount += 1
@@ -1606,7 +1757,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 recordVendorTimeline("WHOOP realtime HR active event 33 received")
                 lastBLEEvent = "WHOOP event 33 · BLE_REALTIME_HR_ON · stream activation confirmed"
                 statusText = "Connected · WHOOP realtime HR stream confirmed · waiting for sample"
-                return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid · realtime HR active; IMU activation withheld pending protocol verification"
+                sendWhoop5HistoricalDataRequest(to: peripheral)
+                return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid · realtime HR active; historical motion offload requested"
             }
             if eventID == 34 {
                 whoop5HRStreamConfirmed = false
@@ -1672,32 +1824,36 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         return crc ^ 0xFFFFFFFF
     }
 
-    /// Start Gen5 raw streaming with a bounded revision-2 duration.
-    /// OpenStrap documents START_RAW_DATA (0x51) body [0x02][u32 duration-ms LE].
-    /// Never use revision 1: the strap may default to a full 24-hour stream.
-    private func sendWhoop5RawDataStart(to peripheral: CBPeripheral,
-                                         durationMilliseconds: UInt32) {
+    /// Start the hardware-verified WHOOP 5 raw-motion sequence.
+    /// NOOP's 5/MG capture uses START_RAW_DATA [01], then TOGGLE_IMU_MODE [01,01].
+    /// Keep the capture bounded by the explicit STOP_RAW_DATA sent after 60 seconds.
+    private func sendWhoop5RawDataStart(to peripheral: CBPeripheral) {
         guard !whoop5AutoIMUStartRequested,
-              durationMilliseconds > 0,
-              durationMilliseconds <= 86_400_000,
               let command = whoop5CommandCharacteristic,
               command.properties.contains(.write) else { return }
         whoop5AutoIMUStartRequested = true
         let sequence = whoop5NextCommandSequence
         whoop5NextCommandSequence &+= 1
-        let duration = durationMilliseconds
-        let payload: [UInt8] = [
-            0x02,
-            UInt8(duration & 0xFF),
-            UInt8((duration >> 8) & 0xFF),
-            UInt8((duration >> 16) & 0xFF),
-            UInt8((duration >> 24) & 0xFF)
-        ]
-        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x51, payload: payload)
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x51, payload: [0x01])
         whoop5PendingWrites.append("START_RAW_DATA_60S")
         let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
-        recordVendorTimeline("START_RAW_DATA write requested · opcode 51 · revision 2 · duration=\(durationMilliseconds)ms · seq=\(sequence) · HEX: \(hex)")
-        whoopIMUStatus = "Bounded 60-second Gen5 raw stream requested · awaiting command response"
+        recordVendorTimeline("START_RAW_DATA(81) requested · payload=01 · seq=\(sequence) · HEX: \(hex)")
+        whoopIMUStatus = "Raw motion capture requested · awaiting START_RAW_DATA response"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    /// Enable/disable the actual live IMU producer after START_RAW_DATA succeeds.
+    private func sendWhoop5IMUModeToggle(to peripheral: CBPeripheral, enabled: Bool) {
+        guard let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(
+            sequence: sequence, opcode: 0x6A, payload: [0x01, enabled ? 0x01 : 0x00]
+        )
+        whoop5IMUModeEnablePending = enabled
+        whoop5PendingWrites.append(enabled ? "TOGGLE_IMU_MODE_ON" : "TOGGLE_IMU_MODE_OFF")
+        recordVendorTimeline("TOGGLE_IMU_MODE(106) \(enabled ? "ON" : "OFF") requested · seq=\(sequence)")
         peripheral.writeValue(frame, for: command, type: .withResponse)
     }
 
@@ -1725,8 +1881,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         whoop5NextCommandSequence &+= 1
         let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x52, payload: [0x01])
         whoop5PendingWrites.append("STOP_RAW_DATA_60S")
-        recordVendorTimeline("STOP_RAW_DATA write requested · opcode 52 · revision 1 · seq=\(sequence)")
-        whoopIMUStatus = "60-second raw stream elapsed · STOP_RAW_DATA requested"
+        recordVendorTimeline("STOP_RAW_DATA(82) requested · payload=01 · seq=\(sequence)")
+        whoopIMUStatus = "60-second raw motion window elapsed · stopping capture"
         peripheral.writeValue(frame, for: command, type: .withResponse)
     }
 
@@ -1786,6 +1942,195 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         let payloadCRC = crc32(inner)
         let tail: [UInt8] = [UInt8(payloadCRC & 0xFF), UInt8((payloadCRC >> 8) & 0xFF), UInt8((payloadCRC >> 16) & 0xFF), UInt8((payloadCRC >> 24) & 0xFF)]
         return Data(header + inner + tail)
+    }
+
+    /// WHOOP 5 must have a valid strap RTC before it banks or serves historical sensor data.
+    /// NOOP/OpenStrap hardware notes confirm the 8-byte SET_CLOCK followed by GET_CLOCK;
+    /// wait briefly for the command channel to settle before enabling live HR. History is
+    /// requested later, only after the strap confirms HR activation with EVENT 33.
+    private func sendWhoop5ClockSyncBeforeHistory(to peripheral: CBPeripheral) {
+        guard !whoop5ClockSyncStarted,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        whoop5ClockSyncStarted = true
+
+        let now = UInt32(Date().timeIntervalSince1970)
+        let clockPayload: [UInt8] = [
+            UInt8(now & 0xFF),
+            UInt8((now >> 8) & 0xFF),
+            UInt8((now >> 16) & 0xFF),
+            UInt8((now >> 24) & 0xFF),
+            0, 0, 0, 0
+        ]
+        let setClockSequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let setClockFrame = buildWhoop5CommandFrame(
+            sequence: setClockSequence, opcode: 0x0A, payload: clockPayload
+        )
+        let getClockSequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let getClockFrame = buildWhoop5CommandFrame(
+            sequence: getClockSequence, opcode: 0x0B, payload: []
+        )
+
+        whoop5PendingWrites.append("SET_CLOCK")
+        whoop5PendingWrites.append("GET_CLOCK")
+        whoopHistoricalOffloadStatus = "Strap clock sync requested · history waits for HR activation"
+        recordVendorTimeline("SET_CLOCK(10) requested · 8-byte Unix seconds · seq=\(setClockSequence)")
+        peripheral.writeValue(setClockFrame, for: command, type: .withResponse)
+        recordVendorTimeline("GET_CLOCK(11) requested · seq=\(getClockSequence)")
+        peripheral.writeValue(getClockFrame, for: command, type: .withResponse)
+
+        whoop5ClockSyncWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self, weak peripheral] in
+            guard let self, let peripheral,
+                  self.connectedPeripheral?.identifier == peripheral.identifier,
+                  peripheral.state == .connected else { return }
+            self.whoop5ClockSyncWorkItem = nil
+            self.sendRealtimeHrEnable(to: peripheral)
+        }
+        whoop5ClockSyncWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+    }
+
+    /// Request the WHOOP 5 historical store after the strap confirms live-HR activation.
+    /// Command 22 is read-only; command 23 is sent only after the received type-47 chunk
+    /// has been synchronously persisted to the local raw archive.
+    private func sendWhoop5HistoricalDataRequest(to peripheral: CBPeripheral) {
+        guard !whoop5HistoricalRequestSent,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x16, payload: [0x00])
+        whoop5HistoricalRequestSent = true
+        whoop5HistoricalOffloadActive = true
+        whoop5PendingWrites.append("HISTORICAL_DATA_REQUEST")
+        whoopHistoricalOffloadStatus = "Historical data request sent · waiting for type-49 start"
+        let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
+        recordVendorTimeline("SEND_HISTORICAL_DATA(22) · seq=\(sequence) · payload=00 · \(frame.count) bytes · HEX: \(hex)")
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    /// Acknowledge one HISTORY_END only after the complete chunk is durable on this iPhone.
+    /// WHOOP 5 requires [0x01] + the exact eight end_data bytes at frame offsets 21...28.
+    private func sendWhoop5HistoricalChunkAck(to peripheral: CBPeripheral,
+                                               endData: [UInt8],
+                                               trim: UInt32) {
+        guard endData.count == 8,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else {
+            whoopHistoricalOffloadStatus = "History chunk saved · ACK unavailable · strap data retained"
+            return
+        }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x17,
+                                            payload: [0x01] + endData)
+        whoop5PendingWrites.append("HISTORICAL_DATA_RESULT")
+        whoopHistoricalOffloadStatus = "History chunk saved · trim \(trim) · ACK write requested"
+        recordVendorTimeline("HISTORICAL_DATA_RESULT(23) · trim=\(trim) · seq=\(sequence) · 8-byte end_data echoed")
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    private func whoop5HistoricalFrameKey(_ frame: [UInt8]) -> String {
+        let device = connectedPeripheral?.identifier.uuidString ?? "unknown-device"
+        return WhoopHistoricalFrameIdentity.key(frame, deviceID: device)
+    }
+
+    /// Persist raw type-47 records and named type-52 historical IMU stream packets before
+    /// acknowledging their trim cursor. Unknown layouts remain byte-for-byte evidence.
+    private func persistWhoop5HistoricalChunk(_ frames: [[UInt8]]) throws -> Int {
+        let unique = frames.filter {
+            $0.count >= 12 && ($0[8] == 47 || $0[8] == 52) &&
+            !whoop5HistoricalPersistedFrameKeys.contains(whoop5HistoricalFrameKey($0))
+        }
+        guard !unique.isEmpty else { return 0 }
+
+        let fileManager = FileManager.default
+        guard let support = fileManager.urls(for: .applicationSupportDirectory,
+                                              in: .userDomainMask).first else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let directory = support.appendingPathComponent("PulseForge/WHOOPHistory",
+                                                       isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let device = connectedPeripheral?.identifier.uuidString ?? "unknown-device"
+        let url = directory.appendingPathComponent("whoop5-\(device).frames")
+        if !fileManager.fileExists(atPath: url.path) {
+            guard fileManager.createFile(atPath: url.path, contents: nil) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+        }
+
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        for frame in unique {
+            let length = UInt32(frame.count)
+            let prefix = Data([
+                UInt8(length & 0xFF),
+                UInt8((length >> 8) & 0xFF),
+                UInt8((length >> 16) & 0xFF),
+                UInt8((length >> 24) & 0xFF)
+            ])
+            try handle.write(contentsOf: prefix)
+            try handle.write(contentsOf: Data(frame))
+        }
+        try handle.synchronize()
+        for frame in unique {
+            whoop5HistoricalPersistedFrameKeys.insert(whoop5HistoricalFrameKey(frame))
+        }
+        return unique.count
+    }
+
+    private func handleWhoop5HistoricalMetadata(_ frame: [UInt8],
+                                                 peripheral: CBPeripheral) -> String {
+        switch Gen5HistoricalMetadataDecoder.decode(frame) {
+        case .historyStart:
+            whoop5HistoricalOffloadActive = true
+            whoopHistoricalOffloadStatus = "Historical offload started · collecting type-47 and type-52 records"
+            recordVendorTimeline("HISTORY_START(1) received")
+            return "METADATA · HISTORY_START · historical collection active"
+
+        case .historyEnd(let endData, let trim):
+            do {
+                let persisted = try persistWhoop5HistoricalChunk(whoop5HistoricalChunkFrames)
+                whoop5HistoricalChunkFrames.removeAll(keepingCapacity: true)
+                if let deviceID = connectedPeripheral?.identifier.uuidString {
+                    UserDefaults.standard.set(Int(trim),
+                        forKey: "pulseforge.whoop5.history.lastTrim.\(deviceID)")
+                }
+                whoopHistoricalOffloadStatus = "Archived \(persisted) raw frame(s) · trim \(trim) · ACK requested"
+                recordVendorTimeline("HISTORY_END · \(persisted) raw type-47/type-52 frame(s) durable · trim=\(trim)")
+                sendWhoop5HistoricalChunkAck(to: peripheral, endData: endData, trim: trim)
+                return "METADATA · HISTORY_END · \(persisted) raw frame(s) persisted · trim \(trim) · ACK requested"
+            } catch {
+                whoopHistoricalOffloadStatus = "Archive write failed · chunk NOT acknowledged · \(error.localizedDescription)"
+                recordVendorTimeline("HISTORY_END storage failure · ACK withheld · \(error.localizedDescription)")
+                return "METADATA · HISTORY_END · storage failed · ACK withheld"
+            }
+
+        case .historyComplete:
+            do {
+                let persisted = try persistWhoop5HistoricalChunk(whoop5HistoricalChunkFrames)
+                whoop5HistoricalChunkFrames.removeAll(keepingCapacity: true)
+                whoopHistoricalOffloadStatus = "Historical offload complete · \(persisted) trailing frame(s) archived"
+            } catch {
+                whoopHistoricalOffloadStatus = "Offload ended · trailing archive failed · unacked data remains on strap"
+            }
+            whoop5HistoricalOffloadActive = false
+            whoop5HistoricalRequestSent = false
+            recordVendorTimeline("HISTORY_COMPLETE(3) received")
+            return "METADATA · HISTORY_COMPLETE · offload finished"
+
+        case .other(let subtype):
+            return "METADATA · subtype \(subtype) · CRC valid"
+
+        case .invalid:
+            whoopHistoricalOffloadStatus = "Malformed historical metadata · no ACK sent"
+            return "METADATA · malformed · no ACK sent"
+        }
     }
 
     /// Route every validated HR source through the same live UI, chart and workout pipeline.
@@ -1954,6 +2299,37 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             } else {
                 whoopIMUStatus = "STOP_RAW_DATA write acknowledged · awaiting strap response"
                 recordVendorTimeline("STOP_RAW_DATA write callback · acknowledged by CoreBluetooth")
+            }
+            return
+        }
+        if kind == "SET_CLOCK" || kind == "GET_CLOCK" {
+            if let error {
+                recordVendorTimeline("\(kind) write failed · \(error.localizedDescription)")
+                whoopHistoricalOffloadStatus = "Strap clock sync write failed · \(kind) · history may return no sensor records"
+            } else {
+                recordVendorTimeline("\(kind) write acknowledged by CoreBluetooth")
+            }
+            return
+        }
+        if kind == "HISTORICAL_DATA_REQUEST" {
+            if let error {
+                whoop5HistoricalRequestSent = false
+                whoop5HistoricalOffloadActive = false
+                whoopHistoricalOffloadStatus = "Historical request write failed · \(error.localizedDescription)"
+                recordVendorTimeline("SEND_HISTORICAL_DATA write failed · \(error.localizedDescription)")
+            } else {
+                whoopHistoricalOffloadStatus = "Historical request write acknowledged · waiting for HISTORY_START"
+                recordVendorTimeline("SEND_HISTORICAL_DATA write acknowledged by CoreBluetooth")
+            }
+            return
+        }
+        if kind == "HISTORICAL_DATA_RESULT" {
+            if let error {
+                whoopHistoricalOffloadStatus = "History chunk archived · ACK write failed · strap will replay"
+                recordVendorTimeline("HISTORICAL_DATA_RESULT write failed · \(error.localizedDescription)")
+            } else {
+                whoopHistoricalOffloadStatus = "History chunk archived · ACK write acknowledged"
+                recordVendorTimeline("HISTORICAL_DATA_RESULT write acknowledged by CoreBluetooth")
             }
             return
         }

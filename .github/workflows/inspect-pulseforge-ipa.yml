@@ -1,0 +1,131 @@
+name: Inspect uploaded WHOOP IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/whoop5-r21-history-offload
+    paths:
+      - .github/workflows/inspect-pulseforge-ipa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Download and inspect the uploaded IPA
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Download the exact release asset and verify its digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ipa-analysis
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://github.com/ribhupanwar/dsta/releases/download/whoop-5.75.0/pulseforge.ipa" \
+            --output pulseforge.ipa
+          ACTUAL="$(shasum -a 256 pulseforge.ipa | awk '{print $1}')"
+          EXPECTED="8a5deedc59567612683feb77dd7348238de89437123946b3344bc6ff1e90af8a"
+          echo "Downloaded bytes: $(stat -f%z pulseforge.ipa)" | tee ipa-analysis/download.txt
+          echo "SHA256: $ACTUAL" | tee -a ipa-analysis/download.txt
+          test "$ACTUAL" = "$EXPECTED"
+          echo "Release asset SHA256 verified." | tee -a ipa-analysis/download.txt
+
+      - name: Extract IPA and inspect app metadata, Mach-O and protocol symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p extracted
+          unzip -q pulseforge.ipa -d extracted
+          APP="$(find extracted/Payload -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$APP"
+          INFO="$APP/Info.plist"
+          EXE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO")"
+          EXE="$APP/$EXE_NAME"
+
+          {
+            echo "# Uploaded IPA inspection"
+            echo
+            echo "## App metadata"
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO"
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO" || true
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO" || true
+            /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$INFO" || true
+            echo
+            echo "## Main executable"
+            file "$EXE"
+            lipo -info "$EXE" 2>&1 || true
+            echo
+            echo "## Linked libraries"
+            otool -L "$EXE" 2>&1 || true
+            echo
+            echo "## Encryption/load-command indicators"
+            otool -l "$EXE" | grep -A8 -E 'LC_ENCRYPTION_INFO(_64)?|cryptid|LC_BUILD_VERSION|LC_VERSION_MIN_IPHONEOS' || true
+            echo
+            echo "## Code signature"
+            codesign -dvvv "$APP" 2>&1 || true
+            echo
+            echo "## App bundle inventory"
+            find "$APP" -maxdepth 3 -type f | sed "s#^$APP/##" | sort | head -1000
+            echo
+            echo "## Framework and extension executables"
+            find "$APP" -type f -perm -111 -print | while IFS= read -r f; do
+              file "$f"
+            done
+          } > ipa-analysis/IPA-technical-report.txt
+
+          {
+            echo "## IPA technical inspection"
+            cat ipa-analysis/download.txt
+            echo
+            cat ipa-analysis/IPA-technical-report.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          find "$APP" -type f \( -name '*.dylib' -o -path '*.framework/*' -o -perm -111 \) -print0 |
+            while IFS= read -r -d '' f; do
+              strings -a "$f" 2>/dev/null || true
+            done |
+            grep -Ei 'FD4B[0-9A-F]{4}|WHOOP|CoreBluetooth|CBPeripheral|historical.?data|imu.?data|heart.?rate|service.?uuid|characteristic' |
+            sort -u | head -5000 > ipa-analysis/protocol-string-hits.txt || true
+
+          echo "## Candidate protocol strings" >> "$GITHUB_STEP_SUMMARY"
+          cat ipa-analysis/protocol-string-hits.txt >> "$GITHUB_STEP_SUMMARY"
+
+          # A string-only scan can miss Swift/Objective-C call paths. Collect
+          # symbol and Objective-C metadata hints from the main app and embedded
+          # frameworks without modifying or executing the proprietary binary.
+          : > ipa-analysis/symbol-candidates.txt
+          : > ipa-analysis/objc-metadata-candidates.txt
+          find "$APP" -type f \( -name '*.dylib' -o -path '*.framework/*' -o -perm -111 \) -print0 |
+            while IFS= read -r -d '' f; do
+              {
+                echo "===== $f : nm ====="
+                nm -a "$f" 2>/dev/null || true
+              } >> ipa-analysis/all-symbols.txt
+              {
+                echo "===== $f : Objective-C metadata ====="
+                otool -ov "$f" 2>/dev/null || true
+              } >> ipa-analysis/all-objc-metadata.txt
+            done
+
+          grep -Ei 'CBPeripheral|CBCharacteristic|CBCentral|Bluetooth|HeartRate|Historical|IMU|Workout|Sensor|Stream|Packet|Command|Puffin|Gen5|BLE|Whoop'             ipa-analysis/all-symbols.txt | sort -u | head -10000 > ipa-analysis/symbol-candidates.txt || true
+          grep -Ei 'CBPeripheral|CBCharacteristic|CBCentral|Bluetooth|HeartRate|Historical|IMU|Workout|Sensor|Stream|Packet|Command|Puffin|Gen5|BLE|Whoop'             ipa-analysis/all-objc-metadata.txt | sort -u | head -10000 > ipa-analysis/objc-metadata-candidates.txt || true
+          rm -f ipa-analysis/all-symbols.txt ipa-analysis/all-objc-metadata.txt
+
+          {
+            echo "## Symbol candidates"
+            cat ipa-analysis/symbol-candidates.txt
+            echo
+            echo "## Objective-C metadata candidates"
+            cat ipa-analysis/objc-metadata-candidates.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload inspection report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: whoop-ipa-full-inspection
+          path: ipa-analysis/
+          if-no-files-found: warn
+          retention-days: 14

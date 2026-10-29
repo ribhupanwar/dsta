@@ -64,6 +64,14 @@ struct MainTabView: View {
         .onChange(of: health.isAuthorized) { _, authorized in
             if authorized { insights.refresh() }
         }
+        .onChange(of: bluetooth.heartRateUpdateCount) { _, _ in
+            if let bpm = bluetooth.liveHeartRateBPM, let timestamp = bluetooth.lastHeartRateAt {
+                insights.ingestWhoopHeartRate(bpm, at: timestamp, workoutActive: bluetooth.workoutIsRecording)
+            }
+        }
+        .onChange(of: bluetooth.workoutIsRecording) { _, active in
+            if !active { insights.ingestWhoopHeartRate(0, at: Date(), workoutActive: false) }
+        }
     }
 }
 
@@ -212,7 +220,13 @@ struct RecoveryDetailSheet: View {
                         CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
                         CompactMetric(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                     }
-                    Text("Recovery trend and baseline history will appear as enough verified daily measurements are collected.")
+                    HStack(spacing: 10) {
+                        CompactMetric(title: "HRV VS BASELINE", value: insights.hrvDeviationPercent.map { String(format: "%+.0f", $0) } ?? "—", unit: "%")
+                        CompactMetric(title: "RHR VS BASELINE", value: insights.restingHRDeviationBPM.map { String(format: "%+.1f", $0) } ?? "—", unit: "bpm")
+                    }
+                    Text(insights.recoveryStatus)
+                        .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                    Text("PulseForge recovery is an estimate using today's HRV and resting HR against at least three prior readings. It is not a medical assessment or WHOOP's proprietary score.")
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(18)
@@ -426,9 +440,15 @@ struct WhoopMotionCard: View {
                     motionCount("SAMPLES", value: bluetooth.whoopIMUSampleCount)
                     motionCount("WORKOUT", value: bluetooth.workoutWhoopIMUSamples.count)
                 }
+                HStack {
+                    motionCount("HIST FRAMES", value: bluetooth.whoopHistoricalRecordCount)
+                    motionCount("HIST SAMPLES", value: bluetooth.whoopHistoricalIMUSampleCount)
+                }
                 Text(bluetooth.whoopIMUStatus)
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
-                Text("One-second signal variability is diagnostic only; sensor scale and activity classification are not yet calibrated.")
+                Text(bluetooth.whoopHistoricalOffloadStatus)
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                Text("HIST FRAMES counts unique received history records (type 47/52); HIST SAMPLES counts only verified decoded six-axis R21 samples. Historical data stays separate from live workouts.")
                     .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
             }
             .padding(16)
@@ -677,13 +697,13 @@ struct SleepDashboard: View {
                 VStack(alignment: .leading, spacing: 16) {
                     SectionHeader(title: "SLEEP PERFORMANCE")
                     HStack(spacing: 20) {
-                        ScoreRing(title: "PERFORMANCE", value: nil, tint: Color(red: 0.35, green: 0.62, blue: 0.96))
+                        ScoreRing(title: "PERFORMANCE", value: insights.sleepPerformanceScore, tint: Color(red: 0.35, green: 0.62, blue: 0.96))
                             .frame(width: 112)
                         VStack(alignment: .leading, spacing: 7) {
                             Text(health.sleepHours.map { String(format: "%.1f h", $0) } ?? "—")
                                 .font(.system(size: 34, weight: .medium, design: .rounded)).monospacedDigit()
                             Text("Time asleep").font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
-                            Text("Sleep score needs a verified sleep target and complete sleep data.")
+                            Text(insights.sleepStatus)
                                 .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
                         }
                     }
@@ -709,7 +729,11 @@ struct SleepDashboard: View {
                     CompactMetric(title: "DEEP SLEEP", value: health.deepSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
                     CompactMetric(title: "REM SLEEP", value: health.remSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
                 }
-                Text("Sleep stages are read from Apple Health. Debt is the rolling shortfall against an 8-hour target across completed nights with recorded sleep.")
+                HStack(spacing: 10) {
+                    CompactMetric(title: "NIGHTS TRACKED", value: String(insights.sleepNightsCount), unit: "of 7")
+                    CompactMetric(title: "SLEEP DEBT", value: insights.sleepDebtHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                }
+                Text("Sleep performance compares the latest completed Apple Health sleep record with an 8-hour reference target. Debt sums recorded nights only; missing nights are not assumed to be zero.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
@@ -732,15 +756,24 @@ struct StrainDashboard: View {
                     HStack(spacing: 22) {
                         ZStack {
                             Circle().stroke(ForgeColors.track, lineWidth: 9)
-                            Circle().trim(from: 0, to: 0)
+                            Circle().trim(from: 0, to: min(1, max(0, ((insights.whoopCardioLoadPointsToday ?? insights.cardioLoadPoints) ?? 0) / 300)))
                                 .stroke(Color(red: 0.98, green: 0.58, blue: 0.27), style: StrokeStyle(lineWidth: 9, lineCap: .round))
                                 .rotationEffect(.degrees(-90))
-                            Text("—").font(.system(size: 39, weight: .light, design: .rounded))
+                            VStack(spacing: 2) {
+                                Text((insights.whoopCardioLoadPointsToday ?? insights.cardioLoadPoints).map { String(format: "%.0f", $0) } ?? "—")
+                                    .font(.system(size: 34, weight: .light, design: .rounded)).monospacedDigit()
+                                Text("LOAD PTS").font(.system(size: 8, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                            }
                         }
                         .frame(width: 132, height: 132)
                         VStack(alignment: .leading, spacing: 7) {
-                            Text("No strain score yet").font(.system(size: 18, weight: .semibold))
-                            Text("A verified workout and heart-rate load model are needed to calculate daily strain.")
+                            Text((insights.whoopCardioLoadPointsToday ?? insights.cardioLoadPoints) == nil ? "Load not available yet" : "Daily cardio load")
+                                .font(.system(size: 18, weight: .semibold))
+                            Text(insights.whoopCardioLoadPointsToday != nil
+                                 ? "Calculated from direct WHOOP BLE HR during recorded workouts."
+                                 : (insights.cardioLoadPoints == nil
+                                    ? "Connect WHOOP, record a workout and enter measured max HR to calculate direct sensor load."
+                                    : "Calculated from HealthKit workout HR. Direct WHOOP BLE load takes priority when available."))
                                 .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                         }
                     }
@@ -763,7 +796,7 @@ struct StrainDashboard: View {
                 HStack(spacing: 10) {
                     CompactMetric(title: "CARDIO LOAD", value: insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—", unit: "load pts")
                     CompactMetric(title: "ACTIVITIES", value: String(insights.workoutCountToday), unit: "today")
-                    CompactMetric(title: "DURATION", value: insights.workoutMinutesToday.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
+                    CompactMetric(title: "DURATION", value: insights.whoopWorkoutMinutesToday > 0 ? String(format: "%.0f", insights.whoopWorkoutMinutesToday) : (insights.workoutMinutesToday.map { String(format: "%.0f", $0) } ?? "—"), unit: "min")
                 }
                 SectionHeader(title: "LATEST RUN")
                 VStack(spacing: 13) {
@@ -787,13 +820,16 @@ struct StrainDashboard: View {
                 }
                 .font(.system(size: 13, weight: .medium))
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
-                Text("Cardio-load points use workout HR samples and your saved measured max HR. WHOOP-style strain remains blank until its model is validated.")
+                Text(insights.whoopWorkoutSampleCountToday > 0
+                     ? "\(insights.whoopSensorLoadStatus) · \(insights.whoopWorkoutSampleCountToday) HR intervals · ring capped at 300 points; not a WHOOP strain score."
+                     : "Cardio-load points use workout HR samples and your saved measured max HR. The ring is a visual scale capped at 300 points; it is not a WHOOP strain score.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
             .padding(18).padding(.top, 16)
         }
         .refreshable { health.refresh(); insights.refresh() }
+        .onChange(of: measuredMaxHeartRate) { _, _ in insights.refresh() }
     }
 }
 

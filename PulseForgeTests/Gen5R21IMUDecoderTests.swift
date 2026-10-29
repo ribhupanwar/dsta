@@ -53,6 +53,15 @@ final class Gen5R21IMUDecoderTests: XCTestCase {
         XCTAssertEqual(samples[1].timestamp.timeIntervalSince(samples[0].timestamp), 0.01, accuracy: 0.000001)
     }
 
+    func testUsesIntegerUnixTimestampAndDoesNotTreatFollowingBytesAsFraction() throws {
+        var frame = makeFrame(innerType: 0x2F)
+        // The real NOOP hardware fixture has 0x2000 at frame offsets 19–20.
+        // Those bytes are not a documented fractional timestamp.
+        putU16(0x2000, at: 19, in: &frame)
+        let samples = try Gen5R21IMUDecoder.decode(frame)
+        XCTAssertEqual(samples[0].timestamp.timeIntervalSince1970, 1_700_000_000.0, accuracy: 0.000001)
+    }
+
     func testPairsOnlyCommonAccelerometerAndGyroscopeSamples() throws {
         XCTAssertEqual(try Gen5R21IMUDecoder.decode(makeFrame(accelCount: 1, gyroCount: 2)).count, 1)
     }
@@ -70,5 +79,72 @@ final class Gen5R21IMUDecoderTests: XCTestCase {
     func testRejectsInvalidCounts() {
         XCTAssertThrowsError(try Gen5R21IMUDecoder.decode(makeFrame(accelCount: 0, gyroCount: 1)))
         XCTAssertThrowsError(try Gen5R21IMUDecoder.decode(makeFrame(accelCount: 101, gyroCount: 1)))
+    }
+}
+
+
+final class Gen5HistoricalMetadataDecoderTests: XCTestCase {
+    func testDecodesHistoryStartFromMetadataTypeByte() {
+        var frame = [UInt8](repeating: 0, count: 32)
+        frame[8] = 49
+        frame[10] = 1
+        XCTAssertEqual(Gen5HistoricalMetadataDecoder.decode(frame), .historyStart)
+    }
+
+    func testDecodesHistoryEndAndEchoBytesAtAbsoluteOffsets21Through28() {
+        var frame = [UInt8](repeating: 0, count: 33)
+        frame[8] = 49
+        frame[10] = 2
+        let endData: [UInt8] = [0x41, 0x42, 0x43, 0x44, 0x51, 0x52, 0x53, 0x54]
+        for (index, byte) in endData.enumerated() {
+            frame[21 + index] = byte
+        }
+        XCTAssertEqual(
+            Gen5HistoricalMetadataDecoder.decode(frame),
+            .historyEnd(endData: endData, trim: 0x44434241)
+        )
+    }
+
+    func testRejectsTruncatedHistoryEndWithoutAnAckCursor() {
+        var frame = [UInt8](repeating: 0, count: 28)
+        frame[8] = 49
+        frame[10] = 2
+        XCTAssertEqual(Gen5HistoricalMetadataDecoder.decode(frame), .invalid)
+    }
+
+    func testDecodesHistoryComplete() {
+        var frame = [UInt8](repeating: 0, count: 16)
+        frame[8] = 49
+        frame[10] = 3
+        XCTAssertEqual(Gen5HistoricalMetadataDecoder.decode(frame), .historyComplete)
+    }
+}
+
+
+final class WhoopHistoricalFrameIdentityTests: XCTestCase {
+    func testIdentityIsStableForExactReplay() {
+        let frame = [UInt8](repeating: 0x5A, count: 1244)
+        XCTAssertEqual(
+            WhoopHistoricalFrameIdentity.key(frame, deviceID: "whoop-a"),
+            WhoopHistoricalFrameIdentity.key(frame, deviceID: "whoop-a")
+        )
+    }
+
+    func testIdentityChangesWhenOnlySamplePayloadChanges() {
+        var first = [UInt8](repeating: 0, count: 1244)
+        var second = first
+        second[300] = 1 // sample payload, not transport metadata or trailer
+        XCTAssertNotEqual(
+            WhoopHistoricalFrameIdentity.key(first, deviceID: "whoop-a"),
+            WhoopHistoricalFrameIdentity.key(second, deviceID: "whoop-a")
+        )
+    }
+
+    func testIdentityIsScopedToTheBand() {
+        let frame = [UInt8](repeating: 0xA5, count: 1244)
+        XCTAssertNotEqual(
+            WhoopHistoricalFrameIdentity.key(frame, deviceID: "whoop-a"),
+            WhoopHistoricalFrameIdentity.key(frame, deviceID: "whoop-b")
+        )
     }
 }
