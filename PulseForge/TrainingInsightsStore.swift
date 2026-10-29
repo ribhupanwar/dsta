@@ -68,6 +68,7 @@ final class TrainingInsightsStore: ObservableObject {
             [weak self] _, samples, _ in
             guard let self else { completion(nil, nil); return }
             let asleepValues: Set<Int> = [
+                HKCategoryValueSleepAnalysis.asleep.rawValue, // Legacy HealthKit sleep samples.
                 HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
                 HKCategoryValueSleepAnalysis.asleepCore.rawValue,
                 HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
