@@ -148,6 +148,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var workoutRecoverySince: Date?
     private var workoutSessionBaselineBPM: Int?
     @Published private(set) var whoopIMUFrameCount = 0
+    @Published private(set) var whoopHistoricalIMUStreamPacketCount = 0
+    @Published private(set) var whoopLastHistoricalIMUStreamRawFrameHex = "none"
     @Published private(set) var whoopIMUSampleCount = 0
     @Published private(set) var whoopIMULastFrameAt: Date?
     @Published private(set) var whoopIMUStatus = "Waiting for WHOOP motion stream"
@@ -1838,6 +1840,16 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopIMUStatus = "Gen5 R21 candidate rejected · \(error) · raw retained"
                 return "GEN5_R21_IMU(0x2B) · decode rejected · \(error)"
             }
+        case 52: // HISTORICAL_IMU_DATA_STREAM; keep opaque until this firmware's framing is validated.
+            // Type 52 is a distinct packet family from Type-47 biometric records.
+            // Retain CRC-valid complete frames and expose their sizes/revision bytes;
+            // never count them as decoded IMU samples until the inner schema is proven.
+            whoopHistoricalIMUStreamPacketCount += 1
+            whoopLastHistoricalIMUStreamRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
+            whoopIMUStatus = "WHOOP historical IMU stream received · raw frame retained · awaiting validated inner-layout decoder"
+            recordVendorTimeline("HISTORICAL_IMU_DATA_STREAM(52) · CRC valid · bytes=\\(b.count) · raw retained · no samples counted")
+            return "HISTORICAL_IMU_STREAM(52) · raw frame retained · layout pending · CRC valid"
+
         case 51: // Existing REALTIME_IMU_DATA_STREAM path retained independently; do not conflate with Gen5 R21.
             whoopIMUFrameCount += 1
             whoopIMULastFrameAt = Date()
