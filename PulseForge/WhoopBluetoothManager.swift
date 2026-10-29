@@ -1095,6 +1095,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMUFrameCount = 0
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
+        whoopHistoricalRecordCount = 0
+        whoopHistoricalRecordKeys.removeAll()
         whoopHistoricalIMUFrameCount = 0
         whoopHistoricalIMUSampleCount = 0
         whoopHistoricalLayout18FrameCount = 0
