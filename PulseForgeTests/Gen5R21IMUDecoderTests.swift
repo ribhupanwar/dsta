@@ -53,11 +53,13 @@ final class Gen5R21IMUDecoderTests: XCTestCase {
         XCTAssertEqual(samples[1].timestamp.timeIntervalSince(samples[0].timestamp), 0.01, accuracy: 0.000001)
     }
 
-    func testUsesR21TimestampFractionAtFrameOffset19() throws {
+    func testUsesIntegerUnixTimestampAndDoesNotTreatFollowingBytesAsFraction() throws {
         var frame = makeFrame(innerType: 0x2F)
-        putU16(16_384, at: 19, in: &frame) // 0.5 seconds at 1/32768-second units
+        // The real NOOP hardware fixture has 0x2000 at frame offsets 19–20.
+        // Those bytes are not a documented fractional timestamp.
+        putU16(0x2000, at: 19, in: &frame)
         let samples = try Gen5R21IMUDecoder.decode(frame)
-        XCTAssertEqual(samples[0].timestamp.timeIntervalSince1970, 1_700_000_000.5, accuracy: 0.000001)
+        XCTAssertEqual(samples[0].timestamp.timeIntervalSince1970, 1_700_000_000.0, accuracy: 0.000001)
     }
 
     func testPairsOnlyCommonAccelerometerAndGyroscopeSamples() throws {
