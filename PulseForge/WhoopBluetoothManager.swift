@@ -528,6 +528,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private let automaticReconnectDelays: [TimeInterval] = [1, 2, 4, 8, 16, 30]
     private var pendingCharacteristicServices = Set<ObjectIdentifier>()
     private var pendingDescriptorCharacteristics = Set<ObjectIdentifier>()
+    private var gattCharacteristicDiscoveryErrors: [String] = []
 
     // Candidate UUIDs observed in the WHOOP archive. They are scan hints only;
     // the archive string scan does not prove their exact GATT roles.
@@ -937,6 +938,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         workoutRecoverySince = nil
         pendingCharacteristicServices.removeAll()
         pendingDescriptorCharacteristics.removeAll()
+        gattCharacteristicDiscoveryErrors.removeAll()
         discoveredProfile.removeAll()
         vendorNotificationStates.removeAll()
         vendorNotificationPayloads.removeAll()
@@ -1910,8 +1912,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         if let error {
-            discoveredProfile.append("Service error · \(service.uuid.uuidString) · \(error.localizedDescription)")
-            lastBLEEvent = "Characteristic discovery error · service \(service.uuid.uuidString) · \(error.localizedDescription)"
+            let failure = "\(service.uuid.uuidString): \(error.localizedDescription)"
+            gattCharacteristicDiscoveryErrors.append(failure)
+            discoveredProfile.append("Service error · \(failure)")
+            lastBLEEvent = "Characteristic discovery error · service \(failure)"
         } else {
             for characteristic in service.characteristics ?? [] {
                 discoveredProfile.append("Characteristic · service \(service.uuid.uuidString) → \(characteristic.uuid.uuidString) · \(propertyNames(characteristic.properties))")
@@ -1976,6 +1980,14 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     /// type remain unchanged; this fixes the cross-service discovery race.
     private func startWhoopHelloAfterGattDiscovery(_ peripheral: CBPeripheral) {
         guard !whoop5HelloSent else { return }
+        guard gattCharacteristicDiscoveryErrors.isEmpty else {
+            whoopSessionPhase = "GATT discovery incomplete · protocol handshake withheld"
+            let failures = gattCharacteristicDiscoveryErrors.joined(separator: " | ")
+            lastBLEEvent = "CLIENT_HELLO withheld · incomplete characteristic discovery · \(failures)"
+            statusText = "WHOOP GATT discovery incomplete · reconnect to retry"
+            recordVendorTimeline("CLIENT_HELLO withheld · GATT discovery errors · \(failures)")
+            return
+        }
         guard let command = whoop5CommandCharacteristic,
               command.properties.contains(.write) else {
             let hasWhoopService = discoveredProfile.contains {
