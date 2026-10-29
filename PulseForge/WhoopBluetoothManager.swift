@@ -538,6 +538,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5HRStreamConfirmed = false
     private var whoop5AutoIMUStartRequested = false
     private var whoop5AutoIMUEnabled = false
+    private var whoop5IMUModeEnableSequence: UInt8?
     private var whoop5RawStreamStopWorkItem: DispatchWorkItem?
     private var whoop5RawStreamRearmWorkItem: DispatchWorkItem?
     private var whoop5PendingWrites: [String] = []
@@ -1106,6 +1107,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HRDataObserved = false
         whoop5AutoIMUStartRequested = false
         whoop5AutoIMUEnabled = false
+        whoop5IMUModeEnableSequence = nil
         whoop5RawStreamStopWorkItem?.cancel()
         whoop5RawStreamStopWorkItem = nil
         whoop5RawStreamRearmWorkItem?.cancel()
@@ -1715,6 +1717,24 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 recordVendorTimeline("START_RAW_DATA(81) response · \(resultName)")
                 return "COMMAND_RESPONSE · START_RAW_DATA(81) · \(resultName)"
             }
+            if command == 106,
+               let expectedSequence = whoop5IMUModeEnableSequence,
+               echoedSequence == Int(expectedSequence) {
+                if result == 2 {
+                    whoopIMUStatus = "Gen5 IMU mode enable pending · awaiting final response"
+                    recordVendorTimeline("TOGGLE_IMU_MODE(106) response · PENDING")
+                    return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · PENDING"
+                }
+                whoop5IMUModeEnableSequence = nil
+                guard result == 1 else {
+                    whoopIMUStatus = "Gen5 IMU mode enable rejected · \(resultName)"
+                    recordVendorTimeline("TOGGLE_IMU_MODE(106) rejected · \(resultName) · raw stream withheld")
+                    return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · \(resultName) · START_RAW_DATA withheld"
+                }
+                recordVendorTimeline("TOGGLE_IMU_MODE(106) SUCCESS · issuing bounded START_RAW_DATA")
+                sendWhoop5RawDataStart(to: peripheral, durationMilliseconds: 60_000)
+                return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) SUCCESS · bounded START_RAW_DATA requested"
+            }
             if command == 82 {
                 if result == 2 {
                     whoopIMUStatus = "STOP_RAW_DATA pending · awaiting final response"
@@ -2115,11 +2135,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 // this event; sendWhoop5RawDataStart's in-flight guard prevents
                 // duplicate START_RAW_DATA writes.
                 if !whoop5AutoIMUStartRequested && !whoop5AutoIMUEnabled,
-                   whoop5HelloWriteAcknowledged {
-                    recordVendorTimeline("IMU startup gate · Event 33 confirmed · issuing bounded START_RAW_DATA")
-                    sendWhoop5RawDataStart(to: peripheral, durationMilliseconds: 60_000)
+                   whoop5HelloWriteAcknowledged,
+                   whoop5IMUModeEnableSequence == nil {
+                    recordVendorTimeline("IMU startup gate · Event 33 confirmed · enabling Gen5 IMU mode before bounded raw stream")
+                    sendWhoop5IMUModeEnable(to: peripheral)
                 }
-                return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid · realtime HR active; IMU activation withheld pending protocol verification"
+                return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid · realtime HR active; Gen5 IMU mode gate evaluated"
             }
             if eventID == 34 {
                 whoopEvent34Count += 1
@@ -2191,6 +2212,26 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
         }
         return crc ^ 0xFFFFFFFF
+    }
+
+    /// Gen5 IMU_SET_DATA_STREAM (0x6A) requires revision-1 + on/off byte.
+    /// OpenStrap's Gen5 command builder and conformance test verify [0x01, 0x01].
+    /// Do not start raw frames until this command receives a successful band response.
+    private func sendWhoop5IMUModeEnable(to peripheral: CBPeripheral) {
+        guard whoop5IMUModeEnableSequence == nil,
+              !whoop5AutoIMUStartRequested,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        whoop5IMUModeEnableSequence = sequence
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x6A,
+                                            payload: [0x01, 0x01])
+        whoop5PendingWrites.append("TOGGLE_IMU_MODE_ON")
+        let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
+        recordVendorTimeline("TOGGLE_IMU_MODE write requested · opcode 6A · Gen5 revision 1 ON · seq=\(sequence) · HEX: \(hex)")
+        whoopIMUStatus = "Gen5 IMU mode enable requested · awaiting band response"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
     }
 
     /// Start Gen5 raw streaming with a bounded revision-2 duration.
@@ -2703,6 +2744,17 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
               !whoop5PendingWrites.isEmpty else { return }
         let kind = whoop5PendingWrites.removeFirst()
 
+        if kind == "TOGGLE_IMU_MODE_ON" {
+            if let error {
+                whoop5IMUModeEnableSequence = nil
+                whoopIMUStatus = "Gen5 IMU mode write failed · \(error.localizedDescription)"
+                recordVendorTimeline("TOGGLE_IMU_MODE write callback · failed · \(error.localizedDescription)")
+            } else {
+                whoopIMUStatus = "Gen5 IMU mode write acknowledged · awaiting band response"
+                recordVendorTimeline("TOGGLE_IMU_MODE write callback · acknowledged by CoreBluetooth")
+            }
+            return
+        }
         if kind == "START_RAW_DATA_60S" {
             if let error {
                 whoop5AutoIMUStartRequested = false
