@@ -156,14 +156,35 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopIMULastRawFrameHex = "none"
     private var whoopIMURawFrameHistory: [String] = []
     @Published private(set) var liveWhoopIMUSamples: [WhoopIMUSample] = []
+    /// Persisted decoded WHOOP motion history; never treated as a live stream.
+    @Published private(set) var whoopIMUHistorySamples: [WhoopIMUSample] = []
     @Published private(set) var workoutWhoopIMUSamples: [WhoopIMUSample] = []
     private var lastWhoopIMUPersistedSampleCount = 0
+    private var lastDashboardIMUPersistedSampleCount = 0
 
     private enum DashboardHistoryKey {
         static let heartRate = "pulseforge.history.liveHeartRate.v1"
         static let historicalRR = "pulseforge.history.historicalRR.v1"
         static let historicalHR = "pulseforge.history.historicalHR.v1"
         static let historicalAt = "pulseforge.history.historicalAt.v1"
+        static let imuSamples = "pulseforge.history.whoopIMUSamples.v1"
+    }
+
+    private func persistDashboardIMUHistoryIfNeeded(force: Bool = false) {
+        guard force || whoopIMUHistorySamples.count - lastDashboardIMUPersistedSampleCount >= 500 else { return }
+        let retained = Array(whoopIMUHistorySamples.suffix(20_000))
+        guard let data = try? JSONEncoder().encode(retained) else { return }
+        UserDefaults.standard.set(data, forKey: DashboardHistoryKey.imuSamples)
+        lastDashboardIMUPersistedSampleCount = whoopIMUHistorySamples.count
+    }
+
+    private func appendVerifiedIMUHistory(_ samples: [WhoopIMUSample]) {
+        guard !samples.isEmpty else { return }
+        whoopIMUHistorySamples.append(contentsOf: samples)
+        if whoopIMUHistorySamples.count > 20_000 {
+            whoopIMUHistorySamples.removeFirst(whoopIMUHistorySamples.count - 20_000)
+        }
+        persistDashboardIMUHistoryIfNeeded()
     }
 
     private func persistDashboardHistory() {
@@ -197,6 +218,11 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         }
         whoopHistoricalHeartRateBPM = defaults.object(forKey: DashboardHistoryKey.historicalHR) as? Int
         whoopHistoricalTimestampLastUpdatedAt = defaults.object(forKey: DashboardHistoryKey.historicalAt) as? Date
+        if let data = defaults.data(forKey: DashboardHistoryKey.imuSamples),
+           let samples = try? JSONDecoder().decode([WhoopIMUSample].self, from: data) {
+            whoopIMUHistorySamples = Array(samples.suffix(20_000))
+            lastDashboardIMUPersistedSampleCount = whoopIMUHistorySamples.count
+        }
         // Never restore live BPM/freshness or calculate live RMSSD from old samples.
     }
 
@@ -1917,6 +1943,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     return "GEN5_R21_IMU(0x2B) · no paired samples"
                 }
                 liveWhoopIMUSamples.append(contentsOf: decoded)
+                appendVerifiedIMUHistory(decoded)
                 if liveWhoopIMUSamples.count > 2000 {
                     liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 2000)
                 }
@@ -2083,6 +2110,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         return "HISTORICAL_R21_IMU(0x2F) · no paired samples · CRC valid"
                     }
                     liveWhoopIMUSamples.append(contentsOf: decoded)
+                    appendVerifiedIMUHistory(decoded)
                     if liveWhoopIMUSamples.count > 2000 {
                         liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 2000)
                     }
