@@ -1546,16 +1546,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopIMUStatus = "Realtime IMU stream packet received · \(b.count) bytes · CRC valid · subtype decode pending"
             return "REALTIME_IMU_DATA_STREAM(51) · \(b.count) bytes · CRC valid · raw frame retained"
 
-        case 47: // HISTORICAL_DATA; Gen5 R21 offload buffers share the R21 body layout.
-            whoopIMUFrameCount += 1
-            whoopIMULastFrameAt = Date()
-            whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
-            let capturedAt = ISO8601DateFormatter().string(from: Date())
-            whoopIMURawFrameHistory.append("type=47 · \(capturedAt) · \(whoopIMULastRawFrameHex)")
-            if whoopIMURawFrameHistory.count > 4 {
-                whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
-            }
-
+        case 47: // HISTORICAL_DATA; contains several Gen5 layouts, not all of them IMU.
             // WHOOP 5 v18 historical biometric records carry RR count@23 and
             // little-endian millisecond intervals@24+. Keep this separate from R21.
             if b.count > 9, b[9] == 18 {
@@ -1578,6 +1569,14 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             // observed high-rate offload path; command ACKs alone do not prove
             // that live raw streaming (0x2B) or IMU mode (106) is active.
             if b.count == 1244, b[8] == 0x2F, b[9] == 21 {
+                whoopIMUFrameCount += 1
+                whoopIMULastFrameAt = Date()
+                whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
+                let capturedAt = ISO8601DateFormatter().string(from: Date())
+                whoopIMURawFrameHistory.append("type=47 · \(capturedAt) · \(whoopIMULastRawFrameHex)")
+                if whoopIMURawFrameHistory.count > 4 {
+                    whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
+                }
                 do {
                     let decoded = try Gen5R21IMUDecoder.decode(b)
                     guard !decoded.isEmpty else {
