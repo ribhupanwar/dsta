@@ -107,6 +107,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoopEventProbeOnSequence: UInt8?
     private var whoopEventProbeStart33Count = 0
     private var whoopEventProbeStart34Count = 0
+    private var whoopEventProbeStartedAt: Date?
     private var whoopEventProbeRearmWorkItem: DispatchWorkItem?
     private var whoopEventProbeFinishWorkItem: DispatchWorkItem?
     /// Notification-level and CRC-valid packet-level evidence, keyed by GATT channel.
@@ -1023,6 +1024,18 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopPacketTypeCountsByChannel.removeAll()
         whoopLastPacketTypeByChannel.removeAll()
         whoopRejectedFrameCountsByChannel.removeAll()
+        whoopPuffinEventCountsByChannel.removeAll()
+        whoopPuffinEventTypeCounts.removeAll()
+        whoopPuffinEventFrameHistory.removeAll()
+        whoopEventProbeRearmWorkItem?.cancel()
+        whoopEventProbeRearmWorkItem = nil
+        whoopEventProbeFinishWorkItem?.cancel()
+        whoopEventProbeFinishWorkItem = nil
+        whoopEventProbeActive = false
+        whoopEventProbeOffSequence = nil
+        whoopEventProbeOnSequence = nil
+        whoopEventProbeStartedAt = nil
+        whoopEventProbeStatus = "Controlled Event 33/34 probe not run in this connection"
         vendorNotificationTimeline.removeAll()
         whoop5FragmentBuffers.removeAll()
         whoop5ExpectedFrameLengths.removeAll()
@@ -1061,13 +1074,6 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopPuffinEventCountsByChannel.removeAll()
         whoopPuffinEventTypeCounts.removeAll()
         whoopPuffinEventFrameHistory.removeAll()
-        whoopEventProbeRearmWorkItem?.cancel()
-        whoopEventProbeRearmWorkItem = nil
-        whoopEventProbeFinishWorkItem?.cancel()
-        whoopEventProbeFinishWorkItem = nil
-        whoopEventProbeActive = false
-        whoopEventProbeOffSequence = nil
-        whoopEventProbeOnSequence = nil
         whoopEventProbeRearmWorkItem?.cancel()
         whoopEventProbeRearmWorkItem = nil
         whoopEventProbeFinishWorkItem?.cancel()
@@ -2061,7 +2067,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 guard let self, self.whoopEventProbeActive else { return }
                 let onDelta = self.whoopEvent33Count - self.whoopEventProbeStart33Count
                 let offDelta = self.whoopEvent34Count - self.whoopEventProbeStart34Count
-                self.whoopEventProbeStatus = "Probe complete · Event33 +\(onDelta) · Event34 +\(offDelta) · HR \(self.lastHeartRateAt == nil ? "not yet restored" : "sample restored")"
+                let restoredSample = self.lastHeartRateAt.map { sampleAt in
+                    self.whoopEventProbeStartedAt.map { sampleAt > $0 } ?? false
+                } ?? false
+                self.whoopEventProbeStatus = "Probe complete · Event33 +\(onDelta) · Event34 +\(offDelta) · HR \(restoredSample ? "sample restored" : "not yet restored")"
                 self.whoopEventProbeActive = false
                 self.recordVendorTimeline("Event probe complete · Event33 delta=\(onDelta) · Event34 delta=\(offDelta)")
             }
@@ -2092,9 +2101,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         }
         whoopEventProbeActive = true
         whoopEventProbeOffSequence = whoop5NextCommandSequence
-        whoop5EventProbeOnSequence = nil
+        whoopEventProbeOnSequence = nil
         whoopEventProbeStart33Count = whoopEvent33Count
         whoopEventProbeStart34Count = whoopEvent34Count
+        whoopEventProbeStartedAt = Date()
         let sequence = whoop5NextCommandSequence
         whoop5NextCommandSequence &+= 1
         let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x03, payload: [0x00])
