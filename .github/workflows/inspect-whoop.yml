@@ -12,29 +12,86 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout private archive with LFS
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           lfs: true
-      - name: Inspect archive structure only
+
+      - name: Download release IPA directly on runner
         shell: bash
         run: |
           set -euo pipefail
-          echo "=== Archive size ==="
-          ls -lh Whoop.zip
-          echo "=== Top-level entries ==="
-          unzip -Z1 Whoop.zip | awk -F/ 'NF>0 {print $1}' | sort -u | head -80
-          echo "=== Relevant metadata/resource paths ==="
-          unzip -Z1 Whoop.zip | grep -Ei '(^|/)(Info\.plist|PrivacyInfo\.xcprivacy|.*(HelloPacket|hrBroadcastBeat|DeviceStatus|Bluetooth|HealthKit|WHOOP.*\.framework)(/|$))' | head -250 || true
-          echo "=== BLE / historical-sync symbol scan (filtered) ==="
-          unzip -p Whoop.zip Whoop 2>/dev/null | strings -a | grep -Ei 'shouldDispatchNotificationSideEffects|GET_DATA_RANGE|SEND_HISTORICAL_DATA|historical_metadata|BluetoothGatt|CBPeripheral|CBCharacteristic|didUpdateValueFor|notification.*side.effect|dispatch.*notification' | sort -u | head -200 || true
-          echo "=== Hello packet resource metadata ==="
-          for f in HelloPacketRev3 HelloPacketRev4 hrBroadcastBeat; do
-            if unzip -Z1 Whoop.zip | grep -Fxq "$f"; then
-              echo "--- $f ---"
-              unzip -p Whoop.zip "$f" | file -
-              unzip -p Whoop.zip "$f" | strings -a | head -40
-            fi
-          done
-          echo "=== Archive integrity ==="
-          unzip -tq Whoop.zip | tail -2
+          curl --fail --location --retry 3 \
+            "https://github.com/ribhupanwar/dsta/releases/download/whoop-5.75.0/pulseforge.ipa" \
+            --output /tmp/release-app.ipa
+          echo "Downloaded bytes: $(stat -c%s /tmp/release-app.ipa)"
+          echo "Downloaded SHA-256:"
+          sha256sum /tmp/release-app.ipa
+          unzip -tq /tmp/release-app.ipa
+
+      - name: Inspect IPA identity and public metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob, hashlib, os, plistlib, subprocess, zipfile
+          ipa = "/tmp/release-app.ipa"
+          report = []
+          with zipfile.ZipFile(ipa) as z:
+              names = z.namelist()
+              apps = sorted({n.split("/")[1] for n in names if n.startswith("Payload/") and n.count("/") >= 2 and n.endswith(".app/")})
+              info_paths = [n for n in names if n.startswith("Payload/") and n.endswith(".app/Info.plist")]
+              report += ["IPA SHA256: " + hashlib.sha256(open(ipa,"rb").read()).hexdigest(),
+                         "Archive entries: " + str(len(names)),
+                         "App bundles: " + ", ".join(apps)]
+              for path in info_paths:
+                  p = plistlib.loads(z.read(path))
+                  report += ["", "Bundle path: " + path,
+                             "CFBundleIdentifier: " + str(p.get("CFBundleIdentifier")),
+                             "CFBundleName: " + str(p.get("CFBundleName")),
+                             "CFBundleDisplayName: " + str(p.get("CFBundleDisplayName")),
+                             "CFBundleShortVersionString: " + str(p.get("CFBundleShortVersionString")),
+                             "CFBundleVersion: " + str(p.get("CFBundleVersion")),
+                             "Executable: " + str(p.get("CFBundleExecutable")),
+                             "MinimumOSVersion: " + str(p.get("MinimumOSVersion"))]
+              frameworks = sorted({n.split("/Frameworks/")[1].split("/")[0] for n in names if "/Frameworks/" in n})
+              report += ["", "Embedded frameworks:", *(frameworks or ["(none found)"])]
+              report += ["", "Relevant archive paths:"]
+              report += [n for n in names if any(k in n.lower() for k in ("privacyinfo", "healthkit", "bluetooth", "hellopacket", "hrbroadcast"))][:150]
+              executable_paths = []
+              for path in info_paths:
+                  p = plistlib.loads(z.read(path))
+                  exe = p.get("CFBundleExecutable")
+                  if exe:
+                      candidate = path.rsplit("/",1)[0] + "/" + exe
+                      if candidate in names: executable_paths.append(candidate)
+              for exe in executable_paths:
+                  data = z.read(exe)
+                  out = subprocess.run(["strings","-a"], input=data, stdout=subprocess.PIPE, check=True).stdout.decode("utf-8","ignore")
+                  needles = ("FD4B", "180D", "2A37", "HealthKit", "HKHealthStore", "Recovery", "Sleep", "Strain", "WHOOP")
+                  found = sorted({line.strip() for line in out.splitlines() if any(n.lower() in line.lower() for n in needles)})
+                  report += ["", "Executable scan: " + exe, *found[:250]]
+          os.makedirs("comparison-report", exist_ok=True)
+          open("comparison-report/release-ipa-inspection.txt","w").write("\n".join(report)+"\n")
+          print("\n".join(report))
+          PY
+
+      - name: Compare source implementation inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "=== PulseForge implementation inventory ==="
+            find PulseForge PulseForgeTests -type f 2>/dev/null | sort
+            echo
+            echo "=== Relevant implementation symbols ==="
+            grep -RniE 'RecoveryScoreCalculator|SleepNightCalculator|HKHealthStore|CBCentralManager|CBPeripheral|FD4B|heartRate|sleepDebt|strain' PulseForge 2>/dev/null | head -300 || true
+          } > comparison-report/pulseforge-source-inventory.txt
+          cat comparison-report/pulseforge-source-inventory.txt
+
+      - name: Upload comparison evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipa-comparison-evidence
+          path: comparison-report/
+          retention-days: 14
