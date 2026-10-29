@@ -200,18 +200,20 @@ final class TrainingInsightsStore: ObservableObject {
             let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit,
                                       sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) {
                 _, samples, _ in
-                let values = samples as? [HKQuantitySample] ?? []
-                for (index, sample) in values.enumerated() {
-                    let bpm = sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
-                    let nextGap = index + 1 < values.count
-                        ? values[index + 1].startDate.timeIntervalSince(sample.startDate)
-                        : sample.endDate.timeIntervalSince(sample.startDate)
-                    let minutes = min(1.0, max(0, nextGap) / 60)
-                    let intensity = min(1, max(0, bpm / Double(maxHR)))
-                    lock.lock()
-                    totalLoad += minutes * intensity * 100
-                    lock.unlock()
+                let values = (samples as? [HKQuantitySample] ?? []).map { sample in
+                    CardioLoadCalculator.Sample(
+                        timestamp: sample.startDate,
+                        endDate: sample.endDate,
+                        bpm: sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
+                    )
                 }
+                let workoutLoad = CardioLoadCalculator.calculate(
+                    samples: values,
+                    measuredMaxHeartRate: maxHR
+                ) ?? 0
+                lock.lock()
+                totalLoad += workoutLoad
+                lock.unlock()
                 group.leave()
             }
             self.healthStore.execute(query)
