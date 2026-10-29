@@ -1934,7 +1934,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         if let error {
             let failure = "\(service.uuid.uuidString): \(error.localizedDescription)"
-            gattCharacteristicDiscoveryErrors.append(failure)
+            // Only a failed discovery inside the WHOOP Gen5 service can
+            // invalidate its command/notification profile. An unrelated
+            // ancillary GATT service must not block the FD4B handshake.
+            if service.uuid == whoop5ServiceUUID {
+                gattCharacteristicDiscoveryErrors.append(failure)
+            }
             discoveredProfile.append("Service error · \(failure)")
             lastBLEEvent = "Characteristic discovery error · service \(failure)"
         } else {
