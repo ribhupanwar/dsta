@@ -92,6 +92,35 @@ jobs:
           echo "## Candidate protocol strings" >> "$GITHUB_STEP_SUMMARY"
           cat ipa-analysis/protocol-string-hits.txt >> "$GITHUB_STEP_SUMMARY"
 
+          # A string-only scan can miss Swift/Objective-C call paths. Collect
+          # symbol and Objective-C metadata hints from the main app and embedded
+          # frameworks without modifying or executing the proprietary binary.
+          : > ipa-analysis/symbol-candidates.txt
+          : > ipa-analysis/objc-metadata-candidates.txt
+          find "$APP" -type f \( -name '*.dylib' -o -path '*.framework/*' -o -perm -111 \) -print0 |
+            while IFS= read -r -d '' f; do
+              {
+                echo "===== $f : nm ====="
+                nm -a "$f" 2>/dev/null || true
+              } >> ipa-analysis/all-symbols.txt
+              {
+                echo "===== $f : Objective-C metadata ====="
+                otool -ov "$f" 2>/dev/null || true
+              } >> ipa-analysis/all-objc-metadata.txt
+            done
+
+          grep -Ei 'CBPeripheral|CBCharacteristic|CBCentral|Bluetooth|HeartRate|Historical|IMU|Workout|Sensor|Stream|Packet|Command|Puffin|Gen5|BLE|Whoop'             ipa-analysis/all-symbols.txt | sort -u | head -10000 > ipa-analysis/symbol-candidates.txt || true
+          grep -Ei 'CBPeripheral|CBCharacteristic|CBCentral|Bluetooth|HeartRate|Historical|IMU|Workout|Sensor|Stream|Packet|Command|Puffin|Gen5|BLE|Whoop'             ipa-analysis/all-objc-metadata.txt | sort -u | head -10000 > ipa-analysis/objc-metadata-candidates.txt || true
+          rm -f ipa-analysis/all-symbols.txt ipa-analysis/all-objc-metadata.txt
+
+          {
+            echo "## Symbol candidates"
+            cat ipa-analysis/symbol-candidates.txt
+            echo
+            echo "## Objective-C metadata candidates"
+            cat ipa-analysis/objc-metadata-candidates.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload inspection report
         if: always()
         uses: actions/upload-artifact@v4
