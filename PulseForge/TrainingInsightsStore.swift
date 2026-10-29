@@ -136,6 +136,13 @@ final class TrainingInsightsStore: ObservableObject {
         }
     }
 
+    private func preferredHealthSource<T: HKSample>(_ samples: [T]) -> ([T], String) {
+        let whoopSamples = samples.filter { $0.sourceRevision.source.bundleIdentifier == "com.whoop.iphone" }
+        if !whoopSamples.isEmpty { return (whoopSamples, "WHOOP via Apple Health") }
+        let names = Array(Set(samples.map { $0.sourceRevision.source.name })).sorted()
+        return (samples, names.isEmpty ? "No HealthKit source data" : names.joined(separator: ", "))
+    }
+
     private func loadSleep(completion: @escaping (Double?, Double?, Int?, String, Int) -> Void) {
         guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
             completion(nil, nil, nil, "Sleep analysis is unavailable on this device", 0)
@@ -154,8 +161,10 @@ final class TrainingInsightsStore: ObservableObject {
                 HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
                 HKCategoryValueSleepAnalysis.asleepREM.rawValue
             ]
-            let asleep = (samples as? [HKCategorySample] ?? [])
+            let allSleepSamples = (samples as? [HKCategorySample] ?? [])
                 .filter { asleepValues.contains($0.value) }
+            let preferredSleep = self.preferredHealthSource(allSleepSamples)
+            let asleep = preferredSleep.0
                 .map { DateInterval(start: $0.startDate, end: $0.endDate) }
                 .sorted { $0.start < $1.start }
 
@@ -195,7 +204,7 @@ final class TrainingInsightsStore: ObservableObject {
             if latestHours == nil {
                 status = "No completed sleep record found"
             } else if let performance {
-                status = "Sleep performance · \(performance)% of your 8-hour target"
+                status = "Sleep performance · \(performance)% · \(preferredSleep.1)"
             } else {
                 status = "Waiting for a completed sleep record"
             }
@@ -217,10 +226,14 @@ final class TrainingInsightsStore: ObservableObject {
         loadQuantity(.restingHeartRate, days: 8) { rhrSamples = $0; group.leave() }
         group.notify(queue: .main) {
             let today = self.calendar.startOfDay(for: Date())
-            let currentHRV = hrvSamples.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
-            let currentRHR = rhrSamples.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
-            let baselineHRVSamples = hrvSamples.filter { $0.endDate < today }
-            let baselineRHRValues = rhrSamples.filter { $0.endDate < today }.map {
+            let preferredHRV = self.preferredHealthSource(hrvSamples)
+            let preferredRHR = self.preferredHealthSource(rhrSamples)
+            let selectedHRV = preferredHRV.0
+            let selectedRHR = preferredRHR.0
+            let currentHRV = selectedHRV.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
+            let currentRHR = selectedRHR.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
+            let baselineHRVSamples = selectedHRV.filter { $0.endDate < today }
+            let baselineRHRValues = selectedRHR.filter { $0.endDate < today }.map {
                 $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
             }
             let baselineHRVValues = baselineHRVSamples.map {
@@ -246,7 +259,7 @@ final class TrainingInsightsStore: ObservableObject {
             let rhrComponent = min(100, max(0, 50 - rhrDelta * 5))
             let score = Int((0.60 * hrvComponent + 0.40 * rhrComponent).rounded())
             completion(score,
-                       "PulseForge estimate · HRV 60% + resting HR 40% · \(min(baselineHRVValues.count, baselineRHRValues.count)) baseline readings",
+                       "PulseForge estimate · HRV 60% + resting HR 40% · \(preferredHRV.1) / \(preferredRHR.1) · \(min(baselineHRVValues.count, baselineRHRValues.count)) baseline readings",
                        hrvDelta, rhrDelta, min(baselineHRVValues.count, baselineRHRValues.count))
         }
     }
