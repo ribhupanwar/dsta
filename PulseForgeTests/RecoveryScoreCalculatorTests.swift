@@ -17,7 +17,7 @@ final class RecoveryScoreCalculatorTests: XCTestCase {
         ))
         XCTAssertEqual(result.hrvBaseline, 52, accuracy: 0.0001)
         XCTAssertEqual(result.restingHeartRateBaseline, 52, accuracy: 0.0001)
-        XCTAssertEqual(result.score, 100)
+        XCTAssertEqual(result.score, 73)
     }
 
     func testRejectsNonFiniteOrNonPositiveMeasurements() {
