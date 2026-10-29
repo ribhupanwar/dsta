@@ -9,8 +9,14 @@ final class TrainingInsightsStore: ObservableObject {
     @Published private(set) var sleepHours: Double?
     @Published private(set) var sleepDebtHours: Double?
     @Published private(set) var sleepNeedHours: Double = 8
+    @Published private(set) var sleepPerformanceScore: Int?
+    @Published private(set) var sleepStatus = "Waiting for a completed sleep record"
+    @Published private(set) var sleepNightsCount = 0
     @Published private(set) var recoveryScore: Int?
     @Published private(set) var recoveryStatus = "Waiting for HRV and resting-HR baseline"
+    @Published private(set) var hrvDeviationPercent: Double?
+    @Published private(set) var restingHRDeviationBPM: Double?
+    @Published private(set) var recoveryBaselineDays = 0
     @Published private(set) var cardioLoadPoints: Double?
     @Published private(set) var workoutCountToday = 0
     @Published private(set) var workoutMinutesToday: Double?
@@ -27,16 +33,22 @@ final class TrainingInsightsStore: ObservableObject {
         let group = DispatchGroup()
 
         group.enter()
-        loadSleep { [weak self] hours, debt in
+        loadSleep { [weak self] hours, debt, performance, status, nights in
             self?.sleepHours = hours
             self?.sleepDebtHours = debt
+            self?.sleepPerformanceScore = performance
+            self?.sleepStatus = status
+            self?.sleepNightsCount = nights
             group.leave()
         }
 
         group.enter()
-        loadRecovery { [weak self] score, status in
+        loadRecovery { [weak self] score, status, hrvDelta, rhrDelta, baselineDays in
             self?.recoveryScore = score
             self?.recoveryStatus = status
+            self?.hrvDeviationPercent = hrvDelta
+            self?.restingHRDeviationBPM = rhrDelta
+            self?.recoveryBaselineDays = baselineDays
             group.leave()
         }
 
@@ -54,9 +66,9 @@ final class TrainingInsightsStore: ObservableObject {
         }
     }
 
-    private func loadSleep(completion: @escaping (Double?, Double?) -> Void) {
+    private func loadSleep(completion: @escaping (Double?, Double?, Int?, String, Int) -> Void) {
         guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
-            completion(nil, nil)
+            completion(nil, nil, nil, "Sleep analysis is unavailable on this device", 0)
             return
         }
         let end = Date()
@@ -65,7 +77,7 @@ final class TrainingInsightsStore: ObservableObject {
         let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit,
                                   sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) {
             [weak self] _, samples, _ in
-            guard let self else { completion(nil, nil); return }
+            guard let self else { completion(nil, nil, nil, "Sleep data could not be loaded", 0); return }
             let asleepValues: Set<Int> = [
                 HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
                 HKCategoryValueSleepAnalysis.asleepCore.rawValue,
@@ -108,14 +120,24 @@ final class TrainingInsightsStore: ObservableObject {
             let debtMinutes = completedNights.reduce(0.0) { partial, night in
                 partial + max(0, self.sleepTargetMinutes - (minutesByNight[night] ?? 0))
             }
+            let performance = latestHours.map { Int((min(1.25, max(0, $0 / self.sleepTargetMinutes * 60)) * 100).rounded()) }
+            let status: String
+            if latestHours == nil {
+                status = "No completed sleep record found"
+            } else if let performance {
+                status = "Sleep performance · \(performance)% of your 8-hour target"
+            } else {
+                status = "Waiting for a completed sleep record"
+            }
             DispatchQueue.main.async {
-                completion(latestHours, completedNights.isEmpty ? nil : debtMinutes / 60)
+                completion(latestHours, completedNights.isEmpty ? nil : debtMinutes / 60,
+                           performance, status, completedNights.count)
             }
         }
         healthStore.execute(query)
     }
 
-    private func loadRecovery(completion: @escaping (Int?, String) -> Void) {
+    private func loadRecovery(completion: @escaping (Int?, String, Double?, Double?, Int) -> Void) {
         let group = DispatchGroup()
         var hrvSamples: [HKQuantitySample] = []
         var rhrSamples: [HKQuantitySample] = []
@@ -127,15 +149,17 @@ final class TrainingInsightsStore: ObservableObject {
             let today = self.calendar.startOfDay(for: Date())
             let currentHRV = hrvSamples.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
             let currentRHR = rhrSamples.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
-            let baselineHRVValues = hrvSamples.filter { $0.endDate < today }.map {
-                $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
-            }
+            let baselineHRVSamples = hrvSamples.filter { $0.endDate < today }
             let baselineRHRValues = rhrSamples.filter { $0.endDate < today }.map {
                 $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
             }
+            let baselineHRVValues = baselineHRVSamples.map {
+                $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
+            }
             guard let currentHRV, let currentRHR,
-                  !baselineHRVValues.isEmpty, !baselineRHRValues.isEmpty else {
-                completion(nil, "Need today's HRV + resting HR and prior-day baselines")
+                  baselineHRVValues.count >= 3, baselineRHRValues.count >= 3 else {
+                completion(nil, "Need today's HRV + resting HR and at least 3 prior baseline readings", nil, nil,
+                           min(baselineHRVValues.count, baselineRHRValues.count))
                 return
             }
             let hrvNow = currentHRV.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
@@ -143,13 +167,17 @@ final class TrainingInsightsStore: ObservableObject {
             let hrvBaseline = baselineHRVValues.reduce(0, +) / Double(baselineHRVValues.count)
             let rhrBaseline = baselineRHRValues.reduce(0, +) / Double(baselineRHRValues.count)
             guard hrvBaseline > 0, rhrBaseline > 0 else {
-                completion(nil, "Baseline data is not valid yet")
+                completion(nil, "Baseline data is not valid yet", nil, nil, min(baselineHRVValues.count, baselineRHRValues.count))
                 return
             }
-            let hrvComponent = min(100, max(0, 50 + 50 * ((hrvNow / hrvBaseline) - 1) / 0.30))
-            let rhrComponent = min(100, max(0, 50 + 5 * (rhrBaseline - rhrNow)))
+            let hrvDelta = (hrvNow / hrvBaseline - 1) * 100
+            let rhrDelta = rhrNow - rhrBaseline
+            let hrvComponent = min(100, max(0, 50 + (hrvDelta / 30) * 50))
+            let rhrComponent = min(100, max(0, 50 - rhrDelta * 5))
             let score = Int((0.60 * hrvComponent + 0.40 * rhrComponent).rounded())
-            completion(score, "PulseForge estimate · HRV 60% + resting HR 40%")
+            completion(score,
+                       "PulseForge estimate · HRV 60% + resting HR 40% · \(min(baselineHRVValues.count, baselineRHRValues.count)) baseline readings",
+                       hrvDelta, rhrDelta, min(baselineHRVValues.count, baselineRHRValues.count))
         }
     }
 
