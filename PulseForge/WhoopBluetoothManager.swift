@@ -101,6 +101,14 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopPuffinEventCountsByChannel: [String: Int] = [:]
     @Published private(set) var whoopPuffinEventFrameHistory: [String] = []
     private var whoopPuffinEventTypeCounts: [Int: Int] = [:]
+    @Published private(set) var whoopEventProbeStatus = "Controlled Event 33/34 probe not run"
+    private var whoopEventProbeActive = false
+    private var whoopEventProbeOffSequence: UInt8?
+    private var whoopEventProbeOnSequence: UInt8?
+    private var whoopEventProbeStart33Count = 0
+    private var whoopEventProbeStart34Count = 0
+    private var whoopEventProbeRearmWorkItem: DispatchWorkItem?
+    private var whoopEventProbeFinishWorkItem: DispatchWorkItem?
     /// Notification-level and CRC-valid packet-level evidence, keyed by GATT channel.
     private var vendorNotificationCountsByChannel: [String: Int] = [:]
     private var vendorNotificationBytesByChannel: [String: Int] = [:]
@@ -800,6 +808,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP last Event 34: \(whoopLastEvent34At.map { ISO8601DateFormatter().string(from: $0) } ?? "not observed") · \(whoopLastEvent34FrameHex)",
             "WHOOP Puffin event packet types 53/54: \(whoopPuffinEventTypeCounts.keys.sorted().map { "type \($0)=\(whoopPuffinEventTypeCounts[$0] ?? 0)" }.joined(separator: ", ").isEmpty ? "none" : whoopPuffinEventTypeCounts.keys.sorted().map { "type \($0)=\(whoopPuffinEventTypeCounts[$0] ?? 0)" }.joined(separator: ", "))",
             "WHOOP Puffin event channels: \(whoopPuffinEventCountsByChannel.keys.sorted().map { "\($0)=\(whoopPuffinEventCountsByChannel[$0] ?? 0)" }.joined(separator: ", ").isEmpty ? "none" : whoopPuffinEventCountsByChannel.keys.sorted().map { "\($0)=\(whoopPuffinEventCountsByChannel[$0] ?? 0)" }.joined(separator: ", "))",
+            "WHOOP Event 33/34 controlled probe: \(whoopEventProbeStatus)",
             "WHOOP automatic IMU request: \(whoop5AutoIMUStartRequested ? "yes" : "no")",
             "WHOOP automatic IMU enabled: \(whoop5AutoIMUEnabled ? "yes" : "no")",
             "WHOOP IMU frames: \(whoopIMUFrameCount) · samples: \(whoopIMUSampleCount) · live buffer: \(liveWhoopIMUSamples.count) · workout samples: \(workoutWhoopIMUSamples.count) · status: \(whoopIMUStatus)",
@@ -1052,6 +1061,21 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopPuffinEventCountsByChannel.removeAll()
         whoopPuffinEventTypeCounts.removeAll()
         whoopPuffinEventFrameHistory.removeAll()
+        whoopEventProbeRearmWorkItem?.cancel()
+        whoopEventProbeRearmWorkItem = nil
+        whoopEventProbeFinishWorkItem?.cancel()
+        whoopEventProbeFinishWorkItem = nil
+        whoopEventProbeActive = false
+        whoopEventProbeOffSequence = nil
+        whoopEventProbeOnSequence = nil
+        whoopEventProbeRearmWorkItem?.cancel()
+        whoopEventProbeRearmWorkItem = nil
+        whoopEventProbeFinishWorkItem?.cancel()
+        whoopEventProbeFinishWorkItem = nil
+        whoopEventProbeActive = false
+        whoopEventProbeOffSequence = nil
+        whoopEventProbeOnSequence = nil
+        whoopEventProbeStatus = "Controlled Event 33/34 probe not run in this connection"
         whoopIMUFrameCount = 0
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
@@ -1642,6 +1666,17 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR enable requested"
             }
             if command == 3 {
+                if let offSequence = whoopEventProbeOffSequence,
+                   echoedSequence == Int(offSequence) {
+                    recordVendorTimeline("Event probe OFF command response · seq=\(echoedSequence) · result=\(resultName)")
+                    if result != 2 { scheduleWhoopEventProbeRearm(after: 0.35) }
+                    return "COMMAND_RESPONSE · Event probe REALTIME_HR_OFF(3) · seq \(echoedSequence) · \(resultName)"
+                }
+                if let onSequence = whoopEventProbeOnSequence,
+                   echoedSequence == Int(onSequence) {
+                    recordVendorTimeline("Event probe ON command response · seq=\(echoedSequence) · result=\(resultName)")
+                    return "COMMAND_RESPONSE · Event probe REALTIME_HR_ON(3) · seq \(echoedSequence) · \(resultName)"
+                }
                 guard result == 1 else {
                     return "COMMAND_RESPONSE · REALTIME_HR_ON(3) · \(resultName) · bounded raw stream withheld"
                 }
@@ -1836,6 +1871,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopLastEvent33At = Date()
                 whoopLastEvent33FrameHex = eventFrameHex
                 recordVendorTimeline("EVENT 33 observed · channel=\(channel) · CRC valid")
+                if whoopEventProbeActive {
+                    whoopEventProbeStatus = "Event 33 observed during controlled ON/OFF probe · Event34 delta \(whoopEvent34Count - whoopEventProbeStart34Count)"
+                }
                 whoop5HRStreamConfirmed = true
                 whoopSessionPhase = "Realtime HR stream confirmed · generation \(whoopConnectionGeneration)"
                 recordVendorTimeline("WHOOP realtime HR active event 33 received")
@@ -1848,6 +1886,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopLastEvent34At = Date()
                 whoopLastEvent34FrameHex = eventFrameHex
                 recordVendorTimeline("EVENT 34 observed · channel=\(channel) · CRC valid")
+                if whoopEventProbeActive {
+                    whoopEventProbeStatus = "Event 34 observed during controlled ON/OFF probe · Event33 delta \(whoopEvent33Count - whoopEventProbeStart33Count)"
+                }
                 whoop5HRStreamConfirmed = false
                 whoopSessionPhase = "Realtime HR stream stopped · event 34 received · generation \(whoopConnectionGeneration)"
                 lastBLEEvent = "WHOOP event 34 · BLE_REALTIME_HR_OFF"
@@ -2011,12 +2052,72 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         whoop5NextCommandSequence &+= 1
         let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x03, payload: [0x01])
         whoop5HRStreamEnableSent = true
+        if whoopEventProbeActive {
+            whoopEventProbeOnSequence = sequence
+            whoopEventProbeStatus = "ON command sent · waiting for Event 33 and restored Type-40 HR"
+            recordVendorTimeline("Event probe ON write requested · seq=\(sequence)")
+            whoopEventProbeFinishWorkItem?.cancel()
+            let finish = DispatchWorkItem { [weak self] in
+                guard let self, self.whoopEventProbeActive else { return }
+                let onDelta = self.whoopEvent33Count - self.whoopEventProbeStart33Count
+                let offDelta = self.whoopEvent34Count - self.whoopEventProbeStart34Count
+                self.whoopEventProbeStatus = "Probe complete · Event33 +\(onDelta) · Event34 +\(offDelta) · HR \(self.lastHeartRateAt == nil ? "not yet restored" : "sample restored")"
+                self.whoopEventProbeActive = false
+                self.recordVendorTimeline("Event probe complete · Event33 delta=\(onDelta) · Event34 delta=\(offDelta)")
+            }
+            whoopEventProbeFinishWorkItem = finish
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: finish)
+        }
         whoop5PendingWrites.append("REALTIME_HR_ON")
         let frameHex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
         lastBLEEvent = "WHOOP realtime HR ON command requested · opcode 03 · sequence \(sequence)"
         recordVendorTimeline("REALTIME_HR_ON write requested · FD4B0002 · seq=\(sequence) · \(frame.count) bytes · HEX: \(frameHex)")
         statusText = "Connected · requesting WHOOP live HR stream"
         peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    /// User-triggered, bounded OFF→ON test to elicit both Gen5 realtime-HR events.
+    /// It briefly pauses live HR, then automatically restores the stream.
+    func runWhoopEventProbe() {
+        guard let peripheral = connectedPeripheral,
+              peripheral.state == .connected,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write),
+              whoop5HelloWriteAcknowledged,
+              !whoopEventProbeActive,
+              !whoop5PendingWrites.contains("REALTIME_HR_ON"),
+              !whoop5PendingWrites.contains("REALTIME_HR_OFF_PROBE") else {
+            whoopEventProbeStatus = "Probe unavailable · connect WHOOP 5.0 and wait until handshake is ready"
+            return
+        }
+        whoopEventProbeActive = true
+        whoopEventProbeOffSequence = whoop5NextCommandSequence
+        whoop5EventProbeOnSequence = nil
+        whoopEventProbeStart33Count = whoopEvent33Count
+        whoopEventProbeStart34Count = whoopEvent34Count
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x03, payload: [0x00])
+        whoop5HRStreamEnableSent = false
+        whoop5HRStreamConfirmed = false
+        whoop5PendingWrites.append("REALTIME_HR_OFF_PROBE")
+        whoopEventProbeStatus = "OFF command sent · waiting for Event 34, then automatic ON"
+        recordVendorTimeline("Event probe OFF write requested · opcode=03 payload=00 · seq=\(sequence)")
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    private func scheduleWhoopEventProbeRearm(after delay: TimeInterval) {
+        guard whoopEventProbeActive else { return }
+        whoopEventProbeRearmWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.whoopEventProbeActive,
+                  let peripheral = self.connectedPeripheral,
+                  peripheral.state == .connected else { return }
+            self.whoop5HRStreamEnableSent = false
+            self.sendRealtimeHrEnable(to: peripheral)
+        }
+        whoopEventProbeRearmWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     /// Gen5 outbound command envelope: CRC16-Modbus header + CRC32 padded inner.
@@ -2261,6 +2362,18 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             } else {
                 whoopIMUStatus = "STOP_RAW_DATA write acknowledged · awaiting strap response"
                 recordVendorTimeline("STOP_RAW_DATA write callback · acknowledged by CoreBluetooth")
+            }
+            return
+        }
+        if kind == "REALTIME_HR_OFF_PROBE" {
+            if let error {
+                whoopEventProbeStatus = "OFF write callback failed · \(error.localizedDescription) · restoring HR"
+                recordVendorTimeline("Event probe OFF write callback failed · \(error.localizedDescription)")
+                scheduleWhoopEventProbeRearm(after: 0.25)
+            } else {
+                whoopEventProbeStatus = "OFF write acknowledged · waiting for strap response/Event 34"
+                recordVendorTimeline("Event probe OFF write acknowledged by CoreBluetooth")
+                scheduleWhoopEventProbeRearm(after: 1.5)
             }
             return
         }
