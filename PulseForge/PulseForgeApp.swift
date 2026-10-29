@@ -349,6 +349,54 @@ struct LiveHeartRateChartCard: View {
     }
 }
 
+struct WhoopRRCard: View {
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+
+    private var intervals: [Int] { bluetooth.whoopRRIntervalsMilliseconds }
+    private var meanInterval: Double? {
+        guard !intervals.isEmpty else { return nil }
+        return Double(intervals.reduce(0, +)) / Double(intervals.count)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("RR INTERVALS", systemImage: "waveform.path")
+                    .font(.system(size: 9, weight: .bold)).tracking(0.9)
+                    .foregroundStyle(ForgeColors.muted)
+                Spacer()
+                Text(intervals.isEmpty ? "WAITING" : "PACKET DECODED")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(intervals.isEmpty ? ForgeColors.muted : ForgeColors.lime)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(meanInterval.map { String(format: "%.0f", $0) } ?? "—")
+                    .font(.system(size: 27, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text("ms mean RR")
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                Spacer()
+                Text("\(intervals.count) interval(s)")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(ForgeColors.muted)
+            }
+            Text(intervals.isEmpty
+                 ? "No validated RR interval packet received yet."
+                 : intervals.map { "\($0) ms" }.joined(separator: "  ·  "))
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(ForgeColors.primary)
+                .lineLimit(2)
+            Text(bluetooth.whoopRRSource)
+                .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+            Text("Raw beat-to-beat intervals only. This is not a calibrated HRV or Recovery score.")
+                .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+        }
+        .padding(16)
+        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
+    }
+}
+
 struct WhoopMotionCard: View {
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
 
@@ -1274,6 +1322,7 @@ struct DeviceDashboard: View {
                     .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     }
                     LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE · LAST 60 SECONDS")
+                    WhoopRRCard()
                     WhoopMotionCard()
                     if bluetooth.connectedName != nil {
                         Button { bluetooth.disconnect() } label: {
