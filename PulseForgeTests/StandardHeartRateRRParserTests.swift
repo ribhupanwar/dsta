@@ -25,6 +25,24 @@ final class StandardHeartRateRRParserTests: XCTestCase {
         XCTAssertEqual(StandardHeartRateRRParser.parseMilliseconds(Data([0x10, 70, 0x00])), [])
     }
 
+    func testSupportsUInt16HeartRateWithEnergyExpendedBeforeRR() {
+        // Flags: 16-bit HR + Energy Expended + RR present.
+        // HR 300 bpm, energy 12 kJ, RR 1024 ticks.
+        let data = Data([0x19, 44, 1, 12, 0, 0, 4])
+        XCTAssertEqual(StandardHeartRateRRParser.parseMilliseconds(data), [1000])
+    }
+
+    func testRejectsTruncatedEnergyExpendedField() {
+        // Energy Expended flag is set, but only one energy byte is present.
+        let data = Data([0x18, 70, 12])
+        XCTAssertEqual(StandardHeartRateRRParser.parseMilliseconds(data), [])
+    }
+
+    func testRejectsOddTrailingByteAfterRRIntervals() {
+        let data = Data([0x10, 70, 0x00, 0x04, 0xAA])
+        XCTAssertEqual(StandardHeartRateRRParser.parseMilliseconds(data), [])
+    }
+
     func testRejectsImplausibleRRValuesWithoutReturningPartialData() {
         let data = Data([0x10, 70, 0x00, 0x00, 0x88, 0x13])
         XCTAssertEqual(StandardHeartRateRRParser.parseMilliseconds(data), [])
