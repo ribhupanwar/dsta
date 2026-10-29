@@ -10,6 +10,10 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
     let revision: Int
     let intervalsMilliseconds: [Int]
     let rawFrameHex: String
+    /// Nil until an embedded physiological timestamp is independently decoded.
+    let physiologicalTimestamp: Date? = nil
+    /// Present when a CRC-valid v18 frame could not be decoded as RR.
+    let decodeError: String? = nil
 }
 
 enum HistoricalRRPacketArchive {
