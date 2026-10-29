@@ -1276,6 +1276,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             pendingDescriptorCharacteristics.removeAll()
             statusText = "Service discovery failed: \(error.localizedDescription)"
             lastBLEEvent = "Service discovery error · \(error.localizedDescription)"
+            recordVendorTimeline("service discovery failed · \(error.localizedDescription)")
             return
         }
         guard let services = peripheral.services else {
@@ -1944,6 +1945,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             discoveredProfile.append("Service error · \(failure)")
             lastBLEEvent = "Characteristic discovery error · service \(failure)"
+            recordVendorTimeline("characteristic discovery failed · \(failure)")
         } else {
             for characteristic in service.characteristics ?? [] {
                 discoveredProfile.append("Characteristic · service \(service.uuid.uuidString) → \(characteristic.uuid.uuidString) · \(propertyNames(characteristic.properties))")
@@ -2101,6 +2103,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         if let error {
             lastBLEEvent = "WHOOP 5.0 CLIENT_HELLO write failed · \(error.localizedDescription)"
             statusText = "Connected · WHOOP session handshake failed"
+            recordVendorTimeline("CLIENT_HELLO write callback · failed · \(error.localizedDescription)")
             return
         }
         whoop5HelloWriteAcknowledged = true
@@ -2176,9 +2179,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         if let error {
             isStandardHeartRateNotifying = false
             lastBLEEvent = "Standard HR subscription failed · \(error.localizedDescription)"
+            recordVendorTimeline("standard HR notify callback · failed · \(error.localizedDescription)")
             return
         }
         isStandardHeartRateNotifying = characteristic.isNotifying
+        recordVendorTimeline("standard HR notify callback · \(characteristic.isNotifying ? "enabled" : "disabled")")
         if characteristic.isNotifying {
             hrTimingStandardNotifyEnabledAt = Date()
             let elapsed = hrTimingConnectionAt.map { Date().timeIntervalSince($0) } ?? 0
