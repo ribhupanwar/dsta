@@ -1910,11 +1910,23 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
     private func appendRRIntervals(_ intervals: [Int], source: String, receivedAt: Date = Date()) {
         guard !intervals.isEmpty else { return }
+        whoopRRIntervalsMilliseconds = intervals
+
+        // Standard 2A37 is a fallback stream, not WHOOP type-40. Never mix its
+        // intervals into the WHOOP realtime window or calculate Type-40 RMSSD
+        // from a fallback packet.
+        guard source == "WHOOP 5.0 realtime" else {
+            whoopRRWindowMilliseconds.removeAll(keepingCapacity: true)
+            whoopLiveRMSSDMilliseconds = nil
+            whoopRRLastUpdatedAt = receivedAt
+            whoopRRSource = "\(source) · \(intervals.count) fallback interval(s) · excluded from Type-40 RMSSD"
+            return
+        }
+
         if let previousUpdate = whoopRRLastUpdatedAt,
            receivedAt.timeIntervalSince(previousUpdate) > 30 {
             whoopRRWindowMilliseconds.removeAll(keepingCapacity: true)
         }
-        whoopRRIntervalsMilliseconds = intervals
         whoopRRWindowMilliseconds.append(contentsOf: intervals)
         if whoopRRWindowMilliseconds.count > 60 {
             whoopRRWindowMilliseconds.removeFirst(whoopRRWindowMilliseconds.count - 60)
