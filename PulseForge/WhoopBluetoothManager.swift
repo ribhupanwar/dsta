@@ -27,7 +27,7 @@ struct LiveHeartRateSample: Identifiable, Codable {
 struct PersistedRRIntervalSample: Identifiable, Codable {
     let timestamp: Date
     let intervalMilliseconds: Int
-    var id: String { "\\(timestamp.timeIntervalSince1970)-\\(intervalMilliseconds)" }
+    var id: String { "\(timestamp.timeIntervalSince1970)-\(intervalMilliseconds)" }
 }
 
 struct WhoopIMUSample: Identifiable, Codable {
@@ -2662,7 +2662,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         liveHeartRateSamples.append(sample)
         dashboardHeartRateHistory.append(sample)
         if dashboardHeartRateHistory.count > 20_000 { dashboardHeartRateHistory.removeFirst(dashboardHeartRateHistory.count - 20_000) }
-        if liveHeartRateSamples.count.isMultiple(of: 10) { persistDashboardHistory() }
+        persistDashboardHistory()
         liveHeartRateSamples.removeAll { timestamp.timeIntervalSince($0.timestamp) > 60 }
         if liveHeartRateSamples.count > 120 {
             liveHeartRateSamples.removeFirst(liveHeartRateSamples.count - 120)
