@@ -58,6 +58,13 @@ struct MainTabView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .environmentObject(bluetooth)
             .environmentObject(gpsRun)
+            // High-frequency BLE/IMU publications must not animate the entire
+            // dashboard layout. Keep live values immediate while preventing
+            // implicit SwiftUI interpolation from making text/cards visibly jump.
+            .transaction { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
             ForgeTabBar(selected: $selected)
         }
         .ignoresSafeArea(.keyboard)
