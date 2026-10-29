@@ -119,3 +119,32 @@ final class Gen5HistoricalMetadataDecoderTests: XCTestCase {
         XCTAssertEqual(Gen5HistoricalMetadataDecoder.decode(frame), .historyComplete)
     }
 }
+
+
+final class WhoopHistoricalFrameIdentityTests: XCTestCase {
+    func testIdentityIsStableForExactReplay() {
+        let frame = [UInt8](repeating: 0x5A, count: 1244)
+        XCTAssertEqual(
+            WhoopHistoricalFrameIdentity.key(frame, deviceID: "whoop-a"),
+            WhoopHistoricalFrameIdentity.key(frame, deviceID: "whoop-a")
+        )
+    }
+
+    func testIdentityChangesWhenOnlySamplePayloadChanges() {
+        var first = [UInt8](repeating: 0, count: 1244)
+        var second = first
+        second[300] = 1 // sample payload, not transport metadata or trailer
+        XCTAssertNotEqual(
+            WhoopHistoricalFrameIdentity.key(first, deviceID: "whoop-a"),
+            WhoopHistoricalFrameIdentity.key(second, deviceID: "whoop-a")
+        )
+    }
+
+    func testIdentityIsScopedToTheBand() {
+        let frame = [UInt8](repeating: 0xA5, count: 1244)
+        XCTAssertNotEqual(
+            WhoopHistoricalFrameIdentity.key(frame, deviceID: "whoop-a"),
+            WhoopHistoricalFrameIdentity.key(frame, deviceID: "whoop-b")
+        )
+    }
+}
