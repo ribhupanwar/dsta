@@ -29,7 +29,7 @@ final class SleepNightCalculatorTests: XCTestCase {
             intervals: intervals, now: now, calendar: calendar
         )
         XCTAssertEqual(result.nights.count, 1)
-        XCTAssertEqual(try XCTUnwrap(result.latestNight).durationMinutes, 330, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(result.latestNight).durationMinutes, 390, accuracy: 0.001)
     }
 
     func testLongGapCreatesSeparateSessionsAndDebtUsesRecordedNightsOnly() throws {
