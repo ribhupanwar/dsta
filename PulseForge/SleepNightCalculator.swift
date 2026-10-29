@@ -10,6 +10,12 @@ enum SleepNightCalculator {
         let endDate: Date
     }
 
+    private struct Session {
+        var start: Date
+        var end: Date
+        var asleepDuration: TimeInterval
+    }
+
     struct Summary: Equatable {
         let latestNight: Night?
         let nights: [Night]
@@ -51,26 +57,27 @@ enum SleepNightCalculator {
 
         // Then join fragments separated by short awakenings into one night.
         let gap = sessionGapMinutes * 60
-        var sessions: [DateInterval] = []
+        var sessions: [Session] = []
         for interval in merged {
-            guard let last = sessions.last else {
-                sessions.append(interval)
+            guard var last = sessions.popLast() else {
+                sessions.append(Session(start: interval.start, end: interval.end, asleepDuration: interval.duration))
                 continue
             }
             if interval.start.timeIntervalSince(last.end) <= gap {
-                sessions[sessions.count - 1] = DateInterval(
-                    start: last.start,
-                    end: interval.end
-                )
+                // Keep the night grouped, but do not count the awake gap as sleep.
+                last.end = interval.end
+                last.asleepDuration += interval.duration
+                sessions.append(last)
             } else {
-                sessions.append(interval)
+                sessions.append(last)
+                sessions.append(Session(start: interval.start, end: interval.end, asleepDuration: interval.duration))
             }
         }
 
         let nights = sessions.map { session in
             Night(
                 wakeDate: calendar.startOfDay(for: session.end),
-                durationMinutes: session.duration / 60,
+                durationMinutes: session.asleepDuration / 60,
                 startDate: session.start,
                 endDate: session.end
             )
