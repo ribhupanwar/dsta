@@ -76,25 +76,31 @@ enum SleepNightCalculator {
             }
         }
 
-        let nights = sessions.map { session in
+        let allSessions = sessions.map { session in
             Night(
                 wakeDate: calendar.startOfDay(for: session.end),
                 durationMinutes: session.asleepDuration / 60,
                 startDate: session.start,
                 endDate: session.end
             )
-        }.sorted { $0.endDate > $1.endDate }
+        }
+
+        // Multiple sleep sessions can end on the same wake day (for example,
+        // a daytime nap). Until naps are independently classified, use the
+        // longest session for that day so a nap is never mistaken for another
+        // full night of sleep debt.
+        let nights = Dictionary(grouping: allSessions, by: \.wakeDate)
+            .compactMap { _, sameDaySessions in
+                sameDaySessions.max { $0.durationMinutes < $1.durationMinutes }
+            }
+            .sorted { $0.endDate > $1.endDate }
 
         let debtNights = Array(nights.prefix(debtWindowNights))
         let debt = debtNights.isEmpty ? nil :
             debtNights.reduce(0.0) { $0 + max(0, targetMinutes - $1.durationMinutes) } / 60
 
-        // Daytime naps can create extra sessions on a wake day. Use only the
-        // longest session for each wake day before calculating a robust median.
-        let mainSessionHours = Dictionary(grouping: nights, by: \.wakeDate)
-            .values
-            .compactMap { sessions in sessions.map(\.durationMinutes).max().map { $0 / 60 } }
-            .sorted()
+        // One main session per wake day feeds the 28-day median pattern metric.
+        let mainSessionHours = nights.map { $0.durationMinutes / 60 }.sorted()
         let typicalSleepHours: Double?
         if mainSessionHours.isEmpty {
             typicalSleepHours = nil
