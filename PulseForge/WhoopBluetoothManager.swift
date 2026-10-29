@@ -1741,6 +1741,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             if command == 10, let sequence = whoop5HistoryClockSequence,
                echoedSequence == Int(sequence) {
+                if result == 2 {
+                    whoopHistorySyncStatus = "SET_CLOCK pending · waiting for terminal response"
+                    recordVendorTimeline("Historical sync SET_CLOCK response · PENDING")
+                    return "COMMAND_RESPONSE · SET_CLOCK(10) · PENDING"
+                }
                 guard result == 1 else {
                     whoopHistorySyncStatus = "Clock correction rejected · historical sync withheld · \(resultName)"
                     recordVendorTimeline("Historical sync SET_CLOCK response · \(resultName) · request withheld")
