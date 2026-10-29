@@ -1300,6 +1300,7 @@ struct WhoopBatteryInline: View {
 struct DeviceDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+    @State private var showingEventProbeConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -1369,6 +1370,23 @@ struct DeviceDashboard: View {
                                 .frame(maxWidth: .infinity).padding(14)
                                 .background(ForgeColors.lime, in: Capsule()).foregroundStyle(.black)
                         }
+                    }
+                    if bluetooth.connectedName != nil {
+                        Button { showingEventProbeConfirmation = true } label: {
+                            Label("PROBE EVENT 33 / 34 · BRIEFLY PAUSE HR", systemImage: "waveform.path")
+                                .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                                .frame(maxWidth: .infinity).padding(12)
+                                .background(ForgeColors.track, in: Capsule()).foregroundStyle(ForgeColors.lime)
+                        }
+                        .alert("Controlled WHOOP Event 33/34 probe", isPresented: $showingEventProbeConfirmation) {
+                            Button("Run OFF → ON probe") { bluetooth.runWhoopEventProbe() }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("This sends the documented realtime-HR OFF command, waits briefly for the strap response/Event 34, then automatically sends ON to restore live HR. HR may pause for about 1–2 seconds. Keep the band connected during the test.")
+                        }
+                        Text(bluetooth.whoopEventProbeStatus)
+                            .font(.system(size: 8, design: .monospaced))
+                            .foregroundStyle(ForgeColors.muted)
                     }
                     if !bluetooth.devices.isEmpty {
                         VStack(spacing: 8) {
