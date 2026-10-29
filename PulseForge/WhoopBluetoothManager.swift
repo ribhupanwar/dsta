@@ -69,6 +69,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopProtocolDiagnostics = "No WHOOP 5.0 protocol frame decoded yet"
     @Published private(set) var whoopRealtimePacketCount = 0
     @Published private(set) var whoopRRIntervalsMilliseconds: [Int] = []
+    @Published private(set) var whoopRRWindowMilliseconds: [Int] = []
     @Published private(set) var whoopRRLastUpdatedAt: Date?
     @Published private(set) var whoopRRSource = "No WHOOP RR intervals decoded yet"
     @Published private(set) var whoopCommandResponseCount = 0
@@ -972,6 +973,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         liveWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoopRRIntervalsMilliseconds.removeAll()
+        whoopRRWindowMilliseconds.removeAll()
         whoopRRLastUpdatedAt = nil
         whoopRRSource = "Waiting for WHOOP RR intervals"
         whoop5PendingWrites.removeAll()
@@ -1070,6 +1072,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         liveWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoopRRIntervalsMilliseconds.removeAll()
+        whoopRRWindowMilliseconds.removeAll()
         whoopRRLastUpdatedAt = nil
         whoopRRSource = "Waiting for WHOOP RR intervals"
         whoop5PendingWrites.removeAll()
@@ -1624,8 +1627,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 let rr = try Whoop5RRDecoder.decodeRealtime(b)
                 if !rr.isEmpty {
                     whoopRRIntervalsMilliseconds = rr
+                    whoopRRWindowMilliseconds.append(contentsOf: rr)
+                    if whoopRRWindowMilliseconds.count > 60 {
+                        whoopRRWindowMilliseconds.removeFirst(whoopRRWindowMilliseconds.count - 60)
+                    }
                     whoopRRLastUpdatedAt = Date()
-                    whoopRRSource = "WHOOP 5.0 realtime · \(rr.count) interval(s) · milliseconds"
+                    whoopRRSource = "WHOOP 5.0 realtime · \(rr.count) new interval(s) · rolling \(whoopRRWindowMilliseconds.count) · milliseconds"
                 }
             } catch {
                 whoopRRSource = "Realtime RR decode rejected · \(error)"
