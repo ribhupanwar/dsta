@@ -23,6 +23,13 @@ struct LiveHeartRateSample: Identifiable, Codable {
     var id: TimeInterval { timestamp.timeIntervalSince1970 }
 }
 
+
+struct PersistedRRIntervalSample: Identifiable, Codable {
+    let timestamp: Date
+    let intervalMilliseconds: Int
+    var id: String { "\\(timestamp.timeIntervalSince1970)-\\(intervalMilliseconds)" }
+}
+
 struct WhoopIMUSample: Identifiable, Codable {
     let timestamp: Date
     let accelerationXG: Double
@@ -130,6 +137,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopSessionPhase = "Disconnected"
     @Published private(set) var heartRateUpdateCount = 0
     @Published private(set) var liveHeartRateSamples: [LiveHeartRateSample] = []
+    @Published private(set) var dashboardHeartRateHistory: [LiveHeartRateSample] = []
+    @Published private(set) var dashboardRRHistory: [PersistedRRIntervalSample] = []
     @Published private(set) var workoutHeartRateSamples: [LiveHeartRateSample] = []
     @Published private(set) var workoutStartedAt: Date?
     @Published private(set) var workoutIsRecording = false
@@ -168,6 +177,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         static let historicalHR = "pulseforge.history.historicalHR.v1"
         static let historicalAt = "pulseforge.history.historicalAt.v1"
         static let imuSamples = "pulseforge.history.whoopIMUSamples.v1"
+        static let rrSamples = "pulseforge.history.realtimeRRSamples.v1"
     }
 
     private func persistDashboardIMUHistoryIfNeeded(force: Bool = false) {
@@ -190,9 +200,12 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private func persistDashboardHistory() {
         let defaults = UserDefaults.standard
         let cutoff = Date().addingTimeInterval(-7 * 24 * 60 * 60)
-        let retainedHR = liveHeartRateSamples.filter { $0.timestamp >= cutoff }
+        let retainedHR = Array(dashboardHeartRateHistory.filter { $0.timestamp >= cutoff }.suffix(20_000))
         if let data = try? JSONEncoder().encode(retainedHR) {
             defaults.set(data, forKey: DashboardHistoryKey.heartRate)
+        }
+        if let data = try? JSONEncoder().encode(Array(dashboardRRHistory.suffix(20_000))) {
+            defaults.set(data, forKey: DashboardHistoryKey.rrSamples)
         }
         if let data = try? JSONEncoder().encode(whoopHistoricalRRIntervalsMilliseconds) {
             defaults.set(data, forKey: DashboardHistoryKey.historicalRR)
@@ -210,11 +223,16 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         if let data = defaults.data(forKey: DashboardHistoryKey.heartRate),
            let samples = try? JSONDecoder().decode([LiveHeartRateSample].self, from: data) {
             let cutoff = Date().addingTimeInterval(-7 * 24 * 60 * 60)
-            liveHeartRateSamples = samples.filter { $0.timestamp >= cutoff }
+            dashboardHeartRateHistory = Array(samples.filter { $0.timestamp >= cutoff }.suffix(20_000))
+            liveHeartRateSamples = Array(dashboardHeartRateHistory.suffix(120))
         }
         if let data = defaults.data(forKey: DashboardHistoryKey.historicalRR),
            let intervals = try? JSONDecoder().decode([Int].self, from: data) {
             whoopHistoricalRRIntervalsMilliseconds = intervals
+        }
+        if let data = defaults.data(forKey: DashboardHistoryKey.rrSamples),
+           let samples = try? JSONDecoder().decode([PersistedRRIntervalSample].self, from: data) {
+            dashboardRRHistory = Array(samples.suffix(20_000))
         }
         whoopHistoricalHeartRateBPM = defaults.object(forKey: DashboardHistoryKey.historicalHR) as? Int
         whoopHistoricalTimestampLastUpdatedAt = defaults.object(forKey: DashboardHistoryKey.historicalAt) as? Date
@@ -2642,6 +2660,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         }
         let sample = LiveHeartRateSample(timestamp: timestamp, bpm: bpm)
         liveHeartRateSamples.append(sample)
+        dashboardHeartRateHistory.append(sample)
+        if dashboardHeartRateHistory.count > 20_000 { dashboardHeartRateHistory.removeFirst(dashboardHeartRateHistory.count - 20_000) }
         if liveHeartRateSamples.count.isMultiple(of: 10) { persistDashboardHistory() }
         liveHeartRateSamples.removeAll { timestamp.timeIntervalSince($0.timestamp) > 60 }
         if liveHeartRateSamples.count > 120 {
@@ -2668,6 +2688,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     private func appendRRIntervals(_ intervals: [Int], source: String, receivedAt: Date = Date()) {
         guard !intervals.isEmpty else { return }
         whoopRRIntervalsMilliseconds = intervals
+        if source == "WHOOP 5.0 realtime" {
+            dashboardRRHistory.append(contentsOf: intervals.map { PersistedRRIntervalSample(timestamp: receivedAt, intervalMilliseconds: $0) })
+            if dashboardRRHistory.count > 20_000 { dashboardRRHistory.removeFirst(dashboardRRHistory.count - 20_000) }
+            persistDashboardHistory()
+        }
 
         // Standard 2A37 is a fallback stream, not WHOOP type-40. Never mix its
         // intervals into the WHOOP realtime window or calculate Type-40 RMSSD
