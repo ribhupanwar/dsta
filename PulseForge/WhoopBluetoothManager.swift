@@ -971,6 +971,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMURawFrameHistory.removeAll()
         liveWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
+        whoopRRIntervalsMilliseconds.removeAll()
+        whoopRRLastUpdatedAt = nil
+        whoopRRSource = "Waiting for WHOOP RR intervals"
         whoop5PendingWrites.removeAll()
         whoop5NextCommandSequence = 2
         isStandardHeartRateNotifying = false
@@ -1066,6 +1069,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMULastFrameAt = nil
         liveWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
+        whoopRRIntervalsMilliseconds.removeAll()
+        whoopRRLastUpdatedAt = nil
+        whoopRRSource = "Waiting for WHOOP RR intervals"
         whoop5PendingWrites.removeAll()
         whoop5NextCommandSequence = 2
         isConnecting = false
