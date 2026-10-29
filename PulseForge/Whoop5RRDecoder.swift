@@ -10,6 +10,7 @@ enum Whoop5RRDecoder {
         case wrongRecordType(Int)
         case unsupportedHistoricalVersion(Int)
         case invalidIntervalCount(Int)
+        case invalidIntervalValue(Int)
         case truncatedIntervals(expectedBytes: Int, availableBytes: Int)
     }
 
@@ -48,9 +49,15 @@ enum Whoop5RRDecoder {
         guard available >= required else {
             throw DecodeError.truncatedIntervals(expectedBytes: required, availableBytes: available)
         }
-        return (0..<count).map { index in
+        let intervals = (0..<count).map { index -> Int in
             let offset = wordsOffset + index * 2
             return Int(frame[offset]) | (Int(frame[offset + 1]) << 8)
         }
+        // Broad physiological guardrail: retain plausible bradycardic and
+        // high-rate intervals while rejecting zero/padding and corrupt words.
+        guard let invalid = intervals.first(where: { !(250...3000).contains($0) }) else {
+            return intervals
+        }
+        throw DecodeError.invalidIntervalValue(invalid)
     }
 }
