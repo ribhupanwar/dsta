@@ -101,6 +101,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopIMULastFrameAt: Date?
     @Published private(set) var whoopIMUStatus = "Waiting for WHOOP motion stream"
     @Published private(set) var whoopIMULastRawFrameHex = "none"
+    @Published private(set) var whoopHistoricalRecordCount = 0
     @Published private(set) var whoopHistoricalIMUFrameCount = 0
     @Published private(set) var whoopHistoricalIMUSampleCount = 0
     @Published private(set) var whoopHistoricalLayout18FrameCount = 0
@@ -120,6 +121,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     // De-duplicate repeated chunks during this process lifetime. The durable archive remains
     // append-only; a strap that replays an unacked chunk cannot inflate the in-memory counters.
     private var whoop5HistoricalPersistedFrameKeys = Set<String>()
+    // Count each CRC-valid historical transport frame once per connection, including unknown layouts.
+    private var whoopHistoricalRecordKeys = Set<String>()
 
     var freshHeartRateBPM: Int? {
         guard connectedName != nil, let lastHeartRateAt,
@@ -777,6 +780,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU frames: \(whoopIMUFrameCount) · samples: \(whoopIMUSampleCount) · live buffer: \(liveWhoopIMUSamples.count) · workout samples: \(workoutWhoopIMUSamples.count) · status: \(whoopIMUStatus)",
             "WHOOP latest IMU sample: \(liveWhoopIMUSamples.last.map { String(format: "A %.3f, %.3f, %.3f g · G %.1f, %.1f, %.1f dps", $0.accelerationXG, $0.accelerationYG, $0.accelerationZG, $0.rotationXDPS, $0.rotationYDPS, $0.rotationZDPS) } ?? "none")",
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
+            "WHOOP historical frames received: \(whoopHistoricalRecordCount) · decoded R21 IMU frames: \(whoopHistoricalIMUFrameCount) · decoded samples: \(whoopHistoricalIMUSampleCount)",
             "WHOOP historical layouts · v18 summary frames: \(whoopHistoricalLayout18FrameCount) · v21 six-axis candidates: \(whoopHistoricalLayout21FrameCount) · type-52 IMU stream packets: \(whoopHistoricalIMUStreamFrameCount)",
             "WHOOP latest CRC-valid raw IMU frame hex (type 47/51/52): \(whoopIMULastRawFrameHex)",
             "WHOOP IMU recent CRC-valid raw frames (oldest first):",
@@ -984,6 +988,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMULastFrameAt = nil
         whoopIMULastRawFrameHex = "none"
         whoopIMURawFrameHistory.removeAll()
+        whoopHistoricalRecordCount = 0
+        whoopHistoricalRecordKeys.removeAll()
         whoopHistoricalIMUFrameCount = 0
         whoopHistoricalIMUSampleCount = 0
         whoopHistoricalLayout18FrameCount = 0
@@ -1635,7 +1641,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopIMUStatus = "Realtime IMU stream packet received · \(b.count) bytes · CRC valid · subtype decode pending"
             return "REALTIME_IMU_DATA_STREAM(51) · \(b.count) bytes · CRC valid · raw frame retained"
 
-        case 47: // HISTORICAL_DATA; only layout 21 / 1244 bytes is six-axis IMU.
+        case 47: // HISTORICAL_DATA; count received records separately from decoded six-axis IMU.
+            let historyKey = whoop5HistoricalFrameKey(b)
+            if whoopHistoricalRecordKeys.insert(historyKey).inserted {
+                whoopHistoricalRecordCount += 1
+            }
             if b.count > 9 {
                 if b[9] == 18 { whoopHistoricalLayout18FrameCount += 1 }
                 if b[9] == 21 { whoopHistoricalLayout21FrameCount += 1 }
@@ -1679,7 +1689,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopIMUStatus = "Historical WHOOP 5 record retained · \(b.count) bytes · layout \(b.count > 9 ? Int(b[9]) : -1) · not a v21 IMU buffer"
             return "HISTORICAL_DATA(47) · \(b.count) bytes · layout \(b.count > 9 ? Int(b[9]) : -1) · raw retained"
 
-        case 52: // HISTORICAL_IMU_DATA_STREAM; NOOP names this type but has no verified field map.
+        case 52: // HISTORICAL_IMU_DATA_STREAM; count received records, but do not guess its sample schema.
+            let historyKey = whoop5HistoricalFrameKey(b)
+            if whoopHistoricalRecordKeys.insert(historyKey).inserted {
+                whoopHistoricalRecordCount += 1
+            }
             whoopHistoricalIMUStreamFrameCount += 1
             whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
             whoopIMULastFrameAt = Date()
