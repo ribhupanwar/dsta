@@ -1739,46 +1739,61 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return "REALTIME_IMU_DATA_STREAM(51) · \(b.count) bytes · CRC valid · raw frame retained"
 
         case 47: // HISTORICAL_DATA; contains several Gen5 layouts, not all of them IMU.
-            // WHOOP 5 v18 historical biometric records carry RR count@23 and
-            // little-endian millisecond intervals@24+. Keep this separate from R21.
+            // Preserve every CRC-valid v18 frame before trusting the candidate RR offsets.
+            // Receipt time is forensic metadata only; physiological time remains nil.
             if b.count > 9, b[9] == 18 {
+                let receivedAt = Date()
+                let rawHex = b.map { String(format: "%02X", $0) }.joined()
+                var rr: [Int] = []
+                var decodeError: String?
+
                 do {
-                    let rr = try Whoop5RRDecoder.decodeHistoricalV18(b)
-                    if !rr.isEmpty {
+                    rr = try Whoop5RRDecoder.decodeHistoricalV18(b)
+                    if rr.isEmpty {
+                        decodeError = "Candidate v18 layout decoded zero RR intervals"
+                    } else {
                         // Historical/offloaded intervals must never replace the
                         // live type-40 RR window or its freshness timestamp.
                         whoopHistoricalRRIntervalsMilliseconds = rr
-                        let receivedAt = Date()
                         whoopHistoricalRRLastUpdatedAt = receivedAt
-                        let rawHex = b.map { String(format: "%02X", $0) }.joined()
-                        let record = HistoricalRRPacketRecord(
-                            receivedAt: receivedAt,
-                            recordType: 47,
-                            revision: 18,
-                            intervalsMilliseconds: rr,
-                            rawFrameHex: rawHex
-                        )
-                        if let support = FileManager.default.urls(
-                            for: .applicationSupportDirectory, in: .userDomainMask
-                        ).first {
-                            let archiveURL = support
-                                .appendingPathComponent("PulseForge", isDirectory: true)
-                                .appendingPathComponent("historical-whoop-rr-v1.json")
-                            do {
-                                let count = try HistoricalRRPacketArchive.append(record, to: archiveURL)
-                                whoopHistoricalRRSource = "WHOOP 5.0 historical v18 · \(rr.count) RR · archived packets \(count) · receipt time only"
-                            } catch {
-                                whoopHistoricalRRSource = "Historical RR decoded · archive failed · \(error.localizedDescription)"
-                            }
-                        } else {
-                            whoopHistoricalRRSource = "Historical RR decoded · local archive unavailable"
-                        }
                     }
-                    return "HISTORICAL_DATA v18 · RR \(rr.map(String.init).joined(separator: ",")) ms · CRC valid"
                 } catch {
-                    whoopRRSource = "Historical v18 RR decode rejected · \(error)"
-                    return "HISTORICAL_DATA v18 · RR decode rejected · \(error) · CRC valid"
+                    decodeError = String(describing: error)
+                    whoopRRSource = "Historical v18 RR candidate rejected · \(error)"
                 }
+
+                let record = HistoricalRRPacketRecord(
+                    receivedAt: receivedAt,
+                    recordType: 47,
+                    revision: 18,
+                    intervalsMilliseconds: rr,
+                    rawFrameHex: rawHex,
+                    decodeError: decodeError
+                )
+                if let support = FileManager.default.urls(
+                    for: .applicationSupportDirectory, in: .userDomainMask
+                ).first {
+                    let archiveURL = support
+                        .appendingPathComponent("PulseForge", isDirectory: true)
+                        .appendingPathComponent("historical-whoop-rr-v1.json")
+                    do {
+                        let count = try HistoricalRRPacketArchive.append(record, to: archiveURL)
+                        if let decodeError {
+                            whoopHistoricalRRSource = "Type-47 v18 raw frame archived · candidate RR decode rejected · \(decodeError) · packets \(count)"
+                        } else {
+                            whoopHistoricalRRSource = "Type-47 v18 RR candidate archived · \(rr.count) intervals · receipt time only · packets \(count)"
+                        }
+                    } catch {
+                        whoopHistoricalRRSource = "Historical v18 raw frame captured · archive failed · \(error.localizedDescription)"
+                    }
+                } else {
+                    whoopHistoricalRRSource = "Historical v18 raw frame captured · local archive unavailable"
+                }
+
+                if let decodeError {
+                    return "HISTORICAL_DATA v18 · raw frame retained · RR candidate rejected · \(decodeError) · CRC valid"
+                }
+                return "HISTORICAL_DATA v18 · RR candidate \(rr.map(String.init).joined(separator: ",")) ms · receipt timestamp only · CRC valid"
             }
 
             // WHOOP 5 R22 can carry the same 1,244-byte R21 IMU body inside
