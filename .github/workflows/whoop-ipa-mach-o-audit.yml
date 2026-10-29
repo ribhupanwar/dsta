@@ -40,8 +40,13 @@ jobs:
           echo "Executable: $BIN" >> mach-o-evidence/README.txt
           echo "IPA SHA-256: $(shasum -a 256 /tmp/whoop-original.ipa | awk '{print $1}')" >> mach-o-evidence/README.txt
           echo "Binary SHA-256: $(shasum -a 256 "$BIN" | awk '{print $1}')" >> mach-o-evidence/README.txt
-          echo "Architectures: $(lipo -archs "$BIN")" >> mach-o-evidence/README.txt
-          lipo "$BIN" -thin arm64 -output /tmp/whoop-arm64
+          ARCHS="$(lipo -archs "$BIN")"
+          echo "Architectures: $ARCHS" >> mach-o-evidence/README.txt
+          if [[ "$ARCHS" == "arm64" ]]; then
+            cp "$BIN" /tmp/whoop-arm64
+          else
+            lipo "$BIN" -thin arm64 -output /tmp/whoop-arm64
+          fi
           nm -arch arm64 -nm /tmp/whoop-arm64 > mach-o-evidence/nm-arm64.txt 2>&1 || true
           xcrun swift-demangle < <(awk '{print $NF}' mach-o-evidence/nm-arm64.txt | grep '^_' | sort -u) \
             > mach-o-evidence/swift-demangled-symbols.txt 2>&1 || true
