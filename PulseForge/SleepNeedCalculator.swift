@@ -53,7 +53,7 @@ enum SleepNeedCalculator {
 
     /// Convenience API that refuses to invent an 8-hour personal baseline.
     /// Returns nil until a valid personal baseline has been learned.
-    static func calculate(baseNeedHours: Double?, sleepDebtHours: Double?) -> Double? {
+    static func calculate(baseNeedHours: Double? = nil, sleepDebtHours: Double?) -> Double? {
         calculate(Inputs(
             personalBaselineHours: baseNeedHours,
             sleepDebtHours: sleepDebtHours,
