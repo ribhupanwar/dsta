@@ -71,6 +71,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var lastWhoopRealtimeHRAt: Date?
     /// Latest RR intervals from the realtime type-40 stream only.
     @Published private(set) var whoopRRIntervalsMilliseconds: [Int] = []
+    @Published private(set) var whoopStandardRRIntervalsMilliseconds: [Int] = []
+    @Published private(set) var whoopStandardRRLastUpdatedAt: Date?
     /// Recent CRC-valid Type-40 frames, retained verbatim for independent layout verification.
     @Published private(set) var whoopRealtimeRRRawFrameHistory: [String] = []
     /// Rolling realtime RR window for live diagnostics; never used as overnight HRV.
@@ -854,6 +856,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP latest CRC-valid raw IMU frame hex (outer type 43 · inner 0x2B/R21): \(whoopIMULastRawFrameHex)",
             "WHOOP RR state: \(whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · source: \(whoopRRSource) · last RR update: \(whoopRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
+            "WHOOP standard 2A37 RR: \(whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · last update: \(whoopStandardRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP historical sync: \(whoopHistorySyncStatus)",
             "WHOOP historical Type-47 v18 archive: \(historicalRRArchiveRecordCount) raw frames · source: \(whoopHistoricalRRSource) · physiological timestamp unverified",
             "WHOOP IMU recent CRC-valid raw frames (oldest first):",
@@ -1133,6 +1136,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         liveWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoopRRIntervalsMilliseconds.removeAll()
+        whoopStandardRRIntervalsMilliseconds.removeAll()
+        whoopStandardRRLastUpdatedAt = nil
         whoopRRWindowMilliseconds.removeAll()
         whoopLiveRMSSDMilliseconds = nil
         whoopRRLastUpdatedAt = nil
@@ -1545,19 +1550,22 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             lastBLEEvent = "Standard HR notification received · payload could not be parsed"
             return
         }
-        // Standard 2A37 is a fallback only. Prefer the WHOOP 5.0 type-40
-        // stream while it is healthy so a parallel generic notification cannot
-        // overwrite the primary source or mix its RR intervals into that window.
+        // Capture standard BLE RR independently even while WHOOP Type-40 HR is
+        // fresh. Keep sources separate; 2A37 RR must never overwrite Type-40 RR
+        // or contribute to its RMSSD window.
+        let standardRR = StandardHeartRateRRParser.parseMilliseconds(data)
+        if !standardRR.isEmpty {
+            whoopStandardRRIntervalsMilliseconds = standardRR
+            whoopStandardRRLastUpdatedAt = Date()
+        }
         let whoopRealtimeIsFresh = WhoopRealtimeFreshness.isFresh(
             lastPacketAt: lastWhoopRealtimeHRAt, now: Date(), maximumAge: 30
         )
         guard !whoopRealtimeIsFresh else {
-            lastBLEEvent = "Standard HR fallback ignored · WHOOP type-40 stream is fresh"
+            lastBLEEvent = standardRR.isEmpty
+                ? "Standard HR fallback ignored · WHOOP Type-40 fresh · 2A37 RR count 0"
+                : "Standard HR fallback ignored · WHOOP Type-40 fresh · captured \(standardRR.count) separate 2A37 RR interval(s)"
             return
-        }
-        let standardRR = StandardHeartRateRRParser.parseMilliseconds(data)
-        if !standardRR.isEmpty {
-            appendRRIntervals(standardRR, source: "WHOOP standard BLE 2A37 fallback")
         }
         recordHeartRateSample(bpm, source: "WHOOP standard BLE HR fallback")
     }
