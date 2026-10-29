@@ -17,6 +17,7 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
             revision: 18,
             intervalsMilliseconds: [602, 613],
             rawFrameHex: "AA0174",
+            heartRateBPM: nil,
             physiologicalTimestamp: nil,
             decodeError: nil
         )
@@ -36,6 +37,7 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
                 revision: 18,
                 intervalsMilliseconds: [600],
                 rawFrameHex: String(index),
+                heartRateBPM: nil,
                 physiologicalTimestamp: nil,
                 decodeError: nil
             )
@@ -57,6 +59,7 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
             revision: 18,
             intervalsMilliseconds: [],
             rawFrameHex: "AA0147EMPTY",
+            heartRateBPM: nil,
             physiologicalTimestamp: nil,
             decodeError: nil
         )
@@ -74,6 +77,7 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
             revision: 18,
             intervalsMilliseconds: [],
             rawFrameHex: "AA0147UNDECODED",
+            heartRateBPM: nil,
             physiologicalTimestamp: nil,
             decodeError: "candidate RR count/offset rejected"
         )
