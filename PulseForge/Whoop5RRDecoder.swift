@@ -17,7 +17,8 @@ enum Whoop5RRDecoder {
         case truncatedIntervals(expectedBytes: Int, availableBytes: Int)
     }
 
-    /// REALTIME_DATA (type 40): HR @16, count @17, u16 little-endian RR ms @18.
+    /// REALTIME_DATA (type 40): HR @16, count @17, u16 little-endian RR ticks @18.
+    /// WHOOP 5.0 uses 1/1024-second ticks; convert to integer milliseconds.
     static func decodeRealtime(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 22, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
@@ -25,7 +26,8 @@ enum Whoop5RRDecoder {
         guard Int(frame[8]) == 40 else {
             throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
         }
-        return try decodeWords(frame, countOffset: 17, wordsOffset: 18)
+        let ticks = try decodeRawWords(frame, countOffset: 17, wordsOffset: 18)
+        return ticks.map { ($0 * 1000 + 512) / 1024 }
     }
 
     /// Candidate HISTORICAL_DATA v18 layout (type 47), currently NOOP-fixture-derived:
@@ -87,6 +89,11 @@ enum Whoop5RRDecoder {
 
     private static func decodeWords(_ frame: [UInt8], countOffset: Int,
                                     wordsOffset: Int) throws -> [Int] {
+        try decodeRawWords(frame, countOffset: countOffset, wordsOffset: wordsOffset)
+    }
+
+    private static func decodeRawWords(_ frame: [UInt8], countOffset: Int,
+                                       wordsOffset: Int) throws -> [Int] {
         let count = Int(frame[countOffset])
         guard count <= 32 else { throw DecodeError.invalidIntervalCount(count) }
         let required = count * 2
