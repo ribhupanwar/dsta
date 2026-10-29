@@ -1925,9 +1925,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 let rr = try Whoop5RRDecoder.decodeRealtime(b)
                 if rr.isEmpty {
                     // A valid Type-40 frame can carry HR without RR intervals.
-                    // Record that observation without refreshing the last RR timestamp
-                    // or discarding the last validated RR batch/window.
-                    whoopRRSource = "WHOOP 5.0 realtime · latest Type-40 packet contained 0 RR intervals · previous RR sample retained"
+                    // Do not present the previous batch as the latest packet's RR.
+                    // Keep the rolling window for diagnostics, but clear the current batch
+                    // and leave its timestamp unchanged so freshness expires naturally.
+                    whoopRRIntervalsMilliseconds.removeAll(keepingCapacity: true)
+                    whoopRRSource = "WHOOP 5.0 realtime · latest Type-40 packet contained 0 RR intervals · no current RR batch"
                 } else {
                     appendRRIntervals(rr, source: "WHOOP 5.0 realtime")
                 }
