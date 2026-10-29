@@ -89,6 +89,37 @@ jobs:
           } > comparison-report/pulseforge-source-inventory.txt
           cat comparison-report/pulseforge-source-inventory.txt
 
+
+      - name: Audit WHOOP RR and historical packet symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p comparison-report/rr-audit
+          unzip -oq /tmp/release-app.ipa 'Payload/Whoop.app/Whoop' -d /tmp/whoop-executable
+          EXE=/tmp/whoop-executable/Payload/Whoop.app/Whoop
+          {
+            echo "=== Executable format ==="
+            file "$EXE"
+            echo
+            echo "=== Mach-O encryption and load-command metadata ==="
+            if command -v llvm-objdump >/dev/null 2>&1; then
+              llvm-objdump --macho --private-headers "$EXE" 2>&1 | grep -i -A5 -B3 -E 'cryptid|cryptoff|cryptsize|LC_ENCRYPTION|LC_BUILD_VERSION|LC_SEGMENT_64|__swift5' || true
+            else
+              echo "llvm-objdump unavailable; no encryption conclusion."
+            fi
+            echo
+            echo "=== Demangled symbol candidates ==="
+            if command -v llvm-nm >/dev/null 2>&1; then
+              llvm-nm --demangle "$EXE" 2>&1 | grep -iE 'histor|rr.?interval|heart.?rate|timestamp|packet|record|sleep|recovery|strain' | head -1500 || true
+            else
+              echo "llvm-nm unavailable; no symbol conclusion."
+            fi
+            echo
+            echo "=== Executable strings: RR / historical / timestamp vocabulary ==="
+            strings -a "$EXE" | grep -iE 'histor|rr.?interval|heart.?rate|timestamp|time.?stamp|packet.?type|record.?type|sleep.?stage|recovery|strain|RMSSD|SDNN' | sort -u | head -2000 || true
+          } | tee comparison-report/rr-audit/whoop-executable-rr-audit.txt
+          echo "WHOOP executable RR audit complete; encrypted code is not decrypted or bypassed."
+
       - name: Upload comparison evidence
         uses: actions/upload-artifact@v4
         with:
