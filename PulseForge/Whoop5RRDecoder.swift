@@ -61,3 +61,14 @@ enum Whoop5RRDecoder {
         throw DecodeError.invalidIntervalValue(invalid)
     }
 }
+
+/// Freshness gate for source arbitration: a future-dated or stale WHOOP packet
+/// must not suppress the standard BLE fallback indefinitely.
+enum WhoopRealtimeFreshness {
+    static func isFresh(lastPacketAt: Date?, now: Date,
+                        maximumAge: TimeInterval = 30) -> Bool {
+        guard let lastPacketAt, maximumAge >= 0 else { return false }
+        let age = now.timeIntervalSince(lastPacketAt)
+        return age >= 0 && age <= maximumAge
+    }
+}
