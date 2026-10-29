@@ -507,12 +507,21 @@ struct WhoopMotionCard: View {
                 }
                 Text(bluetooth.whoopIMUStatus)
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                    .lineLimit(2).frame(height: 26, alignment: .topLeading)
                 Text("One-second signal variability is diagnostic only; sensor scale and activity classification are not yet calibrated.")
                     .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                    .lineLimit(2).frame(height: 24, alignment: .topLeading)
             }
+            // IMU notifications can arrive in rapid bursts. A fixed card height
+            // prevents live text/status changes from pushing every section below it.
+            .frame(height: 246, alignment: .top)
             .padding(16)
             .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
+            .transaction { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
         }
     }
 
