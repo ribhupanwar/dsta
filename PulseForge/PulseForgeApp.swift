@@ -690,7 +690,7 @@ struct SleepDashboard: View {
                     Divider().overlay(ForgeColors.stroke)
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("SLEEP TARGET").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                            Text("ESTIMATED SLEEP NEED").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
                             Text(String(format: "%.1f h", insights.sleepNeedHours)).font(.system(size: 23, weight: .semibold, design: .rounded))
                         }
                         Spacer()
@@ -699,6 +699,8 @@ struct SleepDashboard: View {
                             Text(insights.sleepDebtHours.map { String(format: "%.1f h", $0) } ?? "—").font(.system(size: 23, weight: .semibold, design: .rounded))
                         }
                     }
+                    Text("PulseForge estimate · 8 h starting baseline with a capped sleep-debt adjustment. Personal baseline, naps and calibrated strain are not yet connected.")
+                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 SectionHeader(title: "SLEEP STAGES")
