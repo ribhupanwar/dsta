@@ -360,7 +360,7 @@ struct WhoopRRCard: View {
     }
     private var isRRFresh: Bool {
         guard let updatedAt = bluetooth.whoopRRLastUpdatedAt else { return false }
-        return Date().timeIntervalSince(updatedAt) <= 15
+        return Date().timeIntervalSince(updatedAt) <= 30
     }
     private var shortWindowRMSSD: Double? {
         guard isRRFresh else { return nil }
