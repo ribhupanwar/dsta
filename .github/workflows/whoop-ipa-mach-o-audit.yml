@@ -256,6 +256,8 @@ jobs:
           lines = Path("/tmp/whoop-disassembly.txt").read_text(errors="replace").splitlines()
           targets = {
               "step-sample-model-callee-0x10036e4a4.txt": "10036e4a4",
+      "step-sample-field-parser-0x10030b8c0.txt": "10030b8c0",
+      "step-sample-next-parser-0x10036e5a4.txt": "10036e5a4",
               "step-sample-ingestion-callsite-0x10036dcb4.txt": "10036dcb4",
               "step-count-state-accessors.txt": None,
           }
@@ -263,7 +265,7 @@ jobs:
               if target:
                   matches = [i for i, line in enumerate(lines) if target in line.lower()]
                   out = ["# Exact disassembly target: 0x" + target, "Matching lines: " + str(len(matches))]
-                  for i in matches[:4]:
+                  for i in matches[:20]:
                       out += ["", "--- context around line " + str(i+1) + " ---"] + lines[max(0,i-80):min(len(lines),i+260)]
               else:
                   terms = ("currentStepCount", "lastStepCount", "previousStepCount", "delayedStepCountProcessingWorkItem")
