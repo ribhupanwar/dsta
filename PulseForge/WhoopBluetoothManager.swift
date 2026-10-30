@@ -2360,7 +2360,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopHistoricalIMUStreamPacketCount += 1
             whoopLastHistoricalIMUStreamRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
             publishIMUStatusIfNeeded("WHOOP historical IMU stream received · raw frame retained · awaiting validated inner-layout decoder")
-            recordVendorTimeline("HISTORICAL_IMU_DATA_STREAM(52) · CRC valid · bytes=\\(b.count) · raw retained · no samples counted")
+            recordVendorTimeline("HISTORICAL_IMU_DATA_STREAM(52) · CRC valid · bytes=\(b.count) · raw retained · no samples counted")
             return "HISTORICAL_IMU_STREAM(52) · raw frame retained · layout pending · CRC valid"
 
         case 51: // Existing REALTIME_IMU_DATA_STREAM path retained independently; do not conflate with Gen5 R21.
@@ -2382,7 +2382,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             // The official flow echoes these exact 8 bytes in HISTORICAL_DATA_RESULT(23),
             // prefixed by 0x01. Do not infer timestamps from phone receipt time.
             guard b.count >= 29 else {
-                return "METADATA · truncated frame · \\(b.count) bytes · CRC valid"
+                return "METADATA · truncated frame · \(b.count) bytes · CRC valid"
             }
             let metadataType = Int(b[10])
             if metadataType == 1 {
@@ -2469,10 +2469,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     stepSignalActivity = step.activityClassRaw
                     stepSignalSoftwareOverride = nil
                     stepSignalLastOutcome = "Historical v18 cumulative motion counter · experimental step source"
-                    recordVendorTimeline("WHOOP Type-47 v18 motion counter · value=\\(step.stepMotionCounter) · cadenceRaw=\\(step.stepCadenceRaw) · activityRaw=\\(step.activityClassRaw) · timestamp=\\(ISO8601DateFormatter().string(from: step.timestamp))")
+                    recordVendorTimeline("WHOOP Type-47 v18 motion counter · value=\(step.stepMotionCounter) · cadenceRaw=\(step.stepCadenceRaw) · activityRaw=\(step.activityClassRaw) · timestamp=\(ISO8601DateFormatter().string(from: step.timestamp))")
                 } catch {
-                    stepSignalLastOutcome = "Historical v18 step-counter decode rejected · \\(error)"
-                    recordVendorTimeline("WHOOP Type-47 v18 step-counter decode rejected · \\(error) · raw frame retained")
+                    stepSignalLastOutcome = "Historical v18 step-counter decode rejected · \(error)"
+                    recordVendorTimeline("WHOOP Type-47 v18 step-counter decode rejected · \(error) · raw frame retained")
                 }
 
                 let record = HistoricalRRPacketRecord(
