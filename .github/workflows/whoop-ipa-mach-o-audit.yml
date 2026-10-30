@@ -103,7 +103,7 @@ jobs:
           from pathlib import Path
 
           terms = re.compile(
-              r"Historical Processed Steps Packet \\(R24\\)|Processed Steps Data \\(R24\\)|"
+              r"Historical Processed Steps Packet \(R24\)|Processed Steps Data \(R24\)|"
               r"R24q|currentStepCount|lastStepCount|previousStepCount|delayedStepCountProcessingWorkItem|"
               r"HealthKitStepCountRequest|HealthKitStepCountSubmissionDTO|step_count_samples|"
               r"deleted_step_count_samples|HKQuantityTypeIdentifierStepCount|IMUPacket|RealtimeIMUData",
@@ -142,7 +142,7 @@ jobs:
           ]
           for address, value in hits:
               locations.append(f"0x{address:x}  {value}")
-          Path("mach-o-evidence/step-count-string-locations.txt").write_text("\\n".join(locations) + "\\n")
+          Path("mach-o-evidence/step-count-string-locations.txt").write_text("\n".join(locations) + "\n")
 
           # Resolve direct ARM64 ADRP + ADD references without whole-binary
           # function analysis. The full otool disassembly was generated above.
@@ -150,8 +150,8 @@ jobs:
           for address, value in hits:
               by_page.setdefault(address & ~0xfff, []).append((address, value))
           lines = Path("/tmp/whoop-disassembly.txt").read_text(errors="replace").splitlines()
-          adrp_re = re.compile(r"^\\s*([0-9a-f]+)\\s+adrp\\s+(x\\d+),.*?;\\s*0x([0-9a-f]+)", re.I)
-          add_re = re.compile(r"^\\s*([0-9a-f]+)\\s+add\\s+(x\\d+),\\s*(x\\d+),\\s*#0x([0-9a-f]+)", re.I)
+          adrp_re = re.compile(r"^\s*([0-9a-f]+)\s+adrp\s+(x\d+),.*?;\s*0x([0-9a-f]+)", re.I)
+          add_re = re.compile(r"^\s*([0-9a-f]+)\s+add\s+(x\d+),\s*(x\d+),\s*#0x([0-9a-f]+)", re.I)
           refs = []
           for i, line in enumerate(lines):
               m = adrp_re.match(line)
@@ -179,12 +179,12 @@ jobs:
           ]
           for i, j, address, value, register in refs:
               xref_lines.append(
-                  f"\\n## 0x{address:x} {value} · instruction 0x{lines[i].split()[0]} · register {register}\\n"
-                  f"{lines[i].strip()}\\n{lines[j].strip()}"
+                  f"\n## 0x{address:x} {value} · instruction 0x{lines[i].split()[0]} · register {register}\n"
+                  f"{lines[i].strip()}\n{lines[j].strip()}"
               )
           if not refs:
               xref_lines.append("No direct ADRP+ADD references matched the selected strings.")
-          Path("mach-o-evidence/step-count-xrefs.txt").write_text("\\n".join(xref_lines) + "\\n")
+          Path("mach-o-evidence/step-count-xrefs.txt").write_text("\n".join(xref_lines) + "\n")
 
           context_indices = set()
           for i, j, address, value, register in refs:
@@ -193,11 +193,11 @@ jobs:
           previous = -2
           for i in sorted(context_indices):
               if i != previous + 1:
-                  context.append("\\n--- reference-site context ---")
+                  context.append("\n--- reference-site context ---")
               context.append(lines[i])
               previous = i
           Path("mach-o-evidence/step-count-xref-functions.txt").write_text(
-              "\\n".join(context) if context else "No reference-site context resolved.\\n"
+              "\n".join(context) if context else "No reference-site context resolved.\n"
           )
 
           # The R24 case in the observed switch is branch target 0x100802748;
@@ -219,7 +219,7 @@ jobs:
               ]
           except Exception as exc:
               table_text = [f"Could not decode R24 jump table JSON: {exc}", Path("/tmp/r24-jump-table.json").read_text(errors="replace")]
-          Path("mach-o-evidence/r24-enum-jump-table.txt").write_text("\\n".join(table_text) + "\\n")
+          Path("mach-o-evidence/r24-enum-jump-table.txt").write_text("\n".join(table_text) + "\n")
           print(f"Selected strings: {len(hits)}; direct ARM64 references: {len(refs)}; disassembly lines: {len(lines)}")
           PY
           echo "R24 string references and switch-table bytes are static evidence only; they do not prove runtime BLE behaviour." >> mach-o-evidence/README.txt
