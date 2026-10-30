@@ -591,8 +591,14 @@ struct TodayDashboard: View {
                     }
                 }
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") { selectedHomeMetric = nil }
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            selectedHomeMetric = nil
+                        } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .accessibilityLabel("Back")
                     }
                 }
             }
@@ -2806,13 +2812,25 @@ struct RunSplit: Identifiable {
 struct HeaderView: View {
     let eyebrow: String
     let title: String
+    var showsTrailingControl = false
+    var trailingSymbol = "ellipsis"
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(eyebrow).font(.system(size: 10, weight: .semibold)).tracking(1.1).foregroundStyle(ForgeColors.muted)
-            HStack {
-                Text(title).font(.system(size: 30, weight: .bold)).tracking(-0.6)
+            Text(eyebrow)
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(1.1)
+                .foregroundStyle(ForgeColors.muted)
+            HStack(alignment: .center) {
+                Text(title)
+                    .font(.system(size: 30, weight: .bold))
+                    .tracking(-0.6)
                 Spacer()
-                Image(systemName: "person.crop.circle").font(.system(size: 25, weight: .light)).foregroundStyle(ForgeColors.muted)
+                if showsTrailingControl {
+                    Image(systemName: trailingSymbol)
+                        .font(.system(size: 19, weight: .medium))
+                        .foregroundStyle(.white)
+                }
             }
         }
     }
