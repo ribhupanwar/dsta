@@ -1,0 +1,132 @@
+name: Extract WHOOP UI reference and PulseForge comparison
+
+on:
+  push:
+    branches: [feature/export-whoop-rr-raw-archive]
+    paths:
+      - "Whoop.zip"
+      - ".github/workflows/extract-whoop-ui-reference.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extract-reference:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository with Git LFS objects
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Verify and unpack WHOOP archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f Whoop.zip
+          echo "WHOOP archive size: $(stat -f%z Whoop.zip) bytes"
+          echo "WHOOP archive SHA-256:"
+          shasum -a 256 Whoop.zip
+          mkdir -p "$RUNNER_TEMP/whoop-unpacked" reference-report
+          unzip -q Whoop.zip -d "$RUNNER_TEMP/whoop-unpacked"
+          APP="$(find "$RUNNER_TEMP/whoop-unpacked" -type d -name '*.app' -print -quit)"
+          if [ -z "$APP" ]; then
+            IPA="$(find "$RUNNER_TEMP/whoop-unpacked" -type f -name '*.ipa' -print -quit)"
+            if [ -n "$IPA" ]; then
+              mkdir -p "$RUNNER_TEMP/whoop-ipa"
+              unzip -q "$IPA" -d "$RUNNER_TEMP/whoop-ipa"
+              APP="$(find "$RUNNER_TEMP/whoop-ipa" -type d -name '*.app' -print -quit)"
+            fi
+          fi
+          if [ -z "$APP" ]; then
+            echo "No .app bundle found in Whoop.zip. Top-level archive inventory follows:"
+            find "$RUNNER_TEMP/whoop-unpacked" -maxdepth 4 -print | head -300
+            exit 2
+          fi
+          echo "$APP" > "$RUNNER_TEMP/whoop-app-path.txt"
+          echo "WHOOP app bundle: $APP"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" > reference-report/bundle-id.txt
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" >> reference-report/bundle-id.txt || true
+          find "$APP" -type f | sed "s#^$APP/##" | sort > reference-report/full-resource-inventory.txt
+          find "$APP" \( -name '*.nib' -o -name '*.storyboardc' -o -name '*.car' -o -name '*.strings' -o -name '*.stringsdict' -o -name '*.json' \) -print | sed "s#^$APP/##" | sort > reference-report/ui-resource-inventory.txt
+          echo "App bundle and UI resource inventories generated."
+
+      - name: Decode compiled UI navigation, scene classes, and wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(cat "$RUNNER_TEMP/whoop-app-path.txt")"
+          mkdir -p reference-report/nibkit
+          if ! command -v go >/dev/null 2>&1; then
+            echo "Go toolchain missing" >&2
+            exit 3
+          fi
+          GOBIN="$RUNNER_TEMP/bin" go install github.com/tokenbleed/nibkit@latest
+          export PATH="$RUNNER_TEMP/bin:$PATH"
+          nibkit info "$APP" > reference-report/nibkit/summary.txt 2>&1 || true
+          nibkit classes "$APP" > reference-report/nibkit/classes.txt 2>&1 || true
+          nibkit wiring "$APP" > reference-report/nibkit/wiring.txt 2>&1 || true
+          nibkit segues --mermaid "$APP" > reference-report/nibkit/navigation.mmd 2> reference-report/nibkit/segues-errors.txt || true
+          nibkit all -J "$APP" > reference-report/nibkit/complete-ui-structure.json 2> reference-report/nibkit/decode-errors.txt || true
+          echo "Compiled UI decode finished."
+
+      - name: Export localized strings and asset catalog metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(cat "$RUNNER_TEMP/whoop-app-path.txt")"
+          mkdir -p reference-report/strings reference-report/assets
+          while IFS= read -r file; do
+            rel="${file#"$APP"/}"
+            out="reference-report/strings/$(echo "$rel" | tr '/ ' '__').strings"
+            ibtool --export-strings-file "$out" "$file" >/dev/null 2>&1 || true
+          done < <(find "$APP" -type f -name '*.nib')
+          while IFS= read -r file; do
+            rel="${file#"$APP"/}"
+            out="reference-report/assets/$(echo "$rel" | tr '/ ' '__').json"
+            xcrun --find assetutil >/dev/null 2>&1 && xcrun assetutil --info "$file" > "$out" 2>/dev/null || true
+          done < <(find "$APP" -type f -name 'Assets.car')
+          find "$APP" -type f \( -name '*.strings' -o -name '*.stringsdict' -o -name '*.json' \) -print0 | while IFS= read -r -d '' file; do
+            rel="${file#"$APP"/}"
+            mkdir -p "reference-report/raw-text/$(dirname "$rel")"
+            cp "$file" "reference-report/raw-text/$rel"
+          done
+          echo "Text and asset metadata export finished."
+
+      - name: Build PulseForge source comparison inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "# PulseForge source inventory"
+            echo
+            find PulseForge -type f \( -name '*.swift' -o -name '*.plist' -o -name '*.entitlements' \) | sort
+            echo
+            echo "# Screen and navigation declarations"
+            grep -RniE 'struct .*View|TabView|NavigationStack|NavigationLink|Recovery|Sleep|Strain|Dashboard|Activity|Coach|Trends|Health' PulseForge --include='*.swift' | head -1500 || true
+          } > reference-report/pulseforge-source-comparison.txt
+
+      - name: Summarize extracted screen map
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "# WHOOP UI reference extraction"
+            echo
+            cat reference-report/bundle-id.txt
+            echo
+            echo "## Compiled UI resources"
+            cat reference-report/ui-resource-inventory.txt
+            echo
+            echo "## PulseForge source inventory"
+            cat reference-report/pulseforge-source-comparison.txt
+          } > reference-report/README.md
+
+      - name: Upload decoded UI reference report
+        uses: actions/upload-artifact@v4
+        with:
+          name: whoop-ui-reference-decoded
+          path: reference-report/
+          retention-days: 14
