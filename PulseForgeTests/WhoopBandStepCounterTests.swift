@@ -52,8 +52,12 @@ final class WhoopBandStepCounterTests: XCTestCase {
         let previousDay = midnight.addingTimeInterval(-1)
         counter.ingest(.init(timestamp: previousDay, counter: 500), calendar: calendar)
         counter.ingest(.init(timestamp: midnight.addingTimeInterval(1), counter: 503), calendar: calendar)
-        XCTAssertEqual(counter.steps(for: midnight, calendar: calendar), 3)
+        XCTAssertEqual(counter.steps(for: midnight, calendar: calendar), 0)
         XCTAssertEqual(counter.steps(for: previousDay, calendar: calendar), nil)
+        XCTAssertEqual(counter.droppedBoundaries, 1)
+
+        counter.ingest(.init(timestamp: midnight.addingTimeInterval(2), counter: 505), calendar: calendar)
+        XCTAssertEqual(counter.steps(for: midnight, calendar: calendar), 2)
     }
 
     func testFirstCounterSampleDoesNotInventDailySteps() {
