@@ -156,6 +156,24 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         XCTAssertEqual(restored.rawRRWords, [629, 794])
     }
 
+    func testAppendDoesNotOverwriteCorruptExistingArchive() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        let corrupt = Data("not-json".utf8)
+        try corrupt.write(to: url)
+        let record = HistoricalRRPacketRecord(
+            receivedAt: Date(timeIntervalSince1970: 1_700_000_400),
+            recordType: 47, revision: 18, intervalsMilliseconds: [],
+            rawRRWords: [700], rawFrameHex: "AA01",
+            heartRateBPM: nil, physiologicalTimestamp: nil, decodeError: nil
+        )
+
+        XCTAssertThrowsError(try HistoricalRRPacketArchive.append(record, to: url))
+        XCTAssertEqual(try Data(contentsOf: url), corrupt)
+    }
+
     func testMissingOrInvalidArchiveLoadsAsEmpty() {
         XCTAssertTrue(HistoricalRRPacketArchive.load(from: temporaryURL()).isEmpty)
     }
