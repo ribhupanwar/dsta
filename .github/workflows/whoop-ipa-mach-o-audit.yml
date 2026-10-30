@@ -99,6 +99,7 @@ jobs:
           r2 -q -c 'izzj' /tmp/whoop-arm64 > /tmp/whoop-strings.json 2>mach-o-evidence/radare2-strings-errors.txt
           r2 -q -c 'pxj 256 @ 0x108acfdee' /tmp/whoop-arm64 > /tmp/r24-jump-table.json 2>mach-o-evidence/r24-jump-table-errors.txt || echo '[]' > /tmp/r24-jump-table.json
           r2 -q -c 'pxj 256 @ 0x108ebdb70' /tmp/whoop-arm64 > /tmp/historical-r24-jump-table.json 2>mach-o-evidence/historical-r24-jump-table-errors.txt || echo '[]' > /tmp/historical-r24-jump-table.json
+          r2 -q -c 'pxj 512 @ 0x108add8f0' /tmp/whoop-arm64 > /tmp/imu-packet-jump-table.json 2>mach-o-evidence/imu-packet-jump-table-errors.txt || echo '[]' > /tmp/imu-packet-jump-table.json
           python3 - <<'PY'
           import json, re
           from pathlib import Path
@@ -222,6 +223,24 @@ jobs:
               table_text = [f"Could not decode R24 jump table JSON: {exc}", Path("/tmp/r24-jump-table.json").read_text(errors="replace")]
           Path("mach-o-evidence/r24-enum-jump-table.txt").write_text("\n".join(table_text) + "\n")
 
+          # IMUPacket parser switch: its packet-kind byte is read from [x20,#0x29].
+          try:
+              imu_raw = json.loads(Path("/tmp/imu-packet-jump-table.json").read_text())
+              if isinstance(imu_raw, dict):
+                  imu_table = imu_raw.get("bytes", imu_raw.get("data", []))
+              else:
+                  imu_table = imu_raw
+              imu_table = [int(value) for value in imu_table if isinstance(value, (int, float))]
+              imu_text = [
+                  "# WHOOP IMUPacket parser jump table at 0x108add8f0",
+                  "Parser reads discriminator byte from [packet,#0x29], then loads a 16-bit relative branch entry.",
+                  f"Bytes recovered: {len(imu_table)}",
+                  "Table hex: " + " ".join(f"{value:02x}" for value in imu_table),
+              ]
+          except Exception as exc:
+              imu_text = [f"Could not decode IMUPacket jump table JSON: {exc}", Path("/tmp/imu-packet-jump-table.json").read_text(errors="replace")]
+          Path("mach-o-evidence/imu-packet-jump-table.txt").write_text("\\n".join(imu_text) + "\\n")
+
           # Historical packet enum: switch input byte indexes this table. The
           # R24 branch is 0x105ce8038 relative to branch base 0x105ce7ff8,
           # i.e. a byte offset of 16 in the one-byte relative jump table.
@@ -259,6 +278,8 @@ jobs:
               "step-sample-field-parser-0x10030b8c0.txt": "10030b8c0",
               "step-sample-next-parser-0x10036e5a4.txt": "10036e5a4",
               "step-sample-ingestion-callsite-0x10036dcb4.txt": "10036dcb4",
+              "imu-packet-parser-0x10088e4ec.txt": "10088e4ec",
+              "processed-steps-data-factory-0x1008026fc.txt": "1008026fc",
               "step-count-state-accessors.txt": None,
           }
           for filename, target in targets.items():
