@@ -181,7 +181,8 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
             rawFrameHex: "AA0174",
             heartRateBPM: 102,
             physiologicalTimestamp: timestamp,
-            decodeError: nil
+            decodeError: nil,
+            physiologyLayoutVerified: true
         )
         _ = try HistoricalRRPacketArchive.append(record, to: url)
         let restored = try XCTUnwrap(HistoricalRRPacketArchive.load(from: url).first)
