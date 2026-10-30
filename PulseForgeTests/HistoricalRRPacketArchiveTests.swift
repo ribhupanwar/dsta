@@ -50,6 +50,35 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         XCTAssertEqual(records.last?.rawFrameHex, "500")
     }
 
+    func testArchiveKeepsSeparateRetentionWindowsForEachRevision() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        for index in 0...HistoricalRRPacketArchive.maximumRecords {
+            let v18 = HistoricalRRPacketRecord(
+                receivedAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                recordType: 47, revision: 18, intervalsMilliseconds: [],
+                rawFrameHex: "V18-\(index)", heartRateBPM: nil,
+                physiologicalTimestamp: nil, decodeError: nil
+            )
+            let r21 = HistoricalRRPacketRecord(
+                receivedAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                recordType: 47, revision: 21, intervalsMilliseconds: [],
+                rawFrameHex: "R21-\(index)", heartRateBPM: nil,
+                physiologicalTimestamp: nil, decodeError: "R21 IMU; not RR"
+            )
+            _ = try HistoricalRRPacketArchive.append(contentsOf: [v18, r21], to: url)
+        }
+
+        let records = HistoricalRRPacketArchive.load(from: url)
+        let v18 = records.filter { $0.revision == 18 }
+        let r21 = records.filter { $0.revision == 21 }
+        XCTAssertEqual(v18.count, HistoricalRRPacketArchive.maximumRecords)
+        XCTAssertEqual(r21.count, HistoricalRRPacketArchive.maximumRecords)
+        XCTAssertEqual(v18.first?.rawFrameHex, "V18-1")
+        XCTAssertEqual(r21.first?.rawFrameHex, "R21-1")
+    }
+
     func testPersistsValidEmptyHistoricalRRRecordWithoutDecodeError() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
