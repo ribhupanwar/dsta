@@ -74,4 +74,28 @@ final class WhoopBandStepCounterTests: XCTestCase {
         restored.ingest(.init(timestamp: start.addingTimeInterval(2), counter: 29))
         XCTAssertEqual(restored.steps(for: start), 9)
     }
+    func testAcceptsIncreasingCounterSamplesWithinSameSecond() {
+        var counter = WhoopBandStepCounter()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let calendar = Calendar(identifier: .gregorian)
+        counter.ingest(.init(timestamp: start, counter: 100), calendar: calendar)
+        counter.ingest(.init(timestamp: start, counter: 102), calendar: calendar)
+        counter.ingest(.init(timestamp: start, counter: 102), calendar: calendar)
+        counter.ingest(.init(timestamp: start, counter: 101), calendar: calendar)
+        counter.ingest(.init(timestamp: start.addingTimeInterval(1), counter: 105), calendar: calendar)
+        XCTAssertEqual(counter.steps(for: start, calendar: calendar), 5)
+        XCTAssertEqual(counter.latestSample?.counter, 105)
+    }
+
+    func testRejectsImplausibleSameSecondCounterJumpWithoutReanchoring() {
+        var counter = WhoopBandStepCounter()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let calendar = Calendar(identifier: .gregorian)
+        counter.ingest(.init(timestamp: start, counter: 100), calendar: calendar)
+        counter.ingest(.init(timestamp: start, counter: 120), calendar: calendar)
+        XCTAssertNil(counter.steps(for: start, calendar: calendar))
+        XCTAssertEqual(counter.latestSample?.counter, 100)
+        XCTAssertEqual(counter.droppedBoundaries, 1)
+    }
+
 }
