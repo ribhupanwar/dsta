@@ -13,7 +13,7 @@ permissions:
 jobs:
   inspect-mach-o:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Download pinned WHOOP 5.75.0 IPA
         shell: bash
