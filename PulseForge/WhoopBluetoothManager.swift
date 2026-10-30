@@ -2477,7 +2477,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(b)
                     recordWhoopStepSample(
                         timestamp: step.timestamp,
-                        counter: step.stepMotionCounter,
+                        counter: step.accumulationCounter,
                         publish: publishStepDiagnostics
                     )
                     if publishStepDiagnostics {
@@ -2486,15 +2486,15 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         stepSignalLastPacketLength = b.count
                         stepSignalLastSeenAt = receivedAt
                         stepSignalSelectedCounter = step.stepMotionCounter
-                        stepSignalHardwareCounter = nil
+                        stepSignalHardwareCounter = step.hardwareCounter
                         stepSignalCadence = step.stepCadenceRaw
                         stepSignalActivity = step.activityClassRaw
-                        stepSignalSoftwareOverride = nil
+                        stepSignalSoftwareOverride = step.softwareOverride
                         stepSignalLastOutcome = "Historical v18 cumulative motion counter · experimental step source"
                     }
                     if logStepTimeline {
                         lastWhoopStepTimelineAt = receivedAt
-                        recordVendorTimeline("WHOOP Type-47 v18 motion counter · value=\(step.stepMotionCounter) · cadenceRaw=\(step.stepCadenceRaw) · activityRaw=\(step.activityClassRaw) · timestamp=\(ISO8601DateFormatter().string(from: step.timestamp))")
+                        recordVendorTimeline("WHOOP Type-47 v18 step source · selected=\(step.stepMotionCounter) · hardware=\(step.hardwareCounter) · override=\(step.softwareOverride) · accumulated=\(step.accumulationCounter) · cadenceRaw=\(step.stepCadenceRaw) · activityRaw=\(step.activityClassRaw) · timestamp=\(ISO8601DateFormatter().string(from: step.timestamp))")
                     }
                 } catch {
                     if publishStepDiagnostics {
