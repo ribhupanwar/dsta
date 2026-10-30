@@ -47,24 +47,29 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
         revision = try values.decode(Int.self, forKey: .revision)
         let storedMilliseconds = try values.decodeIfPresent([Int].self, forKey: .intervalsMilliseconds) ?? []
         let storedRawWords = try values.decodeIfPresent([Int].self, forKey: .rawRRWords)
-        // Migrate old v18 archives: their candidate words were previously
-        // stored under an ms-labelled field despite unverified units.
-        if revision == 18, storedRawWords == nil {
+        let storedHeartRate = try values.decodeIfPresent(Int.self, forKey: .heartRateBPM)
+        let storedTimestamp = try values.decodeIfPresent(Date.self, forKey: .physiologicalTimestamp)
+        // All current v18 offsets are still NOOP-fixture candidates. Migrate the
+        // old ms-labelled words to rawRRWords and discard candidate HR/time fields.
+        if revision == 18 {
             intervalsMilliseconds = []
-            rawRRWords = storedMilliseconds.isEmpty ? nil : storedMilliseconds
+            rawRRWords = storedRawWords ?? (storedMilliseconds.isEmpty ? nil : storedMilliseconds)
+            heartRateBPM = nil
+            physiologicalTimestamp = nil
         } else {
             intervalsMilliseconds = storedMilliseconds
             rawRRWords = storedRawWords
+            heartRateBPM = storedHeartRate
+            physiologicalTimestamp = storedTimestamp
         }
         rawFrameHex = try values.decode(String.self, forKey: .rawFrameHex)
-        heartRateBPM = try values.decodeIfPresent(Int.self, forKey: .heartRateBPM)
-        physiologicalTimestamp = try values.decodeIfPresent(Date.self, forKey: .physiologicalTimestamp)
         decodeError = try values.decodeIfPresent(String.self, forKey: .decodeError)
     }
 }
 
 enum HistoricalRRPacketArchive {
-    /// Keep a full-day-plus forensic window for compact v18 biometric frames.
+    /// Keep a large bounded forensic window for compact v18 frames.
+    /// Wall-clock coverage depends on packet cadence and frame size; no fixed duration is assumed.
     /// Large motion-oriented revisions retain a smaller bounded window.
     static let maximumRecords = 100_000
     static let maximumRecordsForOtherRevisions = 500
@@ -77,6 +82,23 @@ enum HistoricalRRPacketArchive {
             return []
         }
         return records
+    }
+
+    /// Export through the decoding/migration path so legacy v18 candidate HR/time
+    /// fields are never re-emitted as trusted physiological values.
+    /// Returns nil for unreadable or corrupt files; it never rewrites the source archive.
+    static func exportJSON(from fileURL: URL) -> String? {
+        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let records = try? decoder.decode([HistoricalRRPacketRecord].self, from: data) else {
+            return nil
+        }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let normalized = try? encoder.encode(records) else { return nil }
+        return String(data: normalized, encoding: .utf8)
     }
 
     @discardableResult

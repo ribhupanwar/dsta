@@ -19,10 +19,10 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(try Whoop5RRDecoder.decodeRealtime(frame), [589, 573])
     }
 
-    func testDecodesCapturedHistoricalV18RRInMilliseconds() throws {
-        // NOOP-sourced v18 type-47 fixture: RR words 602/613 are preserved raw until R18 units are independently verified.
+    func testExtractsCandidateHistoricalV18RRWordsWithoutUnitClaim() throws {
+        // NOOP-sourced type-47 fixture only; offsets and units are not WHOOP-verified.
         let frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
-        XCTAssertEqual(try Whoop5RRDecoder.decodeHistoricalV18(frame), [602, 613])
+        XCTAssertEqual(try Whoop5RRDecoder.decodeHistoricalV18CandidateRRWords(frame), [602, 613])
     }
 
     func testRealtimePacketWithZeroRRCountReturnsNoIntervals() throws {

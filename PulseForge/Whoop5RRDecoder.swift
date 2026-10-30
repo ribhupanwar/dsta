@@ -35,7 +35,7 @@ enum Whoop5RRDecoder {
     /// Historical R18 RR units are not yet independently verified against
     /// WHOOP IPA or a timestamp-aligned official export; return raw words only.
     /// Do not feed these values into physiological calculations until verified.
-    static func decodeHistoricalV18(_ frame: [UInt8]) throws -> [Int] {
+    static func decodeHistoricalV18CandidateRRWords(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 28, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
         }
@@ -50,10 +50,10 @@ enum Whoop5RRDecoder {
         return try decodeRawWords(frame, countOffset: 23, wordsOffset: 24)
     }
 
-    /// WHOOP 5.0 HISTORICAL_DATA v18 embeds its physiological Unix timestamp
-    /// as u32 little-endian at absolute frame offset 15. This is independent of
-    /// the phone's BLE receipt time.
-    static func decodeHistoricalTimestampV18(_ frame: [UInt8]) throws -> Date {
+    /// Candidate timestamp extraction from the NOOP-derived fixture only.
+    /// The WHOOP IPA does not establish this offset or epoch; never publish this
+    /// value as a physiological timestamp without independent device correlation.
+    static func decodeCandidateHistoricalTimestampV18(_ frame: [UInt8]) throws -> Date {
         guard frame.count >= 19, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
         }
@@ -73,8 +73,9 @@ enum Whoop5RRDecoder {
         return Date(timeIntervalSince1970: TimeInterval(seconds))
     }
 
-    /// v18 heart rate is a single BPM byte at absolute offset 22.
-    static func decodeHistoricalHeartRateV18(_ frame: [UInt8]) throws -> Int {
+    /// Candidate HR-byte extraction from the NOOP-derived fixture only.
+    /// The WHOOP IPA does not establish this offset; do not publish it as BPM.
+    static func decodeCandidateHistoricalHeartRateV18(_ frame: [UInt8]) throws -> Int {
         guard frame.count >= 23, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
         }

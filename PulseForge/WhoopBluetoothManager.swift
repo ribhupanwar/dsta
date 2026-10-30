@@ -245,14 +245,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         if let data = try? JSONEncoder().encode(Array(dashboardStandardRRHistory.suffix(20_000))) {
             defaults.set(data, forKey: DashboardHistoryKey.standardRRSamples)
         }
-        // Historical v18 RR words are not yet verified milliseconds; do not persist them as such.
+        // Historical v18 HR/time offsets are not verified; purge legacy candidate values.
         defaults.removeObject(forKey: DashboardHistoryKey.historicalRR)
-        if let value = whoopHistoricalHeartRateBPM {
-            defaults.set(value, forKey: DashboardHistoryKey.historicalHR)
-        }
-        if let value = whoopHistoricalTimestampLastUpdatedAt {
-            defaults.set(value, forKey: DashboardHistoryKey.historicalAt)
-        }
+        defaults.removeObject(forKey: DashboardHistoryKey.historicalHR)
+        defaults.removeObject(forKey: DashboardHistoryKey.historicalAt)
     }
 
     private func restoreDashboardHistory() {
@@ -275,8 +271,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
            let samples = try? JSONDecoder().decode([PersistedRRIntervalSample].self, from: data) {
             dashboardStandardRRHistory = Array(samples.suffix(20_000))
         }
-        whoopHistoricalHeartRateBPM = defaults.object(forKey: DashboardHistoryKey.historicalHR) as? Int
-        whoopHistoricalTimestampLastUpdatedAt = defaults.object(forKey: DashboardHistoryKey.historicalAt) as? Date
+        defaults.removeObject(forKey: DashboardHistoryKey.historicalHR)
+        defaults.removeObject(forKey: DashboardHistoryKey.historicalAt)
+        whoopHistoricalHeartRateBPM = nil
+        whoopHistoricalTimestampLastUpdatedAt = nil
         if let data = defaults.data(forKey: DashboardHistoryKey.imuSamples),
            let samples = try? JSONDecoder().decode([WhoopIMUSample].self, from: data) {
             whoopIMUHistorySamples = Array(samples.suffix(20_000))
@@ -929,11 +927,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         let archiveURL = support
             .appendingPathComponent("PulseForge", isDirectory: true)
             .appendingPathComponent("historical-whoop-rr-v1.json")
-        guard let data = try? Data(contentsOf: archiveURL),
-              let contents = String(data: data, encoding: .utf8) else {
-            return "[]"
-        }
-        return contents
+        return HistoricalRRPacketArchive.exportJSON(from: archiveURL)
+            ?? "Archive export unavailable · file could not be decoded · original bytes were not changed"
     }
 
     var historicalRRArchiveRecordCount: Int {
@@ -2141,14 +2136,14 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 let receivedAt = Date()
                 let rawHex = b.map { String(format: "%02X", $0) }.joined()
                 var rr: [Int] = []
-                let physiologicalTimestamp = try? Whoop5RRDecoder.decodeHistoricalTimestampV18(b)
-                let historicalHeartRateBPM = try? Whoop5RRDecoder.decodeHistoricalHeartRateV18(b)
-                whoopHistoricalTimestampLastUpdatedAt = physiologicalTimestamp
-                whoopHistoricalHeartRateBPM = historicalHeartRateBPM
+                // Preserve the complete frame, but withhold candidate HR/time fields:
+                // the WHOOP IPA symbols do not establish these v18 wire offsets.
+                whoopHistoricalTimestampLastUpdatedAt = nil
+                whoopHistoricalHeartRateBPM = nil
                 var decodeError: String?
 
                 do {
-                    rr = try Whoop5RRDecoder.decodeHistoricalV18(b)
+                    rr = try Whoop5RRDecoder.decodeHistoricalV18CandidateRRWords(b)
                     // A zero RR count is a successfully decoded empty interval list,
                     // not a packet/layout failure. Preserve the raw frame and keep
                     // the diagnostic distinct from genuine decode errors.
@@ -2168,8 +2163,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     intervalsMilliseconds: [],
                     rawRRWords: rr,
                     rawFrameHex: rawHex,
-                    heartRateBPM: historicalHeartRateBPM,
-                    physiologicalTimestamp: physiologicalTimestamp,
+                    heartRateBPM: nil,
+                    physiologicalTimestamp: nil,
                     decodeError: decodeError
                 )
                 pendingHistoricalRRArchiveRecords.append(record)
@@ -2178,13 +2173,13 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 } else if let decodeError {
                     whoopHistoricalRRSource = "Type-47 v18 raw frame queued · candidate RR decode rejected · \(decodeError) · pending \(pendingHistoricalRRArchiveRecords.count)"
                 } else {
-                    whoopHistoricalRRSource = "Type-47 v18 raw frame queued · \(rr.count) candidate RR words · units unverified · pending \(pendingHistoricalRRArchiveRecords.count)"
+                    whoopHistoricalRRSource = "Type-47 v18 raw frame queued · \(rr.count) candidate RR words · offsets/units unverified · HR/time withheld · pending \(pendingHistoricalRRArchiveRecords.count)"
                 }
 
                 if let decodeError {
                     return "HISTORICAL_DATA v18 · raw frame retained · RR candidate rejected · \(decodeError) · CRC valid"
                 }
-                return "HISTORICAL_DATA v18 · HR \(historicalHeartRateBPM.map(String.init) ?? "unavailable") bpm · raw RR words \(rr.map(String.init).joined(separator: ",")) · units unverified · band time \(physiologicalTimestamp.map { ISO8601DateFormatter().string(from: $0) } ?? "unverified") · CRC valid"
+                return "HISTORICAL_DATA v18 · candidate RR words \(rr.map(String.init).joined(separator: ",")) · offsets/units unverified · HR/time withheld · CRC valid"
             }
 
             // WHOOP 5 R22 can carry the same 1,244-byte R21 IMU body inside

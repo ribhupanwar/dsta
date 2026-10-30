@@ -131,7 +131,7 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         let legacy = """
         [{"receivedAt":"2026-10-30T00:00:00Z","recordType":47,"revision":18,
           "intervalsMilliseconds":[629,794],"rawFrameHex":"AA01",
-          "heartRateBPM":80,"physiologicalTimestamp":null,"decodeError":null}]
+          "heartRateBPM":80,"physiologicalTimestamp":"2026-10-29T23:59:00Z","decodeError":null}]
         """
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
@@ -140,6 +140,17 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         let migrated = try XCTUnwrap(HistoricalRRPacketArchive.load(from: url).first)
         XCTAssertEqual(migrated.intervalsMilliseconds, [])
         XCTAssertEqual(migrated.rawRRWords, [629, 794])
+        XCTAssertNil(migrated.heartRateBPM)
+        XCTAssertNil(migrated.physiologicalTimestamp)
+
+        let exported = try XCTUnwrap(HistoricalRRPacketArchive.exportJSON(from: url))
+        let exportDecoder = JSONDecoder()
+        exportDecoder.dateDecodingStrategy = .iso8601
+        let exportedRecord = try XCTUnwrap(exportDecoder.decode(
+            [HistoricalRRPacketRecord].self, from: Data(exported.utf8)
+        ).first)
+        XCTAssertNil(exportedRecord.heartRateBPM)
+        XCTAssertNil(exportedRecord.physiologicalTimestamp)
     }
 
     func testArchiveRecordSeparatesVerifiedMillisecondsFromRawWords() throws {
@@ -149,7 +160,7 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
             receivedAt: Date(timeIntervalSince1970: 1_700_000_300),
             recordType: 47, revision: 18, intervalsMilliseconds: [],
             rawRRWords: [629, 794], rawFrameHex: "AA01",
-            heartRateBPM: 80, physiologicalTimestamp: nil, decodeError: nil
+            heartRateBPM: nil, physiologicalTimestamp: nil, decodeError: nil
         )
         _ = try HistoricalRRPacketArchive.append(record, to: url)
         let restored = try XCTUnwrap(HistoricalRRPacketArchive.load(from: url).first)
@@ -172,6 +183,7 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         )
 
         XCTAssertThrowsError(try HistoricalRRPacketArchive.append(record, to: url))
+        XCTAssertNil(HistoricalRRPacketArchive.exportJSON(from: url))
         XCTAssertEqual(try Data(contentsOf: url), corrupt)
     }
 
