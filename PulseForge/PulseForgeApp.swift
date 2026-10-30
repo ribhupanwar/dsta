@@ -582,7 +582,7 @@ struct WhoopMotionCard: View {
                 HStack {
                     motionCount("FRAMES", value: bluetooth.whoopIMUFrameCount)
                     motionCount("SAMPLES", value: bluetooth.whoopIMUSampleCount)
-                    motionCount("WORKOUT", value: bluetooth.workoutWhoopIMUSamples.count)
+                    motionCount("WORKOUT", value: bluetooth.workoutWhoopIMUSampleCount)
                 }
                 Text(bluetooth.whoopIMUStatus)
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
