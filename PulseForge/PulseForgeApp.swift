@@ -291,6 +291,111 @@ struct MoreDashboard: View {
     }
 }
 
+
+struct HealthSourcesDashboard: View {
+    @EnvironmentObject private var health: HealthDataStore
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HeaderView(eyebrow: "CONNECTED APP", title: "Apple Health")
+                VStack(alignment: .leading, spacing: 12) {
+                    Label(health.hasCompletedAuthorizationRequest ? "Health access checked" : "Health access not yet confirmed",
+                          systemImage: "heart.text.square")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(health.hasCompletedAuthorizationRequest ? ForgeColors.lime : ForgeColors.muted)
+                    sourceRow("Steps today", value: health.stepsToday?.formatted() ?? "—")
+                    sourceRow("Sleep duration", value: health.sleepHours.map { String(format: "%.1f h", $0) } ?? "—")
+                    sourceRow("Deep sleep", value: health.deepSleepMinutes.map { "\($0) min" } ?? "—")
+                    sourceRow("REM sleep", value: health.remSleepMinutes.map { "\($0) min" } ?? "—")
+                }
+                .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+                Text("These values are read from Apple Health when permission and source records are available. Missing values stay blank; WHOOP-native measurements are kept separate.")
+                    .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                Text("Use iPhone Settings → Health → Data Access & Devices → PulseForge to review permissions.")
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+            }
+            .padding(18)
+        }
+        .background(ForgeColors.background)
+        .navigationTitle("Apple Health")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func sourceRow(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title).font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+            Spacer()
+            Text(value).font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
+        }
+    }
+}
+
+struct StravaConnectionDashboard: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HeaderView(eyebrow: "CONNECTED APP", title: "Strava")
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Not connected in this build", systemImage: "figure.run")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(ForgeColors.muted)
+                    Text("Strava OAuth and activity sync are not wired into this PulseForge build yet. No account is linked and no Strava data is being imported.")
+                        .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                    Text("Connection status")
+                        .font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                    Text("NOT AUTHORIZED")
+                        .font(.system(size: 12, weight: .bold)).foregroundStyle(ForgeColors.strain)
+                }
+                .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+                Text("This page is intentionally informative rather than showing a dead button. OAuth will be enabled only after the callback, token storage, and revoke flow are implemented.")
+                    .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+            }
+            .padding(18)
+        }
+        .background(ForgeColors.background)
+        .navigationTitle("Strava")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct AboutPulseForgeDashboard: View {
+    private var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "Development"
+        let build = info?["CFBundleVersion"] as? String ?? "—"
+        return "\(version) (\(build))"
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HeaderView(eyebrow: "PULSEFORGE", title: "About")
+                VStack(alignment: .leading, spacing: 12) {
+                    sourceRow("App version", value: appVersion)
+                    sourceRow("Platform", value: "iOS")
+                    sourceRow("Health data", value: "On-device")
+                }
+                .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+                Text("PulseForge is an independent training and health dashboard. WHOOP sensor readings and Apple Health records retain their source labels; unverified metrics are not presented as official WHOOP scores.")
+                    .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+            }
+            .padding(18)
+        }
+        .background(ForgeColors.background)
+        .navigationTitle("About PulseForge")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func sourceRow(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title).font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+            Spacer()
+            Text(value).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+        }
+    }
+}
+
 enum HomeMetric: String, Identifiable {
     case recovery = "Recovery"
     case sleep = "Sleep"
