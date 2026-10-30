@@ -136,6 +136,12 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(accumulator.latestSample?.counter, 102)
     }
 
+    func testRejectsUnknownStepCounterOverrideFlag() {
+        var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
+        frame[64] = 0x20
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame))
+    }
+
     func testUsesHardwareCounterDuringSoftwareOverride() throws {
         var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
         // The selected/software counter is 900, while byte 61 retains the
