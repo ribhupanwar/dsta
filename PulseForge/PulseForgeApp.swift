@@ -19,31 +19,24 @@ struct PulseForgeApp: App {
 }
 
 enum ForgeTab: String, CaseIterable {
-    case today = "Today"
-    case sleep = "Sleep"
-    case strain = "Strain"
-    case recovery = "Recovery"
-    case activity = "Activity"
-    case run = "Run"
-    case device = "WHOOP"
+    case home = "Home"
+    case health = "Health"
+    case community = "Community"
+    case more = "More"
 
     var symbol: String {
         switch self {
-        case .today: "circle.grid.2x2.fill"
-        case .sleep: "moon.zzz.fill"
-        case .strain: "flame.fill"
-        case .recovery: "heart.fill"
-        case .activity: "list.bullet.rectangle"
-        case .run: "figure.run"
-        case .device: "waveform.path.ecg"
+        case .home: "house.fill"
+        case .health: "heart.text.square"
+        case .community: "person.3.fill"
+        case .more: "ellipsis"
         }
     }
 }
-
 struct MainTabView: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
-    @State private var selected: ForgeTab = .today
+    @State private var selected: ForgeTab = .home
     @StateObject private var bluetooth = WhoopBluetoothManager()
     @StateObject private var gpsRun = GPSRunStore()
     @AppStorage("pulseforge.running.maxHeartRate") private var measuredMaxHeartRate = 0
@@ -60,13 +53,10 @@ struct MainTabView: View {
             ForgeColors.background.ignoresSafeArea()
             Group {
                 switch selected {
-                case .today: TodayDashboard()
-                case .sleep: SleepDashboard()
-                case .strain: StrainDashboard()
-                case .recovery: RecoveryDashboard()
-                case .activity: ActivityDashboard()
-                case .run: RunningDashboard()
-                case .device: DeviceDashboard()
+                case .home: TodayDashboard()
+                case .health: HealthHubDashboard()
+                case .community: CommunityDashboard()
+                case .more: MoreDashboard()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -96,35 +86,22 @@ struct ForgeTabBar: View {
     @Binding var selected: ForgeTab
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 0) {
             ForEach(ForgeTab.allCases, id: \.self) { tab in
                 let isSelected = selected == tab
                 Button {
-                    withAnimation(.snappy(duration: 0.22)) { selected = tab }
+                    withAnimation(.easeInOut(duration: 0.18)) { selected = tab }
                 } label: {
-                    VStack(spacing: 6) {
+                    VStack(spacing: 5) {
                         Image(systemName: tab.symbol)
-                            .font(.system(size: 17, weight: .semibold))
-                            .frame(height: 20)
-                        Text(tab.rawValue.uppercased())
-                            .font(.system(size: 8, weight: .bold))
-                            .tracking(0.45)
+                            .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
+                            .frame(height: 23)
+                        Text(tab.rawValue)
+                            .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.8)
                     }
-                    .foregroundStyle(isSelected ? ForgeColors.lime : ForgeColors.muted)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 10)
-                    .padding(.bottom, 9)
-                    .background {
-                        if isSelected {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(ForgeColors.lime.opacity(0.10))
-                                .overlay(alignment: .top) {
-                                    Capsule().fill(ForgeColors.lime).frame(width: 22, height: 2)
-                                }
-                        }
-                    }
+                    .foregroundStyle(isSelected ? .white : ForgeColors.muted)
+                    .frame(maxWidth: .infinity).frame(height: 51)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -132,17 +109,71 @@ struct ForgeTabBar: View {
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 22)
+        .padding(.horizontal, 10).padding(.top, 9).padding(.bottom, 23)
         .background {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(alignment: .top) {
-                    Rectangle().fill(ForgeColors.stroke).frame(height: 1)
-                }
+            ForgeColors.background
+                .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.10)).frame(height: 0.5) }
                 .ignoresSafeArea(edges: .bottom)
         }
+    }
+}
+
+struct HealthHubDashboard: View {
+    @State private var page: HealthPage = .recovery
+    enum HealthPage: String, CaseIterable { case recovery = "Recovery"; case sleep = "Sleep"; case strain = "Strain" }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack { Text("Health").font(.system(size: 27, weight: .semibold)); Spacer() }
+                .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 15)
+            HStack(spacing: 8) {
+                ForEach(HealthPage.allCases, id: \.self) { item in
+                    Button { page = item } label: {
+                        Text(item.rawValue).font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(page == item ? ForgeColors.background : ForgeColors.muted)
+                            .frame(maxWidth: .infinity).padding(.vertical, 10)
+                            .background(page == item ? Color.white : ForgeColors.card, in: Capsule())
+                    }.buttonStyle(.plain)
+                }
+            }.padding(.horizontal, 18).padding(.bottom, 12)
+            Group {
+                switch page {
+                case .recovery: RecoveryDashboard()
+                case .sleep: SleepDashboard()
+                case .strain: StrainDashboard()
+                }
+            }
+        }
+    }
+}
+
+struct CommunityDashboard: View {
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "person.3.fill").font(.system(size: 34)).foregroundStyle(ForgeColors.lime)
+            Text("Community").font(.system(size: 27, weight: .semibold))
+            Text("Teams, challenges and friend activity will appear here when community services are connected.")
+                .font(.system(size: 13)).foregroundStyle(ForgeColors.muted).multilineTextAlignment(.center).padding(.horizontal, 34)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity).background(ForgeColors.background)
+    }
+}
+
+struct MoreDashboard: View {
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("YOUR DATA") {
+                    NavigationLink("Activity history", destination: ActivityDashboard())
+                    NavigationLink("Running", destination: RunningDashboard())
+                    NavigationLink("WHOOP device", destination: DeviceDashboard())
+                }
+                Section("INTEGRATIONS") {
+                    Label("Apple Health", systemImage: "heart.text.square")
+                    Label("Strava", systemImage: "figure.run")
+                }
+            }
+            .scrollContentBackground(.hidden).background(ForgeColors.background).navigationTitle("More")
+        }.preferredColorScheme(.dark)
     }
 }
 
