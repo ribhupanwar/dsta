@@ -42,6 +42,14 @@ struct MainTabView: View {
     @State private var selected: ForgeTab = .today
     @StateObject private var bluetooth = WhoopBluetoothManager()
     @StateObject private var gpsRun = GPSRunStore()
+    @AppStorage("pulseforge.running.maxHeartRate") private var measuredMaxHeartRate = 0
+
+    private func refreshSavedWorkoutLoad() {
+        insights.refreshWorkoutLoad(
+            sessions: bluetooth.workoutHistory,
+            measuredMaxHeartRate: measuredMaxHeartRate
+        )
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -68,6 +76,9 @@ struct MainTabView: View {
             ForgeTabBar(selected: $selected)
         }
         .ignoresSafeArea(.keyboard)
+        .onAppear { refreshSavedWorkoutLoad() }
+        .onReceive(bluetooth.$workoutHistory) { _ in refreshSavedWorkoutLoad() }
+        .onChange(of: measuredMaxHeartRate) { _, _ in refreshSavedWorkoutLoad() }
         .onChange(of: health.isAuthorized) { _, authorized in
             if authorized { insights.refresh() }
         }
