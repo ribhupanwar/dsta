@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feature/export-whoop-rr-raw-archive
+      - audit/whoop-r24-step-counter-dispatch
     paths:
       - "PulseForge/**"
       - "project.yml"
