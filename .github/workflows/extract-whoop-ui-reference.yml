@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   extract-reference:
@@ -94,6 +95,25 @@ jobs:
             cp "$file" "reference-report/raw-text/$rel"
           done
           echo "Text and asset metadata export finished."
+
+      - name: Extract and inspect the latest PulseForge IPA artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p reference-report/pulseforge-ipa /tmp/pulseforge-ipa-artifact /tmp/pulseforge-ipa-unpacked
+          gh run download 41026786740 --repo "$GITHUB_REPOSITORY" --name pulseforge-unsigned-ipa --dir /tmp/pulseforge-ipa-artifact
+          IPA="$(find /tmp/pulseforge-ipa-artifact -type f -name '*.ipa' -print -quit)"
+          test -n "$IPA"
+          shasum -a 256 "$IPA" | tee reference-report/pulseforge-ipa/sha256.txt
+          unzip -q "$IPA" -d /tmp/pulseforge-ipa-unpacked
+          PF_APP="$(find /tmp/pulseforge-ipa-unpacked -type d -name '*.app' -print -quit)"
+          test -n "$PF_APP"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PF_APP/Info.plist" > reference-report/pulseforge-ipa/identity.txt
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PF_APP/Info.plist" >> reference-report/pulseforge-ipa/identity.txt || true
+          find "$PF_APP" -type f | sed "s#^$PF_APP/##" | sort > reference-report/pulseforge-ipa/resource-inventory.txt
+          echo "PulseForge IPA #256 extracted and inventoried."
 
       - name: Build PulseForge source comparison inventory
         shell: bash
