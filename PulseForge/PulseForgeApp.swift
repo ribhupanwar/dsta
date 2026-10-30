@@ -2123,6 +2123,7 @@ struct DeviceDashboard: View {
                     .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     WhoopRRCard()
                     WhoopMotionCard()
+                    WhoopStepSignalMonitorCard()
                     if bluetooth.connectedName != nil {
                         Button { bluetooth.disconnect() } label: {
                             Label("DISCONNECT BAND", systemImage: "xmark.circle")
@@ -3571,5 +3572,49 @@ struct RecoveryDashboard: View {
             .padding(.top, 14)
         }
         .refreshable { insights.refresh() }
+    }
+}
+
+
+private struct WhoopStepSignalMonitorCard: View {
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+    private func value(_ number: Int?) -> String { number.map(String.init) ?? "—" }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("STEP SIGNAL MONITOR").font(.system(size: 10, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
+                Spacer()
+                Text(bluetooth.stepSignalFrameCount == 0 ? "NO SIGNAL" : "CAPTURING")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(bluetooth.stepSignalFrameCount == 0 ? ForgeColors.muted : ForgeColors.lime)
+            }
+            Text(bluetooth.stepSignalLastOutcome).font(.system(size: 11, weight: .medium)).foregroundStyle(.white)
+            HStack {
+                metric("LAST PACKET", bluetooth.stepSignalLastPacketType.map { "TYPE-\\($0)" } ?? "—")
+                metric("BYTES", bluetooth.stepSignalLastPacketLength == 0 ? "—" : String(bluetooth.stepSignalLastPacketLength))
+                metric("FRAMES", String(bluetooth.stepSignalFrameCount))
+            }
+            HStack {
+                metric("SELECTED*", value(bluetooth.stepSignalSelectedCounter))
+                metric("HARDWARE*", value(bluetooth.stepSignalHardwareCounter))
+            }
+            HStack {
+                metric("CADENCE RAW", value(bluetooth.stepSignalCadence))
+                metric("ACTIVITY RAW", value(bluetooth.stepSignalActivity))
+                metric("OVERRIDE", bluetooth.stepSignalSoftwareOverride.map { $0 ? "YES" : "NO" } ?? "—")
+            }
+            Text(bluetooth.stepSignalLastSeenAt.map { "LAST RECEIVED · \\($0.formatted(date: .omitted, time: .standard))" } ?? "No Type-40 packet received yet")
+                .font(.system(size: 8, design: .monospaced)).foregroundStyle(ForgeColors.muted)
+            Text("*Candidate protocol fields; not independently verified against WHOOP's executable.")
+                .font(.system(size: 8)).foregroundStyle(ForgeColors.muted)
+        }
+        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
+    }
+    private func metric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.system(size: 7, weight: .bold)).foregroundStyle(ForgeColors.muted)
+            Text(value).font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(.white)
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
