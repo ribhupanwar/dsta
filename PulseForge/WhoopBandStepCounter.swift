@@ -12,7 +12,7 @@ struct WhoopBandStepCounter {
         let counter: Int
         /// Type-40 byte 64 selects software override vs. hardware pedometer.
         /// A source transition is re-anchored, never counted as a step delta.
-        let softwareOverride: Bool? = nil
+        var softwareOverride: Bool? = nil
     }
 
     struct Snapshot: Codable {
