@@ -78,9 +78,10 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         let records = HistoricalRRPacketArchive.load(from: url)
         let v18 = records.filter { $0.revision == 18 }
         let r21 = records.filter { $0.revision == 21 }
-        XCTAssertEqual(v18.count, HistoricalRRPacketArchive.maximumRecordsForOtherRevisions)
+        XCTAssertEqual(v18.count, HistoricalRRPacketArchive.maximumRecordsForOtherRevisions + 1)
         XCTAssertEqual(r21.count, HistoricalRRPacketArchive.maximumRecordsForOtherRevisions)
-        XCTAssertEqual(v18.first?.rawFrameHex, "V18-1")
+        XCTAssertEqual(v18.first?.rawFrameHex, "V18-0")
+        XCTAssertEqual(v18.last?.rawFrameHex, "V18-500")
         XCTAssertEqual(r21.first?.rawFrameHex, "R21-1")
     }
 
