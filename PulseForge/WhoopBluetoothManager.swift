@@ -123,6 +123,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoopBandStepCounter = WhoopBandStepCounter()
     private var lastWhoopStepSnapshotPersistedAt: Date?
     private var lastWhoopStepTimelineAt: Date?
+    private var lastHistoricalStepDiagnosticsAt: Date?
     @Published private(set) var whoopEventPacketCount = 0
     @Published private(set) var whoopLastEventID: Int?
     @Published private(set) var whoopLastEventFrameHex = "none"
@@ -2466,7 +2467,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 // offsets 57...58. Keep the ingest path lossless, but throttle
                 // SwiftUI publications and diagnostic timeline writes during bulk
                 // history backfill. Step semantics remain experimental.
-                let publishStepDiagnostics = stepSignalLastSeenAt.map {
+                let publishStepDiagnostics = lastHistoricalStepDiagnosticsAt.map {
                     receivedAt.timeIntervalSince($0) >= 1
                 } ?? true
                 let logStepTimeline = lastWhoopStepTimelineAt.map {
@@ -2480,6 +2481,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         publish: publishStepDiagnostics
                     )
                     if publishStepDiagnostics {
+                        lastHistoricalStepDiagnosticsAt = receivedAt
                         stepSignalLastPacketType = 47
                         stepSignalLastPacketLength = b.count
                         stepSignalLastSeenAt = receivedAt
@@ -2496,6 +2498,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     }
                 } catch {
                     if publishStepDiagnostics {
+                        lastHistoricalStepDiagnosticsAt = receivedAt
                         stepSignalLastSeenAt = receivedAt
                         stepSignalLastOutcome = "Historical v18 step-counter decode rejected · \(error)"
                     }
