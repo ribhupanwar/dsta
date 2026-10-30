@@ -32,6 +32,13 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(frame), [1108])
     }
 
+    func testDecodesRRFromLatestWHOOP5042Type40DeviceCapture() throws {
+        // 2026-10-30 capture: HR 96 bpm, count 2, raw RR ticks 957 and 541.
+        let frame = bytes("AA011800010022E12802462CE46A51586002BD031D020000000001006ABABCD5")
+        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame), [957, 541])
+        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(frame), [935, 529])
+    }
+
     func testOmitsZeroPaddingFromRealtimeRRIntervals() throws {
         var frame = bytes("AA011800010022E128029EA0266AAE4762025B024B020000000001005ED515DC")
         frame[18] = 0; frame[19] = 0
