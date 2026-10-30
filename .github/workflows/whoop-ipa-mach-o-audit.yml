@@ -120,12 +120,17 @@ jobs:
           xrefs = []
           functions = set()
           for address, value in hits:
-              cmd = subprocess.run(["r2", "-q", "-c", f"axtj @ 0x{address:x}", binary], text=True, capture_output=True, timeout=25)
               try:
-                  refs = json.loads(cmd.stdout.strip() or "[]")
-              except json.JSONDecodeError:
+                  cmd = subprocess.run(["r2", "-q", "-c", f"axtj @ 0x{address:x}", binary], text=True, capture_output=True, timeout=8)
+                  try:
+                      refs = json.loads(cmd.stdout.strip() or "[]")
+                  except json.JSONDecodeError:
+                      refs = []
+                  status = "xref scan completed"
+              except subprocess.TimeoutExpired:
                   refs = []
-              xrefs.append(f"## 0x{address:x} {value}\n{json.dumps(refs, indent=2)}")
+                  status = "xref scan timed out after 8 seconds; continuing with remaining strings"
+              xrefs.append(f"## 0x{address:x} {value}\n{status}\n{json.dumps(refs, indent=2)}")
               for ref in refs if isinstance(refs, list) else []:
                   origin = ref.get("from") or ref.get("fcn_addr")
                   if origin is not None:
