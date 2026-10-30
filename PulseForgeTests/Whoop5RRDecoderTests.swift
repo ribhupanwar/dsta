@@ -63,6 +63,41 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(try Whoop5RRDecoder.decodeHistoricalV18CandidateRRWords(frame), [602, 613])
     }
 
+    func testDecodesHardwareVerifiedHistoricalV18TimestampHRAndRRMilliseconds() throws {
+        // Real WHOOP 5 v18 frame independently cross-checked against the NOOP hardware capture.
+        let frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
+        let decoded = try Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame)
+        XCTAssertEqual(decoded.timestamp.timeIntervalSince1970, 1_780_916_150, accuracy: 0.001)
+        XCTAssertEqual(decoded.heartRateBPM, 102)
+        XCTAssertEqual(decoded.rawRRWords, [602, 613])
+        // Historical v18 values are already milliseconds, not Type-40 1/1024s ticks.
+        XCTAssertEqual(decoded.rrIntervalsMilliseconds, [602, 613])
+    }
+
+    func testDecodesHistoricalV18FromUsersRealArchiveCapture() throws {
+        let frame = bytes("AA01740001003FB12F128037170700FA9AE36A9939004B015F030000000000000000992C074B0000FF4034793C00005CBF71FD30BEC3B5FF3E6C01F200000000000000000031013B01F90C900A010C060C10000000000000000000000000000000000000000000000100A1B724230000001A30A8C00000002AC67557")
+        let decoded = try Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame)
+        XCTAssertEqual(decoded.timestamp.timeIntervalSince1970, 1_793_301_229, accuracy: 0.001)
+        XCTAssertEqual(decoded.heartRateBPM, 75)
+        XCTAssertEqual(decoded.rawRRWords, [863])
+        XCTAssertEqual(decoded.rrIntervalsMilliseconds, [863])
+    }
+
+    func testHistoricalV18ZeroHeartRateMeansUnavailableButKeepsRR() throws {
+        var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
+        frame[22] = 0
+        let decoded = try Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame)
+        XCTAssertNil(decoded.heartRateBPM)
+        XCTAssertEqual(decoded.rrIntervalsMilliseconds, [602, 613])
+    }
+
+    func testHistoricalV18RejectsOutOfRangeRRMilliseconds() {
+        var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
+        frame[24] = 1
+        frame[25] = 0
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame))
+    }
+
     func testRealtimeCandidateWithZeroCountReturnsEmptyWordList() throws {
         // A zero candidate count yields no words; never synthesize RR values.
         var frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
