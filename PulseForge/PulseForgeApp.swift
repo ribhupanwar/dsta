@@ -80,7 +80,7 @@ struct MainTabView: View {
         .onReceive(bluetooth.$workoutHistory) { _ in refreshSavedWorkoutLoad() }
         .onReceive(health.$sleepHours) { value in insights.updateHealthKitSleep(value) }
         .onChange(of: measuredMaxHeartRate) { _, _ in refreshSavedWorkoutLoad() }
-        .onChange(of: health.isAuthorized) { _, authorized in
+        .onChange(of: health.hasCompletedAuthorizationRequest) { _, authorized in
             if authorized { insights.refresh() }
         }
     }
@@ -1667,7 +1667,7 @@ struct DeviceDashboard: View {
                         Text(health.isAuthorized ? "REQUESTED" : "NOT SET UP")
                             .font(.system(size: 9, weight: .bold)).foregroundStyle(health.isAuthorized ? ForgeColors.lime : ForgeColors.muted)
                     }
-                    Text("Allow access to heart rate, HRV, resting heart rate, respiratory rate, blood oxygen, sleep and workouts.")
+                    Text("\(health.authorizationRequestStatus). HealthKit does not disclose read-permission choices to apps; check Apple Health settings if data is missing.")
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                     Button { Task { await health.requestAccess() } } label: {
                         Text(health.isAuthorized ? "ACCESS REQUESTED" : "CONNECT APPLE HEALTH")
@@ -1688,7 +1688,8 @@ struct DeviceDashboard: View {
 
 @MainActor
 final class HealthDataStore: ObservableObject {
-    @Published private(set) var isAuthorized = false
+    @Published private(set) var hasCompletedAuthorizationRequest = false
+    @Published private(set) var authorizationRequestStatus = "Apple Health access has not been requested"
     @Published private(set) var heartRate: Int?
     @Published private(set) var hrvMilliseconds: Double?
     @Published private(set) var restingHeartRate: Int?
@@ -1720,7 +1721,7 @@ final class HealthDataStore: ObservableObject {
     private var workoutObserverQuery: HKObserverQuery?
 
     func refresh() {
-        guard isAuthorized, !isRefreshing else { return }
+        guard hasCompletedAuthorizationRequest, !isRefreshing else { return }
         isRefreshing = true
         let group = DispatchGroup()
         group.enter()
@@ -1743,7 +1744,10 @@ final class HealthDataStore: ObservableObject {
     }
 
     func requestAccess() async {
-        guard HKHealthStore.isHealthDataAvailable() else { return }
+        guard HKHealthStore.isHealthDataAvailable() else {
+            authorizationRequestStatus = "Apple Health is unavailable on this device"
+            return
+        }
         // HealthKit may not expose every optional quantity/category type on
         // every OS/device configuration. Build the read set only from types
         // that are actually available instead of force-unwrapping them.
@@ -1762,7 +1766,8 @@ final class HealthDataStore: ObservableObject {
         }
         readTypes.insert(HKObjectType.workoutType())
         guard !readTypes.isEmpty else {
-            isAuthorized = false
+            hasCompletedAuthorizationRequest = false
+            authorizationRequestStatus = "No supported HealthKit types are available"
             return
         }
         var shareTypes = Set<HKSampleType>()
@@ -1778,11 +1783,29 @@ final class HealthDataStore: ObservableObject {
         }
         do {
             try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
-            isAuthorized = true
+            // HealthKit intentionally does not reveal read grants to the app.
+            // Completion means only that the authorization request was processed.
+            hasCompletedAuthorizationRequest = true
+            let workoutWrite = store.authorizationStatus(for: HKObjectType.workoutType())
+            let heartRateWrite = HKObjectType.quantityType(forIdentifier: .heartRate)
+                .map { store.authorizationStatus(for: $0) }
+            let workoutLabel = Self.writeAuthorizationLabel(workoutWrite)
+            let heartRateLabel = heartRateWrite.map(Self.writeAuthorizationLabel) ?? "unavailable"
+            authorizationRequestStatus = "Request processed · Workout write: \(workoutLabel) · HR write: \(heartRateLabel) · Read grants are private to HealthKit"
             startWorkoutObserver()
             refresh()
         } catch {
-            isAuthorized = false
+            hasCompletedAuthorizationRequest = false
+            authorizationRequestStatus = "HealthKit authorization request failed · \(error.localizedDescription)"
+        }
+    }
+
+    private static func writeAuthorizationLabel(_ status: HKAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined: return "not determined"
+        case .sharingDenied: return "denied"
+        case .sharingAuthorized: return "authorized"
+        @unknown default: return "unknown"
         }
     }
 
