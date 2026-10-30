@@ -97,6 +97,40 @@ enum Whoop5RRDecoder {
         return try decodeRawWords(frame, countOffset: 23, wordsOffset: 24)
     }
 
+    /// The Gen5 v18 band-native counter is decoded independently from RR.
+    /// A malformed RR word must not discard an otherwise valid step-counter sample.
+    struct HistoricalV18StepCounter: Equatable {
+        let timestamp: Date
+        let stepMotionCounter: Int
+        let stepCadenceRaw: Int
+        let activityClassRaw: Int
+    }
+
+    static func decodeHistoricalV18StepCounter(_ frame: [UInt8]) throws -> HistoricalV18StepCounter {
+        guard frame.count >= 64, frame[0] == 0xAA, frame[1] == 0x01 else {
+            throw DecodeError.invalidFrame
+        }
+        guard Int(frame[8]) == 47 else {
+            throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
+        }
+        guard Int(frame[9]) == 18 else {
+            throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
+        }
+        let seconds = UInt32(frame[15])
+            | (UInt32(frame[16]) << 8)
+            | (UInt32(frame[17]) << 16)
+            | (UInt32(frame[18]) << 24)
+        guard seconds >= 1_577_836_800, seconds <= 4_102_444_800 else {
+            throw DecodeError.invalidFrame
+        }
+        return HistoricalV18StepCounter(
+            timestamp: Date(timeIntervalSince1970: TimeInterval(seconds)),
+            stepMotionCounter: Int(frame[57]) | (Int(frame[58]) << 8),
+            stepCadenceRaw: Int(frame[59]),
+            activityClassRaw: Int(frame[63])
+        )
+    }
+
     /// Decode hardware-verified WHOOP 5.0 Type-47 revision-18 biometrics.
     /// Caller must validate the complete outer frame CRC before calling.
     /// RR words are already milliseconds; unlike Type-40 ticks, do NOT scale by 1000/1024.
@@ -136,16 +170,15 @@ enum Whoop5RRDecoder {
             throw DecodeError.invalidIntervalValue(value)
         }
 
+        let stepCounter = try decodeHistoricalV18StepCounter(frame)
         return HistoricalV18Biometrics(
             timestamp: Date(timeIntervalSince1970: TimeInterval(seconds)),
             heartRateBPM: heartRate,
             rawRRWords: words,
             rrIntervalsMilliseconds: intervals,
-            // OpenStrap/NOOP Gen5 references decode the complete little-endian
-            // 16-bit counter; byte[57] alone silently loses its high byte.
-            stepMotionCounter: Int(frame[57]) | (Int(frame[58]) << 8),
-            stepCadenceRaw: Int(frame[59]),
-            activityClassRaw: Int(frame[63])
+            stepMotionCounter: stepCounter.stepMotionCounter,
+            stepCadenceRaw: stepCounter.stepCadenceRaw,
+            activityClassRaw: stepCounter.activityClassRaw
         )
     }
 
