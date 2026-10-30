@@ -168,6 +168,29 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         XCTAssertEqual(restored.rawRRWords, [629, 794])
     }
 
+    func testVerifiedV18PhysiologySurvivesArchiveReload() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let timestamp = Date(timeIntervalSince1970: 1_780_916_150)
+        let record = HistoricalRRPacketRecord(
+            receivedAt: timestamp.addingTimeInterval(3),
+            recordType: 47,
+            revision: 18,
+            intervalsMilliseconds: [602, 613],
+            rawRRWords: [602, 613],
+            rawFrameHex: "AA0174",
+            heartRateBPM: 102,
+            physiologicalTimestamp: timestamp,
+            decodeError: nil
+        )
+        _ = try HistoricalRRPacketArchive.append(record, to: url)
+        let restored = try XCTUnwrap(HistoricalRRPacketArchive.load(from: url).first)
+        XCTAssertEqual(restored.intervalsMilliseconds, [602, 613])
+        XCTAssertEqual(restored.rawRRWords, [602, 613])
+        XCTAssertEqual(restored.heartRateBPM, 102)
+        XCTAssertEqual(restored.physiologicalTimestamp, timestamp)
+    }
+
     func testAppendDoesNotOverwriteCorruptExistingArchive() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
