@@ -3549,13 +3549,13 @@ private struct WhoopStepSignalMonitorCard: View {
             HStack {
                 Text("STEP SIGNAL MONITOR").font(.system(size: 10, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
                 Spacer()
-                Text(bluetooth.stepSignalFrameCount == 0 ? "NO SIGNAL" : "CAPTURING")
+                Text(bluetooth.stepSignalFrameCount == 0 ? "NO SIGNAL" : "FRAME SEEN")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(bluetooth.stepSignalFrameCount == 0 ? ForgeColors.muted : ForgeColors.lime)
             }
             Text(bluetooth.stepSignalLastOutcome).font(.system(size: 11, weight: .medium)).foregroundStyle(.white)
             HStack {
-                metric("LAST PACKET", bluetooth.stepSignalLastPacketType.map { "TYPE-\\($0)" } ?? "—")
+                metric("LAST PACKET", bluetooth.stepSignalLastPacketType.map { "TYPE-\($0)" } ?? "—")
                 metric("BYTES", bluetooth.stepSignalLastPacketLength == 0 ? "—" : String(bluetooth.stepSignalLastPacketLength))
                 metric("FRAMES", String(bluetooth.stepSignalFrameCount))
             }
@@ -3568,7 +3568,7 @@ private struct WhoopStepSignalMonitorCard: View {
                 metric("ACTIVITY RAW", value(bluetooth.stepSignalActivity))
                 metric("OVERRIDE", bluetooth.stepSignalSoftwareOverride.map { $0 ? "YES" : "NO" } ?? "—")
             }
-            Text(bluetooth.stepSignalLastSeenAt.map { "LAST RECEIVED · \\($0.formatted(date: .omitted, time: .standard))" } ?? "No Type-40 packet received yet")
+            Text(bluetooth.stepSignalLastSeenAt.map { "LAST RECEIVED · \($0.formatted(date: .omitted, time: .standard))" } ?? "No Type-40 packet received yet")
                 .font(.system(size: 8, design: .monospaced)).foregroundStyle(ForgeColors.muted)
             Text("*Candidate protocol fields; not independently verified against WHOOP's executable.")
                 .font(.system(size: 8)).foregroundStyle(ForgeColors.muted)
