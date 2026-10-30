@@ -125,6 +125,28 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         XCTAssertNil(restored.physiologicalTimestamp)
     }
 
+    func testLegacyRawV18FrameMigratesToVerifiedPhysiology() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let rawFrame = "aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817"
+        let legacy = """
+        [{"receivedAt":"2026-10-30T00:00:00Z","recordType":47,"revision":18,
+          "intervalsMilliseconds":[629,794],"rawRRWords":[629,794],
+          "rawFrameHex":"\(rawFrame)","heartRateBPM":80,
+          "physiologicalTimestamp":"2026-10-29T23:59:00Z","decodeError":null}]
+        """
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try Data(legacy.utf8).write(to: url)
+
+        let migrated = try XCTUnwrap(HistoricalRRPacketArchive.loadThrowing(from: url).first)
+        XCTAssertEqual(migrated.intervalsMilliseconds, [602, 613])
+        XCTAssertEqual(migrated.rawRRWords, [602, 613])
+        XCTAssertEqual(migrated.heartRateBPM, 102)
+        XCTAssertEqual(migrated.physiologicalTimestamp, Date(timeIntervalSince1970: 1_780_916_150))
+        XCTAssertTrue(migrated.physiologyLayoutVerified)
+    }
+
     func testLegacyV18MillisecondsFieldMigratesToUnverifiedRawWords() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
