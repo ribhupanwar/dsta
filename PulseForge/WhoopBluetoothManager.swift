@@ -75,7 +75,6 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var lastHeartRateAt: Date?
     @Published private(set) var whoopProtocolDiagnostics = "No WHOOP 5.0 protocol frame decoded yet"
     @Published private(set) var whoopRealtimePacketCount = 0
-    private var lastWhoopRealtimeHRAt: Date?
     /// Latest RR intervals from the realtime type-40 stream only.
     @Published private(set) var whoopRRIntervalsMilliseconds: [Int] = []
     @Published private(set) var whoopStandardRRIntervalsMilliseconds: [Int] = []
@@ -84,6 +83,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopStandardHeartRateRawFrameHistory: [String] = []
     /// Recent CRC-valid Type-40 frames, retained verbatim for independent layout verification.
     @Published private(set) var whoopRealtimeRRRawFrameHistory: [String] = []
+    /// Candidate fields extracted from NOOP-derived Type-40 offsets; never treated as HR or milliseconds.
+    @Published private(set) var whoopRealtimeCandidateRRWords: [Int] = []
+    @Published private(set) var whoopRealtimeCandidateByteAt16: Int?
+    @Published private(set) var whoopRealtimeCandidateStatus = "No Type-40 candidate frame captured"
     /// Rolling realtime RR window for live diagnostics; never used as overnight HRV.
     @Published private(set) var whoopRRWindowMilliseconds: [Int] = []
     /// Short-window RMSSD from live type-40 RR only; never overnight HRV.
@@ -133,8 +136,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoopPacketTypeCountsByChannel: [String: [Int: Int]] = [:]
     private var whoopLastPacketTypeByChannel: [String: Int] = [:]
     private var whoopRejectedFrameCountsByChannel: [String: Int] = [:]
-    /// True only after at least one CRC-valid type-40 HR frame in this connection.
-    private var whoop5HRDataObserved = false
+    /// True after a CRC-valid Type-40 frame arrives; its inner HR/RR fields remain unverified.
+    private var whoop5Type40FrameObserved = false
     @Published private(set) var whoopConnectionGeneration = 0
     @Published private(set) var whoopSessionPhase = "Disconnected"
     @Published private(set) var heartRateUpdateCount = 0
@@ -973,7 +976,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP 5.0 CLIENT_HELLO sent: \(whoop5HelloSent ? "yes" : "no")",
             "WHOOP 5.0 CLIENT_HELLO write pending: \(whoop5HelloWritePending ? "yes" : "no")",
             "WHOOP realtime HR enable command sent: \(whoop5HRStreamEnableSent ? "yes" : "no")",
-            "WHOOP realtime HR data observed (type 40): \(whoop5HRDataObserved ? "yes" : "no")",
+            "WHOOP Type-40 frame observed (inner fields unverified): \(whoop5Type40FrameObserved ? "yes" : "no")",
             "WHOOP realtime HR ON event confirmed: \(whoop5HRStreamConfirmed ? "yes" : "no")",
             "WHOOP Type-48 EVENT counts by channel: \(whoopEventCountsByChannel.keys.sorted().map { "\($0)=\(whoopEventCountsByChannel[$0] ?? 0)" }.joined(separator: ", ").isEmpty ? "none" : whoopEventCountsByChannel.keys.sorted().map { "\($0)=\(whoopEventCountsByChannel[$0] ?? 0)" }.joined(separator: ", "))",
             "WHOOP event IDs · total: \(whoopEventPacketCount) · ID 33: \(whoopEvent33Count) · ID 34: \(whoopEvent34Count) · last ID: \(whoopLastEventID.map(String.init) ?? "none") · last channel: \(whoopLastEventChannel)",
@@ -990,6 +993,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP latest CRC-valid raw IMU frame hex (outer type 43 · inner 0x2B/R21): \(whoopIMULastRawFrameHex)",
             "WHOOP RR state: \(whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · source: \(whoopRRSource) · last RR update: \(whoopRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
+            "WHOOP Type-40 candidate fields: \(whoopRealtimeCandidateStatus) · byte[16]=\(whoopRealtimeCandidateByteAt16.map(String.init) ?? "unavailable") · raw words=\(whoopRealtimeCandidateRRWords.map(String.init).joined(separator: ","))",
             "WHOOP standard 2A37 raw notifications: \(whoopStandardHeartRateRawFrameHistory.count) retained · latest: \(whoopStandardHeartRateRawFrameHistory.last ?? "none")",
             "WHOOP standard 2A37 RR: \(whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · last update: \(whoopStandardRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP historical sync: \(whoopHistorySyncStatus)",
@@ -1196,7 +1200,6 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         pendingCharacteristicServices.removeAll()
         pendingDescriptorCharacteristics.removeAll()
         gattCharacteristicDiscoveryErrors.removeAll()
-        lastWhoopRealtimeHRAt = nil
         discoveredProfile.removeAll()
         vendorNotificationStates.removeAll()
         vendorNotificationPayloads.removeAll()
@@ -1236,7 +1239,10 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5HRStallRecoveryAttempted = false
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
-        whoop5HRDataObserved = false
+        whoop5Type40FrameObserved = false
+        whoopRealtimeCandidateRRWords.removeAll()
+        whoopRealtimeCandidateByteAt16 = nil
+        whoopRealtimeCandidateStatus = "No Type-40 candidate frame captured"
         whoop5AutoIMUStartRequested = false
         whoop5AutoIMUEnabled = false
         whoop5IMUModeEnableSequence = nil
@@ -1395,7 +1401,10 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoop5PostHelloNotifyRetryAttempted.removeAll()
         whoop5HRStreamEnableSent = false
         whoop5HRStreamConfirmed = false
-        whoop5HRDataObserved = false
+        whoop5Type40FrameObserved = false
+        whoopRealtimeCandidateRRWords.removeAll()
+        whoopRealtimeCandidateByteAt16 = nil
+        whoopRealtimeCandidateStatus = "No Type-40 candidate frame captured"
         whoop5AutoIMUStartRequested = false
         whoop5AutoIMUEnabled = false
         whoop5RawStreamStopWorkItem?.cancel()
@@ -1408,7 +1417,6 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopRRIntervalsMilliseconds.removeAll()
         whoopRRWindowMilliseconds.removeAll()
         whoopLiveRMSSDMilliseconds = nil
-        lastWhoopRealtimeHRAt = nil
         whoopRRLastUpdatedAt = nil
         whoopRRSource = "Waiting for WHOOP RR intervals"
         whoop5PendingWrites.removeAll()
@@ -1712,9 +1720,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             lastBLEEvent = "Standard HR notification received · raw bytes retained · payload could not be parsed"
             return
         }
-        // Capture standard BLE RR independently even while WHOOP Type-40 HR is
-        // fresh. Keep sources separate; 2A37 RR must never overwrite Type-40 RR
-        // or contribute to its RMSSD window.
+        // Type-40 inner fields remain unverified. Until matched to WHOOP IPA/device
+        // evidence, Bluetooth SIG 2A37 is the trusted live HR and millisecond-RR source.
         let standardRR = StandardHeartRateRRParser.parseMilliseconds(data)
         if !standardRR.isEmpty {
             whoopStandardRRIntervalsMilliseconds = standardRR
@@ -1726,17 +1733,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 dashboardStandardRRHistory.removeFirst(dashboardStandardRRHistory.count - 20_000)
             }
             persistDashboardHistory()
+            appendRRIntervals(standardRR, source: "WHOOP standard 2A37")
         }
-        let whoopRealtimeIsFresh = WhoopRealtimeFreshness.isFresh(
-            lastPacketAt: lastWhoopRealtimeHRAt, now: Date(), maximumAge: 30
-        )
-        guard !whoopRealtimeIsFresh else {
-            lastBLEEvent = standardRR.isEmpty
-                ? "Standard HR fallback ignored · WHOOP Type-40 fresh · 2A37 RR count 0"
-                : "Standard HR fallback ignored · WHOOP Type-40 fresh · captured \(standardRR.count) separate 2A37 RR interval(s)"
-            return
-        }
-        recordHeartRateSample(bpm, source: "WHOOP standard BLE HR fallback")
+        recordHeartRateSample(bpm, source: "WHOOP standard BLE HR")
     }
 
     private func updateGattDiscoveryCompletionStatus() {
@@ -2234,39 +2233,28 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             if whoopRealtimeRRRawFrameHistory.count > 20 {
                 whoopRealtimeRRRawFrameHistory.removeFirst(whoopRealtimeRRRawFrameHistory.count - 20)
             }
-            guard b.count > 16 else { return "REALTIME_DATA · too short for HR field · CRC valid" }
-            let bpm = Int(b[16])
-            guard (1...250).contains(bpm) else {
-                return "REALTIME_DATA · HR byte \(bpm) outside plausible range · rejected · CRC valid"
-            }
+            whoop5Type40FrameObserved = true
+            whoopRealtimeCandidateByteAt16 = b.count > 16 ? Int(b[16]) : nil
+            let candidateByte = whoopRealtimeCandidateByteAt16.map(String.init) ?? "unavailable"
             do {
-                let rr = try Whoop5RRDecoder.decodeRealtime(b)
-                if rr.isEmpty {
-                    // Type-40 legitimately carries HR-only packets between RR-bearing
-                    // packets. Preserve the last valid RR batch and rolling window;
-                    // do not erase useful RR data or reset its freshness timestamp.
-                    // appendRRIntervals() already expires the rolling window after a
-                    // >30-second gap when the next RR-bearing packet arrives.
-                    whoopRRSource = "WHOOP 5.0 realtime · latest Type-40 packet contained 0 RR intervals · retaining last valid RR batch"
-                } else {
-                    appendRRIntervals(rr, source: "WHOOP 5.0 realtime")
+                let words = try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(b)
+                whoopRealtimeCandidateRRWords = words
+                let summary = words.map(String.init).joined(separator: ",")
+                whoopRealtimeCandidateStatus = "Captured \(words.count) candidate word(s) · byte[16]=\(candidateByte) · offsets/units unverified · not used as HR/ms"
+                recordVendorTimeline("WHOOP Type-40 frame observed · candidate byte[16]=\(candidateByte) · candidate RR words=\(summary.isEmpty ? "none" : summary) · offsets/units unverified")
+                if !whoop5HRStreamConfirmed {
+                    whoopSessionPhase = "Type-40 frame observed · inner fields unverified · event 33 not received · generation \(whoopConnectionGeneration)"
                 }
+                return "REALTIME_DATA · raw frame retained · candidate byte[16]=\(candidateByte) · candidate RR words \(summary.isEmpty ? "none" : summary) · offsets/units unverified · CRC valid"
             } catch {
-                whoopRRSource = "Realtime RR decode rejected · \(error)"
+                whoopRealtimeCandidateRRWords = []
+                whoopRealtimeCandidateStatus = "Raw Type-40 frame retained · candidate RR extraction rejected · \(error)"
+                recordVendorTimeline("WHOOP Type-40 frame observed · candidate extraction rejected · \(error)")
+                if !whoop5HRStreamConfirmed {
+                    whoopSessionPhase = "Type-40 frame observed · candidate fields rejected · event 33 not received · generation \(whoopConnectionGeneration)"
+                }
+                return "REALTIME_DATA · raw frame retained · candidate extraction rejected · \(error) · CRC valid"
             }
-            lastWhoopRealtimeHRAt = Date()
-            if !whoop5HRDataObserved {
-                whoop5HRDataObserved = true
-                recordVendorTimeline("WHOOP Type-40 realtime HR data observed · event 33 confirmation \(whoop5HRStreamConfirmed ? "present" : "not yet received")")
-            }
-            if !whoop5HRStreamConfirmed {
-                whoopSessionPhase = "Realtime HR data observed · event 33 not received · generation \(whoopConnectionGeneration)"
-            }
-            recordHeartRateSample(bpm, source: "WHOOP5 REALTIME_DATA")
-            let rrSummary = whoopRRIntervalsMilliseconds.isEmpty
-                ? "RR unavailable"
-                : "RR \(whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms"
-            return "REALTIME_DATA · HR \(bpm) bpm · \(rrSummary) · CRC valid"
 
         case 53, 54: // PUFFIN event transports; preserve raw until their payload schemas are independently verified.
             whoopPuffinEventTypeCounts[type, default: 0] += 1

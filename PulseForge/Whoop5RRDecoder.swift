@@ -17,24 +17,22 @@ enum Whoop5RRDecoder {
         case truncatedIntervals(expectedBytes: Int, availableBytes: Int)
     }
 
-    /// REALTIME_DATA (type 40): HR @16, count @17, u16 little-endian RR ticks @18.
-    /// WHOOP 5.0 uses 1/1024-second ticks; convert to integer milliseconds.
-    static func decodeRealtime(_ frame: [UInt8]) throws -> [Int] {
+    /// Type-40 candidate extraction from NOOP fixtures only.
+    /// WHOOP IPA/device evidence does not establish these offsets or RR units.
+    /// Return raw little-endian words; never label or convert them as milliseconds.
+    static func decodeRealtimeCandidateRRWords(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 22, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
         }
         guard Int(frame[8]) == 40 else {
             throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
         }
-        let ticks = try decodeRawWords(frame, countOffset: 17, wordsOffset: 18)
-        return ticks.map { ($0 * 1000 + 512) / 1024 }
+        return try decodeRawWords(frame, countOffset: 17, wordsOffset: 18)
     }
 
     /// HISTORICAL_DATA v18 candidate layout (type 47):
-    /// version @9, HR @22, count @23, little-endian words @24.
-    /// Historical R18 RR units are not yet independently verified against
-    /// WHOOP IPA or a timestamp-aligned official export; return raw words only.
-    /// Do not feed these values into physiological calculations until verified.
+    /// version @9, candidate count @23, candidate little-endian words @24.
+    /// Offsets and units are not WHOOP-verified; return raw words only.
     static func decodeHistoricalV18CandidateRRWords(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 28, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
@@ -46,6 +44,7 @@ enum Whoop5RRDecoder {
             throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
         }
         let count = Int(frame[23])
+        // Defensive bound for this candidate parser, not a WHOOP protocol maximum.
         guard count <= 4 else { throw DecodeError.invalidIntervalCount(count) }
         return try decodeRawWords(frame, countOffset: 23, wordsOffset: 24)
     }
@@ -92,30 +91,22 @@ enum Whoop5RRDecoder {
         return bpm
     }
 
-    private static func decodeWords(_ frame: [UInt8], countOffset: Int,
-                                    wordsOffset: Int) throws -> [Int] {
-        try decodeRawWords(frame, countOffset: countOffset, wordsOffset: wordsOffset)
-    }
-
     private static func decodeRawWords(_ frame: [UInt8], countOffset: Int,
                                        wordsOffset: Int) throws -> [Int] {
         let count = Int(frame[countOffset])
+        // Defensive allocation bound only; this is not a claimed WHOOP maximum.
         guard count <= 32 else { throw DecodeError.invalidIntervalCount(count) }
         let required = count * 2
         let available = max(0, frame.count - 4 - wordsOffset) // exclude trailing CRC32
         guard available >= required else {
             throw DecodeError.truncatedIntervals(expectedBytes: required, availableBytes: available)
         }
-        let intervals = (0..<count).map { index -> Int in
+        // Preserve every candidate UInt16 word, including zero/padding and values
+        // outside physiological ranges. Their meaning and units are unverified.
+        return (0..<count).map { index -> Int in
             let offset = wordsOffset + index * 2
             return Int(frame[offset]) | (Int(frame[offset + 1]) << 8)
         }
-        // Broad physiological guardrail: retain plausible bradycardic and
-        // high-rate intervals while rejecting zero/padding and corrupt words.
-        guard let invalid = intervals.first(where: { !(250...3000).contains($0) }) else {
-            return intervals
-        }
-        throw DecodeError.invalidIntervalValue(invalid)
     }
 }
 

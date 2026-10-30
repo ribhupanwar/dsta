@@ -166,7 +166,9 @@ struct TodayDashboard: View {
                     Label("TODAY'S INSIGHT", systemImage: "sparkles")
                         .font(.system(size: 10, weight: .bold)).tracking(0.8)
                         .foregroundStyle(Color(red: 0.22, green: 0.78, blue: 0.9))
-                    Text(insights.recoveryStatus == "—" ? "Connect your health data to build a daily readiness insight." : "Your recovery estimate is based on the available HRV and resting-heart-rate baseline.")
+                    Text(insights.recoveryScore == nil
+                         ? "Recovery is withheld until verified WHOOP overnight HRV and resting-heart-rate history are available."
+                         : "This is a PulseForge estimate from its validated inputs, not a WHOOP Recovery score.")
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -216,7 +218,7 @@ struct RecoveryDetailSheet: View {
                         Spacer()
                     }
                     HStack(spacing: 10) {
-                        CompactMetric(title: "WHOOP RR", value: String(bluetooth.whoopRRIntervalsMilliseconds.count), unit: "intervals")
+                        CompactMetric(title: "2A37 RR", value: String(bluetooth.whoopRRIntervalsMilliseconds.count), unit: "verified ms")
                         CompactMetric(title: "WHOOP BATTERY", value: bluetooth.whoopBatteryPercent.map { String(format: "%.0f", $0) } ?? "—", unit: "%")
                         CompactMetric(title: "SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                     }
@@ -382,7 +384,7 @@ struct WhoopRRCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("RR INTERVALS", systemImage: "waveform.path")
+                Label("STANDARD 2A37 RR", systemImage: "waveform.path")
                     .font(.system(size: 9, weight: .bold)).tracking(0.9)
                     .foregroundStyle(ForgeColors.muted)
                 Spacer()
@@ -397,7 +399,7 @@ struct WhoopRRCard: View {
                 Text("ms latest mean RR")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer()
-                Text("\(rollingIntervals.count)/60")
+                Text("\(intervals.count) in batch")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundStyle(ForgeColors.muted)
             }
@@ -408,12 +410,12 @@ struct WhoopRRCard: View {
                 Text("ms short-window RMSSD")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer()
-                Text(shortWindowRMSSD == nil ? "COLLECTING" : (isRRFresh ? "ESTIMATE" : "STALE"))
+                Text(shortWindowRMSSD == nil ? "WITHHELD" : (isRRFresh ? "ESTIMATE" : "STALE"))
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(shortWindowRMSSD == nil || !isRRFresh ? ForgeColors.muted : ForgeColors.lime)
             }
             Text(intervals.isEmpty
-                 ? "No validated realtime RR packet received yet."
+                 ? "No validated standard 2A37 RR values received yet."
                  : intervals.map { "\($0) ms" }.joined(separator: "  ·  "))
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white)
@@ -422,7 +424,9 @@ struct WhoopRRCard: View {
                 " · last RR batch \(Int(max(0, Date().timeIntervalSince($0))))s ago"
             } ?? " · no RR batch timestamp"))
                 .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
-            Text("RMSSD requires 30+ realtime intervals. Short-window estimate only; not WHOOP HRV, daily HRV or a Recovery input.")
+            Text(bluetooth.whoopRealtimeCandidateStatus)
+                .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+            Text("Type-40 candidate words stay raw until WHOOP offsets and units are verified. No Type-40 RMSSD or Recovery input is produced.")
                 .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
         }
         .padding(16)
@@ -781,7 +785,7 @@ struct SleepDashboard: View {
                     Divider().overlay(ForgeColors.stroke)
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("WHOOP SLEEP NEED").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                            Text("PULSEFORGE SLEEP NEED").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
                             Text(insights.sleepNeedHours.map { String(format: "%.1f h", $0) } ?? "—").font(.system(size: 23, weight: .semibold, design: .rounded))
                         }
                         Spacer()
@@ -801,7 +805,7 @@ struct SleepDashboard: View {
                             .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
                             .multilineTextAlignment(.trailing).frame(maxWidth: 130)
                     }
-                    Text("Sleep Need stays unavailable until WHOOP-native sleep history and a personal baseline are available. No fixed 8-hour placeholder is presented as a measured score.")
+                    Text("Sleep Need is a transparent PulseForge heuristic, not WHOOP's formula. It stays unavailable until verified sleep history and a personal baseline are available.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))

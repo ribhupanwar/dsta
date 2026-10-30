@@ -13,10 +13,10 @@ final class Whoop5RRDecoderTests: XCTestCase {
         return result
     }
 
-    func testDecodesCapturedRealtimeRRInMilliseconds() throws {
-        // NOOP-sourced type-40 fixture used as a candidate layout test: HR 98, RR 603/587 ticks (589/573 ms); not IPA-derived.
+    func testExtractsCandidateRealtimeRRWordsWithoutUnitConversion() throws {
+        // NOOP-sourced type-40 fixture only; offsets and units are not WHOOP-verified.
         let frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
-        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtime(frame), [589, 573])
+        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame), [603, 587])
     }
 
     func testExtractsCandidateHistoricalV18RRWordsWithoutUnitClaim() throws {
@@ -25,17 +25,17 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(try Whoop5RRDecoder.decodeHistoricalV18CandidateRRWords(frame), [602, 613])
     }
 
-    func testRealtimePacketWithZeroRRCountReturnsNoIntervals() throws {
-        // A valid type-40 HR frame may omit RR data; never synthesize RR values.
+    func testRealtimeCandidateWithZeroCountReturnsEmptyWordList() throws {
+        // A zero candidate count yields no words; never synthesize RR values.
         var frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
         frame[17] = 0
-        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtime(frame), [])
+        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame), [])
     }
 
-    func testRealtimePacketRejectsRRCountAboveProtocolLimit() {
+    func testRealtimeCandidateRejectsCountAboveDefensiveBound() {
         var frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
         frame[17] = 33
-        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtime(frame)) { error in
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame)) { error in
             XCTAssertEqual(error as? Whoop5RRDecoder.DecodeError, .invalidIntervalCount(33))
         }
     }
@@ -51,7 +51,7 @@ final class Whoop5RRDecoderTests: XCTestCase {
     func testRealtimeDecoderRejectsInvalidFrameHeader() {
         var frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
         frame[0] = 0xAB
-        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtime(frame)) { error in
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame)) { error in
             XCTAssertEqual(error as? Whoop5RRDecoder.DecodeError, .invalidFrame)
         }
     }
@@ -59,7 +59,7 @@ final class Whoop5RRDecoderTests: XCTestCase {
     func testRealtimeDecoderDoesNotReadTrailingCRCAsRRData() {
         var frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
         frame[17] = 7 // Claims seven RR words, but only two precede the CRC.
-        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtime(frame)) { error in
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame)) { error in
             XCTAssertEqual(error as? Whoop5RRDecoder.DecodeError,
                            .truncatedIntervals(expectedBytes: 14, availableBytes: 10))
         }
@@ -72,24 +72,16 @@ final class Whoop5RRDecoderTests: XCTestCase {
 
     func testRejectsTruncatedIntervalWords() {
         let frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
-        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtime(Array(frame.prefix(23))))
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(Array(frame.prefix(23))))
     }
 
-    func testRejectsZeroAndImplausibleRRValues() {
-        let valid = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
-        var zero = valid
-        zero[18] = 0
-        zero[19] = 0
-        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtime(zero)) { error in
-            XCTAssertEqual(error as? Whoop5RRDecoder.DecodeError, .invalidIntervalValue(0))
-        }
-
-        var corrupt = valid
-        corrupt[18] = 0x88
-        corrupt[19] = 0x13 // 5000 ms
-        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtime(corrupt)) { error in
-            XCTAssertEqual(error as? Whoop5RRDecoder.DecodeError, .invalidIntervalValue(5000))
-        }
+    func testCandidateWordExtractionPreservesZeroAndLargeValuesWithoutUnitAssumptions() throws {
+        var frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
+        frame[18] = 0
+        frame[19] = 0
+        frame[20] = 0x88
+        frame[21] = 0x13 // raw UInt16 value 5000; no millisecond claim
+        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame), [0, 5000])
     }
 }
 
