@@ -83,6 +83,18 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(decoded.rrIntervalsMilliseconds, [863])
     }
 
+    func testDecodesGen5V18MotionCounterFromRealCRCValidFixture() throws {
+        // Real WHOOP 5 Gen5 v18 capture published as an independently decoded
+        // OpenStrap fixture; expected fields are read from the original bytes,
+        // not written into the fixture by this test.
+        let frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
+        let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame)
+        XCTAssertEqual(step.timestamp.timeIntervalSince1970, 1_780_916_150, accuracy: 0.001)
+        XCTAssertEqual(step.stepMotionCounter, 50)
+        XCTAssertEqual(step.stepCadenceRaw, 170)
+        XCTAssertEqual(step.activityClassRaw, 0)
+    }
+
     func testDecodesFullWidthGen5BandNativeStepCounterAndCompanionFields() throws {
         var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
         frame[57] = 0x34
