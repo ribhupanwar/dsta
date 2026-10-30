@@ -206,6 +206,10 @@ struct TodayDashboard: View {
                     CompactMetric(title: "SLEEP DEBT", value: insights.sleepDebtHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                     CompactMetric(title: "DAY STRAIN", value: insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—", unit: "load pts")
                 }
+                HStack(spacing: 9) {
+                    CompactMetric(title: "STEPS TODAY", value: health.stepsToday.map { $0.formatted() } ?? "—", unit: "Apple Health")
+                    CompactMetric(title: "LAST WORKOUT", value: health.detectedWorkoutTitle ?? "—", unit: health.detectedWorkoutDurationMinutes.map { String(format: "%.0f min", $0) } ?? "Auto-detect")
+                }
                 HStack(spacing: 10) {
                     TodayHealthStatusCard(
                         title: "SLEEP",
@@ -1706,9 +1710,14 @@ final class HealthDataStore: ObservableObject {
     @Published private(set) var weeklyRunDistanceKm: Double?
     @Published private(set) var weeklyRunDurationMinutes: Double?
     @Published private(set) var weeklyRunCount = 0
+    @Published private(set) var stepsToday: Int?
+    @Published private(set) var detectedWorkoutTitle: String?
+    @Published private(set) var detectedWorkoutDate: Date?
+    @Published private(set) var detectedWorkoutDurationMinutes: Double?
     @Published private(set) var lastRefreshDate: Date?
     @Published private(set) var isRefreshing = false
     private let store = HKHealthStore()
+    private var workoutObserverQuery: HKObserverQuery?
 
     func refresh() {
         guard isAuthorized, !isRefreshing else { return }
@@ -1722,6 +1731,10 @@ final class HealthDataStore: ObservableObject {
         loadLatestRun { group.leave() }
         group.enter()
         loadWeeklyRunningSummary { group.leave() }
+        group.enter()
+        loadTodayStepCount { group.leave() }
+        group.enter()
+        loadLatestDetectedWorkout { group.leave() }
         group.notify(queue: .main) { [weak self] in
             guard let self else { return }
             self.lastRefreshDate = Date()
@@ -1737,7 +1750,7 @@ final class HealthDataStore: ObservableObject {
         var readTypes = Set<HKObjectType>()
         let quantityIdentifiers: [HKQuantityTypeIdentifier] = [
             .heartRate, .heartRateVariabilitySDNN, .restingHeartRate,
-            .respiratoryRate, .oxygenSaturation, .distanceWalkingRunning
+            .respiratoryRate, .oxygenSaturation, .distanceWalkingRunning, .stepCount
         ]
         for identifier in quantityIdentifiers {
             if let type = HKObjectType.quantityType(forIdentifier: identifier) {
@@ -1763,6 +1776,7 @@ final class HealthDataStore: ObservableObject {
         do {
             try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
             isAuthorized = true
+            startWorkoutObserver()
             refresh()
         } catch {
             isAuthorized = false
@@ -1794,6 +1808,86 @@ final class HealthDataStore: ObservableObject {
             Task { @MainActor in completion(value) }
         }
         store.execute(query)
+    }
+
+    /// Today's cumulative steps from Apple Health. A missing value stays nil;
+    /// PulseForge never estimates steps from distance or phone motion.
+    private func loadTodayStepCount(completion: @escaping () -> Void) {
+        guard let type = HKObjectType.quantityType(forIdentifier: .stepCount) else {
+            completion()
+            return
+        }
+        let start = Calendar.current.startOfDay(for: Date())
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate)
+        let query = HKStatisticsQuery(
+            quantityType: type,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum
+        ) { [weak self] _, statistics, _ in
+            let count = statistics?.sumQuantity()?.doubleValue(for: .count()).map { Int($0.rounded()) }
+            Task { @MainActor in
+                self?.stepsToday = count
+                completion()
+            }
+        }
+        store.execute(query)
+    }
+
+    /// HealthKit receives workouts automatically recorded by Apple Watch and
+    /// other authorized apps. This surfaces the latest completed session.
+    private func loadLatestDetectedWorkout(completion: @escaping () -> Void = {}) {
+        let end = Date()
+        let start = Calendar.current.date(byAdding: .hour, value: -24, to: end)
+            ?? end.addingTimeInterval(-24 * 3600)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+        let query = HKSampleQuery(
+            sampleType: HKObjectType.workoutType(),
+            predicate: predicate,
+            limit: 1,
+            sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)]
+        ) { [weak self] _, samples, _ in
+            let workout = samples?.first as? HKWorkout
+            let title: String? = workout.map { item in
+                switch item.workoutActivityType {
+                case .running: return "Running"
+                case .walking: return "Walking"
+                case .cycling: return "Cycling"
+                case .hiking: return "Hiking"
+                case .swimming: return "Swimming"
+                case .traditionalStrengthTraining, .functionalStrengthTraining: return "Strength Training"
+                case .rowing: return "Rowing"
+                case .elliptical: return "Elliptical"
+                default: return "Workout"
+                }
+            }
+            Task { @MainActor in
+                self?.detectedWorkoutTitle = title
+                self?.detectedWorkoutDate = workout?.endDate
+                self?.detectedWorkoutDurationMinutes = workout.map { $0.duration / 60 }
+                completion()
+            }
+        }
+        store.execute(query)
+    }
+
+    /// Observe newly saved HealthKit workouts, including Apple Watch auto-detected
+    /// sessions. HealthKit delivers the event; PulseForge does not claim to run
+    /// its own always-on motion classifier.
+    private func startWorkoutObserver() {
+        guard workoutObserverQuery == nil else { return }
+        let type = HKObjectType.workoutType()
+        let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, completion, error in
+            guard error == nil else {
+                completion()
+                return
+            }
+            self?.loadLatestDetectedWorkout {
+                completion()
+            }
+        }
+        workoutObserverQuery = query
+        store.execute(query)
+        store.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in }
     }
 
     private func loadSleepDuration(completion: @escaping () -> Void) {
