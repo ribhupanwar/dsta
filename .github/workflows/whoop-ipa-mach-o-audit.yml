@@ -98,6 +98,7 @@ jobs:
           brew install radare2
           r2 -q -c 'izzj' /tmp/whoop-arm64 > /tmp/whoop-strings.json 2>mach-o-evidence/radare2-strings-errors.txt
           r2 -q -c 'pxj 256 @ 0x108acfdee' /tmp/whoop-arm64 > /tmp/r24-jump-table.json 2>mach-o-evidence/r24-jump-table-errors.txt || echo '[]' > /tmp/r24-jump-table.json
+          r2 -q -c 'pxj 256 @ 0x108ebdb70' /tmp/whoop-arm64 > /tmp/historical-r24-jump-table.json 2>mach-o-evidence/historical-r24-jump-table-errors.txt || echo '[]' > /tmp/historical-r24-jump-table.json
           python3 - <<'PY'
           import json, re
           from pathlib import Path
@@ -220,6 +221,28 @@ jobs:
           except Exception as exc:
               table_text = [f"Could not decode R24 jump table JSON: {exc}", Path("/tmp/r24-jump-table.json").read_text(errors="replace")]
           Path("mach-o-evidence/r24-enum-jump-table.txt").write_text("\n".join(table_text) + "\n")
+
+          # Historical packet enum: switch input byte indexes this table. The
+          # R24 branch is 0x105ce8038 relative to branch base 0x105ce7ff8,
+          # i.e. a byte offset of 16 in the one-byte relative jump table.
+          try:
+              historical_raw = json.loads(Path("/tmp/historical-r24-jump-table.json").read_text())
+              if isinstance(historical_raw, dict):
+                  historical_table = historical_raw.get("bytes", historical_raw.get("data", []))
+              else:
+                  historical_table = historical_raw
+              historical_table = [int(value) for value in historical_table if isinstance(value, (int, float))]
+              historical_indexes = [i for i, value in enumerate(historical_table) if value == 16]
+              historical_text = [
+                  "# WHOOP historical packet enum switch table at 0x108ebdb70",
+                  f"Bytes recovered: {len(historical_table)}",
+                  "Observed R24 branch delta: (0x105ce8038 - 0x105ce7ff8) / 4 = 16",
+                  "Input-byte indexes selecting the R24 branch: " + (", ".join(map(str, historical_indexes)) if historical_indexes else "none found"),
+                  "Table hex: " + " ".join(f"{value:02x}" for value in historical_table),
+              ]
+          except Exception as exc:
+              historical_text = [f"Could not decode historical R24 jump table JSON: {exc}", Path("/tmp/historical-r24-jump-table.json").read_text(errors="replace")]
+          Path("mach-o-evidence/historical-r24-packet-jump-table.txt").write_text("\n".join(historical_text) + "\n")
           print(f"Selected strings: {len(hits)}; direct ARM64 references: {len(refs)}; disassembly lines: {len(lines)}")
           PY
           echo "R24 string references and switch-table bytes are static evidence only; they do not prove runtime BLE behaviour." >> mach-o-evidence/README.txt
