@@ -86,6 +86,39 @@ final class SleepNeedHistoryCalculatorTests: XCTestCase {
         XCTAssertEqual(result.sleepNeedHours ?? 0, 10, accuracy: 0.001)
     }
 
+    func testDuplicateSessionsOnSameWakeDayDoNotInflateBaselineOrDebt() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var nights = (1...14).map { day in
+            night(wakeDaysAgo: day, hours: day <= 5 ? 7 : 8, now: now)
+        }
+        // A same-day nap/duplicate is shorter than the main sleep and must not
+        // become an extra baseline night or add another debt contribution.
+        nights.append(night(wakeDaysAgo: 1, hours: 1.5, now: now))
+        nights.append(night(wakeDaysAgo: 2, hours: 2, now: now))
+
+        let result = SleepNeedHistoryCalculator.calculate(
+            nights: nights, now: now, calendar: calendar
+        )
+        XCTAssertEqual(result.baselineNightCount, 14)
+        XCTAssertEqual(result.baselineHours ?? 0, 8, accuracy: 0.001)
+        XCTAssertEqual(result.debtNightCount, 7)
+        XCTAssertEqual(result.sleepDebtHours ?? 0, 5, accuracy: 0.001)
+    }
+
+    func testDuplicateWakeDaysCannotSatisfyFourteenNightBaselineRequirement() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var nights = (1...13).map { night(wakeDaysAgo: $0, hours: 8, now: now) }
+        nights.append(night(wakeDaysAgo: 1, hours: 7.5, now: now))
+        nights.append(night(wakeDaysAgo: 2, hours: 1, now: now))
+
+        let result = SleepNeedHistoryCalculator.calculate(
+            nights: nights, now: now, calendar: calendar
+        )
+        XCTAssertEqual(result.baselineNightCount, 13)
+        XCTAssertNil(result.baselineHours)
+        XCTAssertNil(result.sleepNeedHours)
+    }
+
     func testDoesNotInventBaselineOrDebtWhenHistoryIsInsufficient() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let thirteenNights = (1...13).map { night(wakeDaysAgo: $0, hours: 8, now: now) }
