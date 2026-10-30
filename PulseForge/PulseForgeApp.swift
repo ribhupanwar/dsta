@@ -1329,6 +1329,7 @@ struct SleepDashboard: View {
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 SectionHeader(title: "SLEEP STAGES")
+                SleepStageTimelineCard(segments: health.sleepStageSegments)
                 SleepStageBreakdown(deep: health.deepSleepMinutes, rem: health.remSleepMinutes, core: health.coreSleepMinutes, awake: health.awakeMinutes)
                 SectionHeader(title: "SLEEP TREND")
                 SleepHistoryTrendCard(nights: health.sleepNights)
@@ -2171,6 +2172,7 @@ final class HealthDataStore: ObservableObject {
     @Published private(set) var bloodOxygenPercent: Double?
     @Published private(set) var sleepHours: Double?
     @Published private(set) var sleepNights: [SleepNightCalculator.Night] = []
+    @Published private(set) var sleepStageSegments: [SleepStageSegment] = []
     @Published private(set) var deepSleepMinutes: Double?
     @Published private(set) var remSleepMinutes: Double?
     @Published private(set) var coreSleepMinutes: Double?
@@ -2565,8 +2567,40 @@ final class HealthDataStore: ObservableObject {
                 self?.remSleepMinutes = rem
                 self?.coreSleepMinutes = core
                 self?.awakeMinutes = awake
+            let stageSegments: [SleepStageSegment] = latest.map { night in
+                entries.compactMap { sample in
+                    guard sample.startDate < night.endDate && sample.endDate > night.startDate else { return nil }
+                    let stage: String
+                    let level: Double
+                    switch sample.value {
+                    case HKCategoryValueSleepAnalysis.awake.rawValue:
+                        stage = "Awake"; level = 3
+                    case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
+                        stage = "REM"; level = 2
+                    case HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                         HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
+                         HKCategoryValueSleepAnalysis.asleep.rawValue:
+                        stage = "Light"; level = 1
+                    case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
+                        stage = "Deep"; level = 0
+                    default:
+                        return nil
+                    }
+                    let start = max(sample.startDate, night.startDate)
+                    let end = min(sample.endDate, night.endDate)
+                    guard start < end else { return nil }
+                    return SleepStageSegment(startDate: start, endDate: end, stage: stage, level: level)
+                }
+            } ?? []
+
+            Task { @MainActor in
+                self?.deepSleepMinutes = deep
+                self?.remSleepMinutes = rem
+                self?.coreSleepMinutes = core
+                self?.awakeMinutes = awake
                 self?.sleepHours = latest.map { $0.durationMinutes / 60 }
                 self?.sleepNights = summary.nights
+                self?.sleepStageSegments = stageSegments
                 completion()
             }
         }
@@ -2715,6 +2749,14 @@ final class HealthDataStore: ObservableObject {
         }
         store.execute(query)
     }
+}
+
+struct SleepStageSegment: Identifiable {
+    let startDate: Date
+    let endDate: Date
+    let stage: String
+    let level: Double
+    var id: String { "\(startDate.timeIntervalSince1970)-\(stage)" }
 }
 
 struct WorkoutHeartRatePoint: Identifiable {
@@ -2904,6 +2946,77 @@ struct BigPlaceholderCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(22).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
         .overlay(RoundedRectangle(cornerRadius: 22).stroke(ForgeColors.stroke, lineWidth: 1))
+    }
+}
+
+struct SleepStageTimelineCard: View {
+    let segments: [SleepStageSegment]
+
+    private var ordered: [SleepStageSegment] {
+        segments.sorted { $0.startDate < $1.startDate }
+    }
+
+    private var domain: ClosedRange<Date>? {
+        guard let first = ordered.first, let last = ordered.last else { return nil }
+        return first.startDate...last.endDate
+    }
+
+    private func color(for stage: String) -> Color {
+        switch stage {
+        case "Deep": Color(red: 0.30, green: 0.39, blue: 0.88)
+        case "REM": Color(red: 0.55, green: 0.42, blue: 0.88)
+        case "Light": ForgeColors.sleep
+        default: ForgeColors.muted
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let domain, !ordered.isEmpty {
+                Chart(ordered) { segment in
+                    RectangleMark(
+                        xStart: .value("Start", segment.startDate),
+                        xEnd: .value("End", segment.endDate),
+                        yStart: .value("Stage lower", segment.level - 0.34),
+                        yEnd: .value("Stage upper", segment.level + 0.34)
+                    )
+                    .foregroundStyle(color(for: segment.stage))
+                    .cornerRadius(2)
+                }
+                .chartXScale(domain: domain)
+                .chartYScale(domain: -0.5...3.5)
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: [0, 1, 2, 3]) { value in
+                        AxisValueLabel {
+                            if let level = value.as(Int.self) {
+                                Text(["Deep", "Light", "REM", "Awake"][level])
+                            }
+                        }
+                    }
+                }
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 4)) {
+                        AxisValueLabel(format: .dateTime.hour().minute())
+                    }
+                }
+                .frame(height: 155)
+            } else {
+                Text("Sleep-stage timeline is unavailable until dated stage intervals are returned by Apple Health.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(ForgeColors.muted)
+                    .frame(maxWidth: .infinity, minHeight: 115, alignment: .center)
+            }
+            HStack(spacing: 12) {
+                ForEach(["Deep", "REM", "Light", "Awake"], id: \.self) { stage in
+                    HStack(spacing: 4) {
+                        Circle().fill(color(for: stage)).frame(width: 6, height: 6)
+                        Text(stage).font(.system(size: 9, weight: .medium)).foregroundStyle(ForgeColors.muted)
+                    }
+                }
+            }
+        }
+        .padding(15)
+        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
     }
 }
 
