@@ -1330,6 +1330,8 @@ struct SleepDashboard: View {
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 SectionHeader(title: "SLEEP STAGES")
                 SleepStageBreakdown(deep: health.deepSleepMinutes, rem: health.remSleepMinutes, core: health.coreSleepMinutes, awake: health.awakeMinutes)
+                SectionHeader(title: "SLEEP TREND")
+                SleepHistoryTrendCard(nights: health.sleepNights)
                 SectionHeader(title: "SLEEP SUMMARY")
                 HStack(spacing: 10) {
                     CompactMetric(title: "TOTAL SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
@@ -1401,6 +1403,8 @@ struct StrainDashboard: View {
                     CompactMetric(title: "ACTIVITIES", value: String(todaySessions.count), unit: "today")
                     CompactMetric(title: "DURATION", value: todaySessions.isEmpty ? "—" : String(format: "%.0f", todayWorkoutMinutes), unit: "min")
                 }
+                SectionHeader(title: "7-DAY WORKOUT LOAD")
+                CardioLoadTrendCard(sessions: bluetooth.workoutHistory, measuredMaxHeartRate: measuredMaxHeartRate)
                 SectionHeader(title: "LATEST RUN")
                 VStack(spacing: 13) {
                     HStack {
@@ -2941,6 +2945,135 @@ struct SleepStageBreakdown: View {
                         .foregroundStyle(stage.1 == nil ? ForgeColors.muted : .white)
                 }
             }
+        }
+        .padding(16)
+        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+struct SleepTrendPoint: Identifiable {
+    let date: Date
+    let hours: Double
+    var id: Date { date }
+}
+
+struct SleepHistoryTrendCard: View {
+    let nights: [SleepNightCalculator.Night]
+
+    private var points: [SleepTrendPoint] {
+        nights.sorted { $0.wakeDate < $1.wakeDate }.suffix(7).compactMap { night in
+            let hours = night.durationMinutes / 60
+            guard hours.isFinite, hours > 0, hours <= 24 else { return nil }
+            return SleepTrendPoint(date: night.wakeDate, hours: hours)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if points.count >= 2 {
+                Chart(points) { point in
+                    AreaMark(
+                        x: .value("Night", point.date),
+                        y: .value("Sleep", point.hours)
+                    )
+                    .foregroundStyle(ForgeColors.sleep.opacity(0.14))
+                    LineMark(
+                        x: .value("Night", point.date),
+                        y: .value("Sleep", point.hours)
+                    )
+                    .foregroundStyle(ForgeColors.sleep)
+                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
+                    PointMark(
+                        x: .value("Night", point.date),
+                        y: .value("Sleep", point.hours)
+                    )
+                    .foregroundStyle(ForgeColors.sleep)
+                }
+                .chartYScale(domain: 0...12)
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: min(7, points.count))) {
+                        AxisValueLabel(format: .dateTime.weekday(.narrow))
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: [0, 4, 8, 12]) {
+                        AxisValueLabel()
+                    }
+                }
+                .frame(height: 150)
+            } else {
+                Text("Sleep trend will appear after at least two dated Apple Health sleep sessions are available.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(ForgeColors.muted)
+                    .frame(maxWidth: .infinity, minHeight: 105, alignment: .center)
+            }
+            Text("Apple Health sleep duration · up to 7 most recent valid nights")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(ForgeColors.muted)
+        }
+        .padding(16)
+        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+struct CardioLoadTrendPoint: Identifiable {
+    let date: Date
+    let load: Double
+    var id: Date { date }
+}
+
+struct CardioLoadTrendCard: View {
+    let sessions: [WorkoutSessionRecord]
+    let measuredMaxHeartRate: Int
+
+    private var points: [CardioLoadTrendPoint] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        return (0..<7).reversed().compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: today),
+                  let next = calendar.date(byAdding: .day, value: 1, to: day) else { return nil }
+            let daySessions = sessions.filter { $0.startedAt >= day && $0.startedAt < next }
+            guard !daySessions.isEmpty,
+                  let load = CardioLoadCalculator.dailyWorkoutLoad(
+                    sessions: daySessions,
+                    dayStart: day,
+                    nextDay: next,
+                    measuredMaxHeartRate: measuredMaxHeartRate
+                  ),
+                  load.isFinite else { return nil }
+            return CardioLoadTrendPoint(date: day, load: load)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if points.count >= 1 {
+                Chart(points) { point in
+                    BarMark(
+                        x: .value("Day", point.date, unit: .day),
+                        y: .value("Workout load", point.load)
+                    )
+                    .foregroundStyle(ForgeColors.strain)
+                    .cornerRadius(4)
+                }
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 7)) {
+                        AxisValueLabel(format: .dateTime.weekday(.narrow))
+                    }
+                }
+                .chartYAxis(.hidden)
+                .frame(height: 145)
+            } else {
+                Text(measuredMaxHeartRate == 0
+                     ? "Set a measured maximum heart rate to calculate workout load history."
+                     : "No valid timestamped WHOOP workout HR records in the last seven days.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(ForgeColors.muted)
+                    .frame(maxWidth: .infinity, minHeight: 105, alignment: .center)
+            }
+            Text("PulseForge workout-only cardio-load estimate · not WHOOP Day Strain")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(ForgeColors.muted)
         }
         .padding(16)
         .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
