@@ -1914,7 +1914,12 @@ final class HealthDataStore: ObservableObject {
             quantitySamplePredicate: predicate,
             options: .cumulativeSum
         ) { [weak self] _, statistics, _ in
-            let count = statistics?.sumQuantity()?.doubleValue(for: .count()).map { Int($0.rounded()) }
+            let count: Int?
+            if let quantity = statistics?.sumQuantity() {
+                count = Int(quantity.doubleValue(for: .count()).rounded())
+            } else {
+                count = nil
+            }
             Task { @MainActor in
                 self?.stepsToday = count
                 completion()
