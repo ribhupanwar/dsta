@@ -22,6 +22,7 @@ enum ForgeTab: String, CaseIterable {
     case today = "Today"
     case sleep = "Sleep"
     case strain = "Strain"
+    case recovery = "Recovery"
     case run = "Run"
     case device = "WHOOP"
 
@@ -30,6 +31,7 @@ enum ForgeTab: String, CaseIterable {
         case .today: "circle.grid.2x2.fill"
         case .sleep: "moon.zzz.fill"
         case .strain: "flame.fill"
+        case .recovery: "heart.fill"
         case .run: "figure.run"
         case .device: "waveform.path.ecg"
         }
@@ -59,6 +61,7 @@ struct MainTabView: View {
                 case .today: TodayDashboard()
                 case .sleep: SleepDashboard()
                 case .strain: StrainDashboard()
+                case .recovery: RecoveryDashboard()
                 case .run: RunningDashboard()
                 case .device: DeviceDashboard()
                 }
@@ -2547,4 +2550,72 @@ enum ForgeColors {
     static let sleep = Color(red: 0.30, green: 0.62, blue: 0.96)
     static let strain = Color(red: 1.00, green: 0.59, blue: 0.25)
     static let recovery = Color(red: 0.15, green: 0.82, blue: 0.52)
+}
+
+
+/// First-class Recovery destination. Values remain unavailable until the
+/// overnight WHOOP physiology pipeline validates its timestamps and inputs.
+struct RecoveryDashboard: View {
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+    @EnvironmentObject private var insights: TrainingInsightsStore
+
+    private var recoveryTint: Color { ForgeColors.recovery }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                HeaderView(eyebrow: "WHOOP RECOVERY", title: "Recovery")
+                VStack(spacing: 16) {
+                    ZStack {
+                        Circle().stroke(ForgeColors.track, lineWidth: 13)
+                        if let score = insights.recoveryScore {
+                            Circle()
+                                .trim(from: 0, to: min(1, max(0, Double(score) / 100)))
+                                .stroke(recoveryTint, style: StrokeStyle(lineWidth: 13, lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                        }
+                        VStack(spacing: 5) {
+                            Text("RECOVERY").font(.system(size: 10, weight: .bold)).tracking(1.2)
+                                .foregroundStyle(ForgeColors.muted)
+                            Text(insights.recoveryScore.map { "\($0)%" } ?? "—")
+                                .font(.system(size: 46, weight: .medium, design: .rounded))
+                                .monospacedDigit()
+                            Text(insights.recoveryScore == nil ? "WAITING FOR VERIFIED DATA" : insights.recoveryStatus.uppercased())
+                                .font(.system(size: 9, weight: .bold)).tracking(0.7)
+                                .foregroundStyle(recoveryTint)
+                        }
+                    }
+                    .frame(width: 190, height: 190)
+                    Text("A recovery score will appear only after overnight RR/HRV timestamps and resting heart rate are validated against the correct sleep window.")
+                        .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(20)
+                .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                HStack(spacing: 10) {
+                    CompactMetric(title: "LIVE RR", value: "\(bluetooth.whoopRRIntervalsMilliseconds.count)", unit: "intervals")
+                    CompactMetric(title: "BATTERY", value: bluetooth.whoopBatteryPercent.map { String(format: "%.0f", $0) } ?? "—", unit: "%")
+                    CompactMetric(title: "SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                }
+                VStack(alignment: .leading, spacing: 9) {
+                    SectionHeader(title: "DATA VALIDATION")
+                    Label("Overnight HRV: not yet verified", systemImage: "clock.badge.questionmark")
+                    Label("Resting heart rate: awaiting validated history", systemImage: "heart.text.square")
+                    Label("Apple Health values are kept separate", systemImage: "checkmark.shield")
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(ForgeColors.muted)
+                .padding(16)
+                .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+                Text("PulseForge does not reproduce WHOOP's proprietary Recovery algorithm. This screen will show a clearly labelled PulseForge estimate only when its required inputs are available.")
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                    .padding(.bottom, 110)
+            }
+            .padding(.horizontal, 17)
+            .padding(.top, 14)
+        }
+        .refreshable { insights.refresh() }
+    }
 }
