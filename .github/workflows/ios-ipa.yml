@@ -45,7 +45,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --user --quiet Pillow
+          python3 -m venv "$RUNNER_TEMP/icon-venv"
+          "$RUNNER_TEMP/icon-venv/bin/python" -m pip install --quiet Pillow
           ICON_DIR="PulseForge/Assets.xcassets/AppIcon.appiconset"
           mkdir -p "$ICON_DIR"
           cat > "PulseForge/Assets.xcassets/Contents.json" <<'JSON'
@@ -56,7 +57,7 @@ jobs:
             }
           }
           JSON
-          python3 - <<'PY'
+          "$RUNNER_TEMP/icon-venv/bin/python" - <<'PY'
           from PIL import Image, ImageDraw
           S = 1024
           im = Image.new("RGB", (S, S), (0, 0, 0))
