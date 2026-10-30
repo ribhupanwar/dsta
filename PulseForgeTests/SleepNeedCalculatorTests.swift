@@ -81,7 +81,7 @@ final class SleepNeedHistoryCalculatorTests: XCTestCase {
         let result = SleepNeedHistoryCalculator.calculate(nights: nights, now: now, calendar: calendar)
         XCTAssertEqual(result.baselineNightCount, 14)
         XCTAssertEqual(result.baselineHours ?? 0, 8, accuracy: 0.001)
-        XCTAssertEqual(result.debtNightCount, 5)
+        XCTAssertEqual(result.debtNightCount, 7)
         XCTAssertEqual(result.sleepDebtHours ?? 0, 5, accuracy: 0.001)
         XCTAssertEqual(result.sleepNeedHours ?? 0, 10, accuracy: 0.001)
     }
