@@ -39,9 +39,22 @@ struct WhoopBandStepCounter {
             return
         }
 
-        // Historical sync can replay frames. Do not double count duplicates or
-        // rewind the watermark when an older packet is re-delivered.
-        guard sample.timestamp > previous.timestamp else { return }
+        // Historical sync can replay frames. Reject older samples and exact
+        // duplicates, but accept a higher cumulative counter at the same
+        // second: Type-47 physiological timestamps have one-second resolution.
+        guard sample.timestamp >= previous.timestamp else { return }
+        if sample.timestamp == previous.timestamp {
+            guard sample.counter > previous.counter else { return }
+            let sameSecondDelta = sample.counter - previous.counter
+            guard sameSecondDelta <= Self.maximumStepsPerSecond else {
+                droppedBoundaries += 1
+                return
+            }
+            let key = Self.dayKey(sample.timestamp, calendar: calendar)
+            dailyTotals[key, default: 0] += sameSecondDelta
+            latestSample = sample
+            return
+        }
 
         let elapsed = max(1, Int(sample.timestamp.timeIntervalSince(previous.timestamp).rounded(.down)))
         let key = Self.dayKey(sample.timestamp, calendar: calendar)
