@@ -59,6 +59,25 @@ jobs:
           test -s PulseForge/Fonts/BarlowCondensed-Bold.ttf
           ls -lh PulseForge/Fonts
 
+      - name: Generate PulseForge app icon asset
+        if: steps.source.outputs.has_project == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ICON_DIR="PulseForge/Assets.xcassets/AppIcon.appiconset"
+          mkdir -p "$ICON_DIR"
+          sips -s format png -z 1024 1024 "$ICON_DIR/PulseForgeIcon.svg" --out "$ICON_DIR/PulseForgeIcon.png" >/dev/null
+          test -s "$ICON_DIR/PulseForgeIcon.png"
+          cat > "$ICON_DIR/Contents.json" <<'JSON'
+          {
+            "images" : [
+              { "filename" : "PulseForgeIcon.png", "idiom" : "universal", "platform" : "ios", "size" : "1024x1024" }
+            ],
+            "info" : { "author" : "xcode", "version" : 1 }
+          }
+          JSON
+          echo "Generated 1024x1024 PulseForge app icon."
+
       - name: Install XcodeGen when needed
         if: steps.source.outputs.has_project == 'true'
         shell: bash
