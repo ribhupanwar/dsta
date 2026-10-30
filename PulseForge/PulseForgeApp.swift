@@ -805,7 +805,7 @@ struct SleepDashboard: View {
                             .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
                             .multilineTextAlignment(.trailing).frame(maxWidth: 130)
                     }
-                    Text("Sleep Need is a transparent PulseForge heuristic, not WHOOP's formula. It stays unavailable until verified sleep history and a personal baseline are available.")
+                    Text("WHOOP Sleep Need and Sleep Debt from your original export are the reference values. Any independently calculated PulseForge estimate will be labelled separately until its formula matches the reference history.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
@@ -817,7 +817,7 @@ struct SleepDashboard: View {
                     CompactMetric(title: "DEEP SLEEP", value: "—", unit: "min")
                     CompactMetric(title: "REM SLEEP", value: "—", unit: "min")
                 }
-                Text("Sleep duration and debt use overlap-deduplicated Apple Health asleep intervals. Stage totals are read separately from Apple Health; WHOOP-native stage decoding is not yet verified.")
+                Text("Sleep duration, stages, performance, need and debt are being matched against your original WHOOP export. PulseForge will show these metrics only when the corresponding WHOOP-native records are available and validated; Apple Health is not used as a substitute.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
