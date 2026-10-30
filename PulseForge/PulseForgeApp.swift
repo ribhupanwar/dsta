@@ -125,7 +125,7 @@ struct ForgeTabBar: View {
         .padding(7)
         .background {
             RoundedRectangle(cornerRadius: 19, style: .continuous)
-                .fill(Color(red: 0.055, green: 0.067, blue: 0.075))
+                 .fill(Color(red: 0.075, green: 0.094, blue: 0.106))
                 .overlay {
                     RoundedRectangle(cornerRadius: 19, style: .continuous)
                         .stroke(Color.white.opacity(0.10), lineWidth: 0.8)
@@ -2304,6 +2304,7 @@ final class HealthDataStore: ObservableObject {
     @Published private(set) var isRefreshing = false
     private let store = HKHealthStore()
     private var workoutObserverQuery: HKObserverQuery?
+    private var stepObserverQuery: HKObserverQuery?
 
     func refresh() {
         guard hasCompletedAuthorizationRequest, !isRefreshing else { return }
@@ -2378,6 +2379,7 @@ final class HealthDataStore: ObservableObject {
             let heartRateLabel = heartRateWrite.map { Self.writeAuthorizationLabel($0) } ?? "unavailable"
             authorizationRequestStatus = "Request processed · Workout write: \(workoutLabel) · HR write: \(heartRateLabel) · Read grants are private to HealthKit"
             startWorkoutObserver()
+            startStepObserver()
             refresh()
         } catch {
             hasCompletedAuthorizationRequest = false
@@ -2589,6 +2591,25 @@ final class HealthDataStore: ObservableObject {
             }
         }
         workoutObserverQuery = query
+        store.execute(query)
+        store.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in }
+    }
+
+    /// Step samples arrive throughout the day. Observe HealthKit changes and
+    /// re-run the cumulative query instead of leaving the morning total stale.
+    private func startStepObserver() {
+        guard stepObserverQuery == nil,
+              let type = HKObjectType.quantityType(forIdentifier: .stepCount) else { return }
+        let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, completion, error in
+            guard error == nil else {
+                completion()
+                return
+            }
+            self?.loadTodayStepCount {
+                completion()
+            }
+        }
+        stepObserverQuery = query
         store.execute(query)
         store.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in }
     }
@@ -3396,7 +3417,8 @@ struct ConnectPrompt: View {
 enum ForgeColors {
     // Values below are read from the WHOOP app's compiled asset-catalog color
     // entries. They are visual reference tokens, not WHOOP brand assets.
-    static let background = Color.black
+    // Layered charcoal / grey-blue surfaces: avoid OLED-black page backgrounds.
+    static let background = Color(red: 0.055, green: 0.075, blue: 0.086)
     static let card = Color(red: 0.10196, green: 0.13333, blue: 0.15294) // Grey Blue
     static let track = Color.white.opacity(0.20)
     static let stroke = Color.white.opacity(0.15)
