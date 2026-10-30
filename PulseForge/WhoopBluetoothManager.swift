@@ -972,7 +972,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         lines.append(contentsOf: whoopIMURawFrameHistory.isEmpty ? ["  none"] : whoopIMURawFrameHistory.map { "  \($0)" })
         lines.append("")
         lines.append("WHOOP standard 2A37 raw notifications (oldest first):")
-        lines.append(contentsOf: whoopStandardHeartRateRawFrameHistory.isEmpty ? ["  No 2A37 notifications captured"] : whoopStandardHeartRateRawFrameHistory.map { "  \\($0)" })
+        lines.append(contentsOf: whoopStandardHeartRateRawFrameHistory.isEmpty ? ["  No 2A37 notifications captured"] : whoopStandardHeartRateRawFrameHistory.map { "  \($0)" })
         lines.append("")
         lines.append("WHOOP realtime Type-40 raw frames (oldest first):")
         lines.append(contentsOf: whoopRealtimeRRRawFrameHistory.isEmpty ? ["  No Type-40 raw frames captured"] : whoopRealtimeRRRawFrameHistory.map { "  \($0)" })
