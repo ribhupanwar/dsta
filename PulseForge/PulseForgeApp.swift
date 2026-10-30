@@ -2887,12 +2887,12 @@ struct HeaderView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(eyebrow)
-                .font(.system(size: 10, weight: .semibold))
+                .font(ForgeTypography.semibold(10))
                 .tracking(1.1)
                 .foregroundStyle(ForgeColors.muted)
             HStack(alignment: .center) {
                 Text(title)
-                    .font(.system(size: 30, weight: .bold))
+                    .font(ForgeTypography.bold(30))
                     .tracking(-0.6)
                 Spacer()
                 if showsTrailingControl {
@@ -3299,20 +3299,29 @@ struct ConnectPrompt: View {
 }
 
 enum ForgeColors {
-    // WHOOP-derived dark visual system. Reconstructed from the extracted v5.75
-    // UI reference; final pixel match is subject to same-device screenshot diff.
+    // Values below are read from the WHOOP app's compiled asset-catalog color
+    // entries. They are visual reference tokens, not WHOOP brand assets.
     static let background = Color.black
-    static let card = Color(red: 0.075, green: 0.075, blue: 0.075)
-    static let track = Color(red: 0.20, green: 0.20, blue: 0.20)
-    static let stroke = Color.white.opacity(0.075)
-    static let muted = Color(red: 0.64, green: 0.64, blue: 0.64)
+    static let card = Color(red: 0.10196, green: 0.13333, blue: 0.15294) // Grey Blue
+    static let track = Color.white.opacity(0.20)
+    static let stroke = Color.white.opacity(0.15)
+    static let muted = Color.white.opacity(0.50)
     static let lime = Color.white
-    static let sleep = Color(red: 0.43, green: 0.64, blue: 0.86)
-    static let strain = Color(red: 0.16, green: 0.52, blue: 0.91)
-    static let recoveryHigh = Color(red: 0.04, green: 0.82, blue: 0.43)
-    static let recoveryMedium = Color(red: 1.0, green: 0.78, blue: 0.12)
-    static let recoveryLow = Color(red: 0.94, green: 0.20, blue: 0.24)
+    static let sleep = Color(red: 0.48235, green: 0.63137, blue: 0.73333) // Sleep
+    static let strain = Color(red: 0.0, green: 0.57647, blue: 0.90588) // Day Strain
+    static let recoveryHigh = Color(red: 0.09804, green: 0.92549, blue: 0.02353)
+    static let recoveryMedium = Color(red: 1.0, green: 0.87059, blue: 0.0)
+    static let recoveryLow = Color(red: 1.0, green: 0.0, blue: 0.14902)
     static let recovery = recoveryHigh
+}
+
+enum ForgeTypography {
+    // WHOOP's declared UI font families, mapped by role. DINPro is reserved
+    // for numeric readouts; Proxima Nova handles text and headings.
+    static func body(_ size: CGFloat) -> Font { .custom("ProximaNova-Regular", size: size) }
+    static func semibold(_ size: CGFloat) -> Font { .custom("ProximaNova-Semibold", size: size) }
+    static func bold(_ size: CGFloat) -> Font { .custom("ProximaNova-Bold", size: size) }
+    static func number(_ size: CGFloat) -> Font { .custom("DINPro-Bold", size: size) }
 }
 
 
