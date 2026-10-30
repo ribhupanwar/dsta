@@ -24,6 +24,11 @@ enum Whoop5RRDecoder {
         let heartRateBPM: Int?
         let rawRRWords: [Int]
         let rrIntervalsMilliseconds: [Int]
+        /// Gen5 v18 band-native cumulative motion counter, UInt16 LE at frame offsets 57...58.
+        let stepMotionCounter: Int
+        /// Raw companion fields retained for diagnostics; their exact semantics remain provisional.
+        let stepCadenceRaw: Int
+        let activityClassRaw: Int
     }
 
     /// Type-40 raw RR words (ticks @18+, 1/1024 second). CRC must be validated first.
@@ -96,7 +101,7 @@ enum Whoop5RRDecoder {
     /// Caller must validate the complete outer frame CRC before calling.
     /// RR words are already milliseconds; unlike Type-40 ticks, do NOT scale by 1000/1024.
     static func decodeHistoricalV18Biometrics(_ frame: [UInt8]) throws -> HistoricalV18Biometrics {
-        guard frame.count >= 28, frame[0] == 0xAA, frame[1] == 0x01 else {
+        guard frame.count >= 64, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
         }
         guard Int(frame[8]) == 47 else {
@@ -135,7 +140,12 @@ enum Whoop5RRDecoder {
             timestamp: Date(timeIntervalSince1970: TimeInterval(seconds)),
             heartRateBPM: heartRate,
             rawRRWords: words,
-            rrIntervalsMilliseconds: intervals
+            rrIntervalsMilliseconds: intervals,
+            // OpenStrap/NOOP Gen5 references decode the complete little-endian
+            // 16-bit counter; byte[57] alone silently loses its high byte.
+            stepMotionCounter: Int(frame[57]) | (Int(frame[58]) << 8),
+            stepCadenceRaw: Int(frame[59]),
+            activityClassRaw: Int(frame[63])
         )
     }
 
