@@ -105,24 +105,43 @@ jobs:
           done
           echo "Text and asset metadata export finished."
 
-      - name: Extract and inspect the latest PulseForge IPA artifact
+      - name: Extract exact WHOOP font metadata
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p reference-report/pulseforge-ipa /tmp/pulseforge-ipa-artifact /tmp/pulseforge-ipa-unpacked
-          gh run download 41026786740 --repo "$GITHUB_REPOSITORY" --name pulseforge-unsigned-ipa --dir /tmp/pulseforge-ipa-artifact
-          IPA="$(find /tmp/pulseforge-ipa-artifact -type f -name '*.ipa' -print -quit)"
-          test -n "$IPA"
-          shasum -a 256 "$IPA" | tee reference-report/pulseforge-ipa/sha256.txt
-          unzip -q "$IPA" -d /tmp/pulseforge-ipa-unpacked
-          PF_APP="$(find /tmp/pulseforge-ipa-unpacked -type d -name '*.app' -print -quit)"
-          test -n "$PF_APP"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PF_APP/Info.plist" > reference-report/pulseforge-ipa/identity.txt
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PF_APP/Info.plist" >> reference-report/pulseforge-ipa/identity.txt || true
-          find "$PF_APP" -type f | sed "s#^$PF_APP/##" | sort > reference-report/pulseforge-ipa/resource-inventory.txt
-          echo "PulseForge IPA #256 extracted and inventoried."
+          APP="$(cat "$RUNNER_TEMP/whoop-app-path.txt")"
+          mkdir -p reference-report/fonts
+          find "$APP" -type f \\( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' -o -iname '*.woff' -o -iname '*.woff2' \\) -print | sed "s#^$APP/##" | sort > reference-report/fonts/font-files.txt
+          if [ -f "$APP/Info.plist" ]; then
+            /usr/libexec/PlistBuddy -c 'Print :UIAppFonts' "$APP/Info.plist" > reference-report/fonts/ui-app-fonts.txt 2>&1 || true
+          fi
+          cat > "$RUNNER_TEMP/font-audit.swift" <<'SWIFT'
+          import Foundation
+          import CoreText
+          import CoreGraphics
+          let root = URL(fileURLWithPath: CommandLine.arguments[1])
+          let fm = FileManager.default
+          let keys: [CFString] = [kCTFontNameAttribute, kCTFontFamilyNameAttribute, kCTFontStyleNameAttribute, kCTFontFullNameAttribute]
+          func walk(_ url: URL) {
+              guard let items = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return }
+              for item in items {
+                  let isDir = (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+                  if isDir { walk(item); continue }
+                  let ext = item.pathExtension.lowercased()
+                  guard ["ttf", "otf", "ttc"].contains(ext) else { continue }
+                  if let descriptors = CTFontManagerCreateFontDescriptorsFromURL(item as CFURL) as? [CTFontDescriptor] {
+                      for d in descriptors {
+                          let attrs = CTFontDescriptorCopyAttributes(d) as NSDictionary
+                          let values = keys.map { attrs[$0] ?? "" }
+                          print("\(item.path.replacingOccurrences(of: root.path + "/", with: ""))\t\(values.map { String(describing: $0) }.joined(separator: "\t"))")
+                      }
+                  }
+              }
+          }
+          walk(root)
+          SWIFT
+          swift "$RUNNER_TEMP/font-audit.swift" "$APP" > reference-report/fonts/font-descriptors.tsv 2> reference-report/fonts/font-audit-errors.txt || true
+          echo "Font file inventory and CoreText family/style/PostScript metadata exported."
 
       - name: Build PulseForge source comparison inventory
         shell: bash
