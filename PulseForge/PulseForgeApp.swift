@@ -78,6 +78,7 @@ struct MainTabView: View {
         .ignoresSafeArea(.keyboard)
         .onAppear { refreshSavedWorkoutLoad() }
         .onReceive(bluetooth.$workoutHistory) { _ in refreshSavedWorkoutLoad() }
+        .onReceive(health.$sleepHours) { value in insights.updateHealthKitSleep(value) }
         .onChange(of: measuredMaxHeartRate) { _, _ in refreshSavedWorkoutLoad() }
         .onChange(of: health.isAuthorized) { _, authorized in
             if authorized { insights.refresh() }
@@ -892,7 +893,7 @@ struct SleepDashboard: View {
                         ScoreRing(title: "PERFORMANCE", value: nil, tint: Color(red: 0.35, green: 0.62, blue: 0.96))
                             .frame(width: 112)
                         VStack(alignment: .leading, spacing: 7) {
-                            Text(insights.sleepHours.map { String(format: "%.1f h", $0) } ?? "—")
+                            Text(health.sleepHours.map { String(format: "%.1f h", $0) } ?? "—")
                                 .font(.system(size: 34, weight: .medium, design: .rounded)).monospacedDigit()
                             Text("Time asleep").font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                             Text(insights.sleepSourceStatus)
@@ -927,14 +928,14 @@ struct SleepDashboard: View {
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 SectionHeader(title: "SLEEP STAGES")
-                SleepStageBreakdown(deep: nil, rem: nil, core: nil, awake: nil)
+                SleepStageBreakdown(deep: health.deepSleepMinutes, rem: health.remSleepMinutes, core: health.coreSleepMinutes, awake: health.awakeMinutes)
                 SectionHeader(title: "SLEEP SUMMARY")
                 HStack(spacing: 10) {
-                    CompactMetric(title: "TOTAL SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                    CompactMetric(title: "TOTAL SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                     CompactMetric(title: "DEEP SLEEP", value: "—", unit: "min")
                     CompactMetric(title: "REM SLEEP", value: "—", unit: "min")
                 }
-                Text("Sleep duration, stages, performance, need and debt are being matched against your original WHOOP export. PulseForge will show these metrics only when the corresponding WHOOP-native records are available and validated; Apple Health is not used as a substitute.")
+                Text("Sleep duration and stages below are an Apple Health fallback. WHOOP-native sleep, performance, need and debt remain separate and will appear only after the original WHOOP records are validated.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
