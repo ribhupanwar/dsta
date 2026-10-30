@@ -521,6 +521,28 @@ struct TodayDashboard: View {
                             progress: nil
                         ) { selectedHomeMetric = .strain }
                     }
+                    Divider().overlay(ForgeColors.stroke)
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("HRV").font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
+                            Text("—").font(.system(size: 20, weight: .semibold).monospacedDigit())
+                            Text("ms · overnight").font(.system(size: 8)).foregroundStyle(ForgeColors.muted)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("RESTING HR").font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
+                            Text("—").font(.system(size: 20, weight: .semibold).monospacedDigit())
+                            Text("bpm · overnight").font(.system(size: 8)).foregroundStyle(ForgeColors.muted)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("SLEEP").font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
+                            Text(health.sleepHours.map { String(format: "%.1f", $0) } ?? "—")
+                                .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                            Text("h · Apple Health").font(.system(size: 8)).foregroundStyle(ForgeColors.muted)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
                 .padding(15)
                 .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 20))
