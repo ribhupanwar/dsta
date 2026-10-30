@@ -85,6 +85,34 @@ jobs:
           echo "Targeted Swift symbols and disassembly context are static evidence only; they do not prove runtime BLE behaviour." >> mach-o-evidence/README.txt
           echo "No protocol payloads were modified or sent." >> mach-o-evidence/README.txt
 
+      - name: Resolve step-count metadata cross-references
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install radare2
+          {
+            echo "# WHOOP step-count metadata cross-reference audit"
+            echo "Static analysis only; no runtime or private service interaction."
+            echo
+            for term in currentStepCount lastStepCount previousStepCount delayedStepCountProcessingWorkItem HealthKitStepCountRequest HealthKitStepCountSubmissionDTO step_count_samples deleted_step_count_samples; do
+              echo "## $term"
+              r2 -q -A -c "izz~$term" /tmp/whoop-arm64 2>/dev/null | head -40 || true
+            done
+          } > mach-o-evidence/step-count-string-locations.txt
+          python3 - <<'PY'
+          import re, subprocess
+          from pathlib import Path
+          binary = "/tmp/whoop-arm64"
+          source = Path("mach-o-evidence/step-count-string-locations.txt").read_text(errors="replace")
+          addresses = set(re.findall(r"(?m)^\\s*(0x[0-9a-fA-F]+)", source))
+          out = []
+          for address in sorted(addresses):
+              result = subprocess.run(["r2", "-q", "-A", "-c", f"axt @ {address}", binary],
+                                      text=True, capture_output=True, timeout=180)
+              out.append(f"## Xrefs to {address}\\n{result.stdout[:12000]}")
+          Path("mach-o-evidence/step-count-xrefs.txt").write_text("\\n".join(out) or "No direct xrefs resolved.\\n")
+          print(f"Resolved xref candidates: {len(addresses)}")
+          PY
       - name: Upload Mach-O evidence
         uses: actions/upload-artifact@v4
         with:
