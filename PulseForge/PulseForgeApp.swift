@@ -495,14 +495,14 @@ struct TodayDashboard: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("TODAY")
-                            .font(.system(size: 11, weight: .bold)).tracking(1.6)
-                            .foregroundStyle(ForgeColors.muted)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("PULSEFORGE")
+                            .font(.system(size: 10, weight: .bold)).tracking(2.0)
+                            .foregroundStyle(ForgeColors.lime)
                         Text(Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                            .font(.system(size: 25, weight: .semibold))
+                            .font(.system(size: 26, weight: .semibold))
                             .foregroundStyle(.white)
                     }
                     Spacer()
@@ -510,7 +510,9 @@ struct TodayDashboard: View {
                         Image(systemName: "person.crop.circle")
                             .font(.system(size: 27, weight: .regular))
                             .foregroundStyle(.white)
-                            .frame(width: 40, height: 40)
+                            .frame(width: 42, height: 42)
+                            .background(Color.white.opacity(0.07), in: Circle())
+                            .overlay(Circle().stroke(ForgeColors.stroke, lineWidth: 1))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -571,9 +573,21 @@ struct TodayDashboard: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .padding(15)
-                .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 20))
-                .overlay(RoundedRectangle(cornerRadius: 20).stroke(ForgeColors.stroke, lineWidth: 1))
+                .padding(18)
+                .background {
+                    RoundedRectangle(cornerRadius: 23, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(red: 0.12, green: 0.16, blue: 0.18), ForgeColors.card],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 23, style: .continuous)
+                                .stroke(ForgeColors.stroke, lineWidth: 1)
+                        }
+                }
 
                 Button { selectedHomeMetric = .activity } label: {
                 VStack(alignment: .leading, spacing: 13) {
