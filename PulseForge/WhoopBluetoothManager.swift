@@ -572,6 +572,15 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         exportWorkoutToHealthKit(record)
     }
 
+    private static func healthKitAuthorizationLabel(_ status: HKAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined: return "not determined"
+        case .sharingDenied: return "denied"
+        case .sharingAuthorized: return "authorized"
+        @unknown default: return "unknown"
+        }
+    }
+
     /// Export completed WHOOP HR recordings as a HealthKit workout with its
     /// timestamped HR samples. Local history remains the source of truth if
     /// HealthKit sharing is unavailable or denied.
@@ -622,8 +631,22 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                 }
                 return
             }
+
+            // A successful request callback does not prove that write access
+            // was granted. HealthKit exposes the write state for each type.
+            let workoutWrite = self.healthKitStore.authorizationStatus(for: HKObjectType.workoutType())
+            let heartRateWrite = self.healthKitStore.authorizationStatus(for: heartRateType)
+            guard workoutWrite == .sharingAuthorized,
+                  heartRateWrite == .sharingAuthorized else {
+                let workoutState = Self.healthKitAuthorizationLabel(workoutWrite)
+                let heartRateState = Self.healthKitAuthorizationLabel(heartRateWrite)
+                DispatchQueue.main.async {
+                    self.healthKitExportStatus = "Apple Health write not authorized · Workout: \(workoutState) · HR: \(heartRateState) · enable both in iPhone Settings"
+                }
+                return
+            }
             DispatchQueue.main.async {
-                self.healthKitExportStatus = "Exporting workout and \(heartRateSamples.count) HR samples to Apple Health…"
+                self.healthKitExportStatus = "Write access confirmed · exporting workout and \(heartRateSamples.count) HR samples…"
             }
             builder.beginCollection(withStart: record.startedAt) { [weak self] began, beginError in
                 guard let self else { return }
