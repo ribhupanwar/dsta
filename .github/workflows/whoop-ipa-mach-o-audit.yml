@@ -3,7 +3,7 @@ name: WHOOP IPA Mach-O protocol symbol audit
 on:
   workflow_dispatch:
   push:
-    branches: [main, feature/export-whoop-rr-raw-archive]
+    branches: [main, feature/export-whoop-rr-raw-archive, audit/whoop-r24-step-counter-dispatch]
     paths:
       - ".github/workflows/whoop-ipa-mach-o-audit.yml"
 
@@ -246,6 +246,38 @@ jobs:
           print(f"Selected strings: {len(hits)}; direct ARM64 references: {len(refs)}; disassembly lines: {len(lines)}")
           PY
           echo "R24 string references and switch-table bytes are static evidence only; they do not prove runtime BLE behaviour." >> mach-o-evidence/README.txt
+
+      - name: Extract exact step sample model callee and state accessors
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          lines = Path("/tmp/whoop-disassembly.txt").read_text(errors="replace").splitlines()
+          targets = {
+              "step-sample-model-callee-0x10036e4a4.txt": "10036e4a4",
+              "step-sample-ingestion-callsite-0x10036dcb4.txt": "10036dcb4",
+              "step-count-state-accessors.txt": None,
+          }
+          for filename, target in targets.items():
+              if target:
+                  matches = [i for i, line in enumerate(lines) if re.match(r"^\\s*0*"+target+r"\\s", line, re.I)]
+                  if not matches:
+                      matches = [i for i, line in enumerate(lines) if target in line.lower()]
+                  out = ["# Exact disassembly target: 0x"+target, f"Matching lines: {len(matches)}"]
+                  for i in matches[:4]:
+                      out += ["", f"--- context around line {i+1} ---"] + lines[max(0,i-80):min(len(lines),i+260)]
+                  Path("mach-o-evidence/"+filename).write_text("\\n".join(out)+"\\n")
+              else:
+                  terms = re.compile(r"currentStepCount|lastStepCount|previousStepCount|delayedStepCountProcessingWorkItem", re.I)
+                  hits = [i for i,line in enumerate(lines) if terms.search(line)]
+                  out = ["# Disassembly references to step-count state accessors", f"Matching instruction/string lines: {len(hits)}"]
+                  for i in hits:
+                      out += ["", f"--- context around line {i+1} ---"] + lines[max(0,i-45):min(len(lines),i+90)]
+                  Path("mach-o-evidence/"+filename).write_text("\\n".join(out)+"\\n")
+          PY
+          echo "Added exact callee and step-state accessor disassembly windows; interpretation remains static until matched to captured runtime payloads." >> mach-o-evidence/README.txt
 
       - name: Upload Mach-O evidence
         uses: actions/upload-artifact@v4
