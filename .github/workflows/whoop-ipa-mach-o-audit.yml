@@ -324,13 +324,14 @@ jobs:
               ("processed-steps-string-xrefs.json", "BEGIN_PROCESSED_STEPS_XREF", "BEGIN_HISTORICAL_R24_XREF"),
               ("historical-r24-string-xrefs.json", "BEGIN_HISTORICAL_R24_XREF", "BEGIN_R24_FACTORY_FUNCTION"),
               ("r24-factory-function.txt", "BEGIN_R24_FACTORY_FUNCTION", "BEGIN_IMU_ERROR_FUNCTION"),
-              ("imu-error-function.txt", "BEGIN_IMU_ERROR_FUNCTION", "BEGIN_R24_CALLER_AUDIT"),\n              ("r24-caller-functions.txt", "BEGIN_R24_CALLER_AUDIT", None),
+              ("imu-error-function.txt", "BEGIN_IMU_ERROR_FUNCTION", "BEGIN_R24_CALLER_AUDIT"),
+              ("r24-caller-functions.txt", "BEGIN_R24_CALLER_AUDIT", None),
           ]
           for filename, start, end in markers:
               i = text.find(start)
               j = text.find(end, i + len(start)) if end else -1
               chunk = text[i + len(start):j if j >= 0 else None] if i >= 0 else ""
-              Path("mach-o-evidence/" + filename).write_text(chunk.strip() + "\\n")
+              Path("mach-o-evidence/" + filename).write_text(chunk.strip() + "\n")
           PY
           echo "Cross-reference analysis is static; verify any candidate parser against captured BLE frames before decoding steps." >> mach-o-evidence/README.txt
 
