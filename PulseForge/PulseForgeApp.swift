@@ -2163,10 +2163,15 @@ struct ConnectPrompt: View {
 }
 
 enum ForgeColors {
-    static let background = Color(red: 0.018, green: 0.035, blue: 0.065)
-    static let card = Color(red: 0.035, green: 0.075, blue: 0.12)
-    static let track = Color(red: 0.08, green: 0.16, blue: 0.23)
-    static let stroke = Color(red: 0.12, green: 0.31, blue: 0.43).opacity(0.62)
-    static let muted = Color(red: 0.57, green: 0.68, blue: 0.77)
-    static let lime = Color(red: 0.12, green: 0.78, blue: 0.88)
+    // Unified WHOOP-inspired dark visual system. Semantic accents remain
+    // separate so Recovery, Sleep and Strain can retain their own identities.
+    static let background = Color(red: 0.025, green: 0.027, blue: 0.030)
+    static let card = Color(red: 0.075, green: 0.078, blue: 0.082)
+    static let track = Color(red: 0.145, green: 0.150, blue: 0.155)
+    static let stroke = Color.white.opacity(0.075)
+    static let muted = Color(red: 0.62, green: 0.64, blue: 0.66)
+    static let lime = Color(red: 0.72, green: 0.91, blue: 0.24)
+    static let sleep = Color(red: 0.30, green: 0.62, blue: 0.96)
+    static let strain = Color(red: 1.00, green: 0.59, blue: 0.25)
+    static let recovery = Color(red: 0.15, green: 0.82, blue: 0.52)
 }
