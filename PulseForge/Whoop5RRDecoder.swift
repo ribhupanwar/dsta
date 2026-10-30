@@ -47,13 +47,6 @@ enum Whoop5RRDecoder {
         return bpm
     }
 
-    /// REALTIME_DATA (type 40): count @17, little-endian 1/1024-second RR ticks @18.
-    /// Tick words are converted to integer milliseconds after structural and range checks.
-    static func decodeRealtime(_ frame: [UInt8]) throws -> [Int] {
-        let ticks = try decodeRawWords(frame, countOffset: 17, wordsOffset: 18)
-        return ticks.map { ($0 * 1000 + 512) / 1024 }
-    }
-
     /// HISTORICAL_DATA v18 candidate layout (type 47):
     /// version @9, candidate count @23, candidate little-endian words @24.
     /// Offsets and units are not WHOOP-verified; return raw words only.
