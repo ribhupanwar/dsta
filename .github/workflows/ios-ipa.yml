@@ -45,65 +45,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m pip install --user --quiet Pillow
           ICON_DIR="PulseForge/Assets.xcassets/AppIcon.appiconset"
           mkdir -p "$ICON_DIR"
-          cat > "$RUNNER_TEMP/generate-icon.swift" <<'SWIFT'
-          import AppKit
-          import Foundation
-
-          let size = 1024
-          let bitmap = NSBitmapImageRep(
-              bitmapDataPlanes: nil,
-              pixelsWide: size,
-              pixelsHigh: size,
-              bitsPerSample: 8,
-              samplesPerPixel: 4,
-              hasAlpha: true,
-              isPlanar: false,
-              colorSpaceName: .deviceRGB,
-              bytesPerRow: 0,
-              bitsPerPixel: 0
-          )!
-          NSGraphicsContext.saveGraphicsState()
-          let context = NSGraphicsContext(bitmapImageRep: bitmap)!
-          NSGraphicsContext.current = context
-          context.imageInterpolation = .high
-          let black = NSColor(calibratedRed: 0.008, green: 0.012, blue: 0.016, alpha: 1)
-          let white = NSColor(calibratedRed: 0.98, green: 0.985, blue: 0.97, alpha: 1)
-          black.setFill()
-          NSBezierPath(rect: NSRect(x: 0, y: 0, width: size, height: size)).fill()
-          white.setFill()
-          NSBezierPath(ovalIn: NSRect(x: 160, y: 160, width: 704, height: 704)).fill()
-          black.setFill()
-          // Original geometric P monogram, not a reproduction of another brand's mark.
-          NSBezierPath(roundedRect: NSRect(x: 365, y: 300, width: 78, height: 424), xRadius: 20, yRadius: 20).fill()
-          NSBezierPath(roundedRect: NSRect(x: 405, y: 490, width: 285, height: 235), xRadius: 105, yRadius: 105).fill()
-          white.setFill()
-          NSBezierPath(roundedRect: NSRect(x: 485, y: 560, width: 125, height: 82), xRadius: 38, yRadius: 38).fill()
-          // Distinctive pulse cut through the lower part of the monogram.
-          let pulse = NSBezierPath()
-          pulse.move(to: NSPoint(x: 330, y: 455))
-          pulse.line(to: NSPoint(x: 435, y: 455))
-          pulse.line(to: NSPoint(x: 485, y: 510))
-          pulse.line(to: NSPoint(x: 530, y: 385))
-          pulse.line(to: NSPoint(x: 575, y: 475))
-          pulse.line(to: NSPoint(x: 700, y: 475))
-          pulse.line(to: NSPoint(x: 700, y: 425))
-          pulse.line(to: NSPoint(x: 605, y: 425))
-          pulse.line(to: NSPoint(x: 525, y: 300))
-          pulse.line(to: NSPoint(x: 470, y: 420))
-          pulse.line(to: NSPoint(x: 445, y: 405))
-          pulse.line(to: NSPoint(x: 330, y: 405))
-          pulse.close()
-          white.setFill()
-          pulse.fill()
-          context.flushGraphics()
-          NSGraphicsContext.restoreGraphicsState()
-          let png = bitmap.representation(using: .png, properties: [:])!
-          try png.write(to: URL(fileURLWithPath: CommandLine.arguments[1]))
-          SWIFT
-          swift "$RUNNER_TEMP/generate-icon.swift" "$ICON_DIR/PulseForgeIcon.png"
-          test -s "$ICON_DIR/PulseForgeIcon.png"
+          python3 - <<'PY'
+          from PIL import Image, ImageDraw
+          S = 1024
+          im = Image.new("RGB", (S, S), (0, 0, 0))
+          d = ImageDraw.Draw(im)
+          white, black = (248, 249, 247), (5, 8, 10)
+          d.ellipse((160, 160, 864, 864), fill=white)
+          # Original PulseForge P + pulse mark, not a reproduction of WHOOP's logo.
+          d.rounded_rectangle((360, 300, 440, 724), radius=24, fill=black)
+          d.rounded_rectangle((400, 300, 690, 535), radius=110, fill=black)
+          d.rounded_rectangle((480, 378, 610, 457), radius=38, fill=white)
+          d.polygon([(320,570),(435,570),(485,510),(535,640),(585,555),
+                     (704,555),(704,610),(620,610),(530,760),(470,625),
+                     (450,625),(420,620),(320,620)], fill=white)
+          d.line([(345,595),(435,595),(485,545),(530,660),(575,585),(680,585)],
+                 fill=black, width=22, joint="curve")
+          im.save(f"{ICON_DIR}/PulseForgeIcon.png", format="PNG", optimize=True)
+          PY
           cat > "$ICON_DIR/Contents.json" <<'JSON'
           {
             "images" : [
@@ -120,7 +82,8 @@ jobs:
             }
           }
           JSON
-          sips -g pixelWidth -g pixelHeight "$ICON_DIR/PulseForgeIcon.png"
+          test -s "$ICON_DIR/PulseForgeIcon.png"
+          echo "Generated 1024x1024 black/white PulseForge app icon."
 
       - name: Install XcodeGen
         run: |
