@@ -107,6 +107,35 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(step.activityClassRaw, 0)
     }
 
+    func testBandAccumulatorDoesNotCountHardwareSoftwareSourceSwitch() throws {
+        let fixture = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
+        let start = Date(timeIntervalSince1970: 1_780_916_150)
+        let calendar = Calendar(identifier: .gregorian)
+
+        func sample(timestamp: Date, selected: Int, hardware: Int, override: Bool) throws -> WhoopBandStepCounter.Sample {
+            var frame = fixture
+            let seconds = UInt32(timestamp.timeIntervalSince1970)
+            for offset in 0..<4 {
+                frame[15 + offset] = UInt8((seconds >> (offset * 8)) & 0xff)
+            }
+            frame[57] = UInt8(selected & 0xff)
+            frame[58] = UInt8((selected >> 8) & 0xff)
+            frame[61] = UInt8(hardware & 0xff)
+            frame[62] = UInt8((hardware >> 8) & 0xff)
+            frame[64] = override ? 0x10 : 0
+            let decoded = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame)
+            return .init(timestamp: decoded.timestamp, counter: decoded.accumulationCounter)
+        }
+
+        var accumulator = WhoopBandStepCounter()
+        accumulator.ingest(try sample(timestamp: start, selected: 100, hardware: 0, override: false), calendar: calendar)
+        accumulator.ingest(try sample(timestamp: start.addingTimeInterval(1), selected: 900, hardware: 101, override: true), calendar: calendar)
+        accumulator.ingest(try sample(timestamp: start.addingTimeInterval(2), selected: 102, hardware: 0, override: false), calendar: calendar)
+
+        XCTAssertEqual(accumulator.steps(for: start, calendar: calendar), 2)
+        XCTAssertEqual(accumulator.latestSample?.counter, 102)
+    }
+
     func testUsesHardwareCounterDuringSoftwareOverride() throws {
         var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
         // The selected/software counter is 900, while byte 61 retains the
