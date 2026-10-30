@@ -72,9 +72,10 @@ enum Whoop5RRDecoder {
         return bpm
     }
 
-    /// HISTORICAL_DATA v18 candidate layout (type 47):
-    /// version @9, candidate count @23, candidate little-endian words @24.
-    /// Offsets and units are not WHOOP-verified; return raw words only.
+    /// HISTORICAL_DATA v18 raw-word extraction (type 47):
+    /// version @9, verified RR count @23, RR little-endian words @24.
+    /// Values are retained unchanged; use decodeHistoricalV18Biometrics for
+    /// validated millisecond intervals and the embedded physiological timestamp.
     static func decodeHistoricalV18CandidateRRWords(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 28, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
@@ -138,9 +139,9 @@ enum Whoop5RRDecoder {
         )
     }
 
-    /// Candidate timestamp extraction from the NOOP-derived fixture only.
-    /// The WHOOP IPA does not establish this offset or epoch; never publish this
-    /// value as a physiological timestamp without independent device correlation.
+    /// Legacy candidate-only timestamp helper retained for forensic comparisons.
+    /// Production code must use decodeHistoricalV18Biometrics, which validates
+    /// the full v18 layout and returns the timestamp with its HR/RR fields.
     static func decodeCandidateHistoricalTimestampV18(_ frame: [UInt8]) throws -> Date {
         guard frame.count >= 19, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
@@ -161,8 +162,8 @@ enum Whoop5RRDecoder {
         return Date(timeIntervalSince1970: TimeInterval(seconds))
     }
 
-    /// Candidate HR-byte extraction from the NOOP-derived fixture only.
-    /// The WHOOP IPA does not establish this offset; do not publish it as BPM.
+    /// Legacy candidate-only HR helper retained for forensic comparisons.
+    /// Production code must use decodeHistoricalV18Biometrics.
     static func decodeCandidateHistoricalHeartRateV18(_ frame: [UInt8]) throws -> Int {
         guard frame.count >= 23, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
