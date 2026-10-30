@@ -2453,9 +2453,27 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     whoopHistoricalRRSource = "Historical v18 decode rejected · raw frame retained · \(error)"
                 }
 
-                // Type-47 v18 offsets 57...58 are only a motion-field candidate.
-                // Do not publish them as steps; live Type-40 carries the selected
-                // cumulative pedometer counter on the validated protocol layout.
+                // Gen5 v18 historical records carry the same cumulative on-chip
+                // step/motion counter mapped independently by OpenStrap at frame
+                // offsets 57...58. Its step semantics remain experimental until
+                // correlated against a ground-truth walk on this firmware/device.
+                do {
+                    let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(b)
+                    recordWhoopStepSample(timestamp: step.timestamp, counter: step.stepMotionCounter)
+                    stepSignalLastPacketType = 47
+                    stepSignalLastPacketLength = b.count
+                    stepSignalLastSeenAt = receivedAt
+                    stepSignalSelectedCounter = step.stepMotionCounter
+                    stepSignalHardwareCounter = nil
+                    stepSignalCadence = step.stepCadenceRaw
+                    stepSignalActivity = step.activityClassRaw
+                    stepSignalSoftwareOverride = nil
+                    stepSignalLastOutcome = "Historical v18 cumulative motion counter · experimental step source"
+                    recordVendorTimeline("WHOOP Type-47 v18 motion counter · value=\\(step.stepMotionCounter) · cadenceRaw=\\(step.stepCadenceRaw) · activityRaw=\\(step.activityClassRaw) · timestamp=\\(ISO8601DateFormatter().string(from: step.timestamp))")
+                } catch {
+                    stepSignalLastOutcome = "Historical v18 step-counter decode rejected · \\(error)"
+                    recordVendorTimeline("WHOOP Type-47 v18 step-counter decode rejected · \\(error) · raw frame retained")
+                }
 
                 let record = HistoricalRRPacketRecord(
                     receivedAt: receivedAt,
