@@ -53,7 +53,7 @@ struct MainTabView: View {
             ForgeColors.background.ignoresSafeArea()
             Group {
                 switch selected {
-                case .home: TodayDashboard()
+                case .home: TodayDashboard(selectedTab: $selected)
                 case .health: HealthHubDashboard()
                 case .community: CommunityDashboard()
                 case .more: MoreDashboard()
@@ -232,12 +232,18 @@ struct MoreDashboard: View {
                         }
                     }
                     moreSection("CONNECTED APPS") {
-                        moreRow("Apple Health", subtitle: "HealthKit data source", icon: "heart.text.square")
+                        NavigationLink(destination: HealthSourcesDashboard()) {
+                            moreRow("Apple Health", subtitle: "HealthKit data source", icon: "heart.text.square")
+                        }
                         moreDivider()
-                        moreRow("Strava", subtitle: "Connection setup", icon: "figure.run")
+                        NavigationLink(destination: StravaConnectionDashboard()) {
+                            moreRow("Strava", subtitle: "Connection setup", icon: "figure.run")
+                        }
                     }
                     moreSection("PULSEFORGE") {
-                        moreRow("About PulseForge", subtitle: "Version and app information", icon: "info.circle")
+                        NavigationLink(destination: AboutPulseForgeDashboard()) {
+                            moreRow("About PulseForge", subtitle: "Version and app information", icon: "info.circle")
+                        }
                     }
                     .padding(.bottom, 105)
                 }
@@ -289,6 +295,7 @@ enum HomeMetric: String, Identifiable {
     case recovery = "Recovery"
     case sleep = "Sleep"
     case strain = "Strain"
+    case activity = "Activity"
     var id: String { rawValue }
 }
 
@@ -347,6 +354,7 @@ struct HomeMetricDial: View {
 }
 
 struct TodayDashboard: View {
+    @Binding var selectedTab: ForgeTab
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
@@ -365,9 +373,15 @@ struct TodayDashboard: View {
                             .foregroundStyle(.white)
                     }
                     Spacer()
-                    Image(systemName: "person.crop.circle")
-                        .font(.system(size: 27, weight: .regular))
-                        .foregroundStyle(.white)
+                    Button { selectedTab = .more } label: {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 27, weight: .regular))
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open More and profile settings")
                 }
                 VStack(alignment: .leading, spacing: 15) {
                     HStack {
@@ -406,6 +420,7 @@ struct TodayDashboard: View {
                 .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 20))
                 .overlay(RoundedRectangle(cornerRadius: 20).stroke(ForgeColors.stroke, lineWidth: 1))
 
+                Button { selectedHomeMetric = .activity } label: {
                 VStack(alignment: .leading, spacing: 13) {
                     HStack {
                         Text("TODAY'S ACTIVITY")
@@ -435,6 +450,9 @@ struct TodayDashboard: View {
                 }
                 .padding(15)
                 .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 20))
+                }
+                .buttonStyle(.plain)
+                .contentShape(RoundedRectangle(cornerRadius: 20))
 
                 VStack(alignment: .leading, spacing: 8) {
                     Label("TODAY'S INSIGHT", systemImage: "sparkles")
@@ -463,6 +481,7 @@ struct TodayDashboard: View {
                     case .recovery: RecoveryDashboard()
                     case .sleep: SleepDashboard()
                     case .strain: StrainDashboard()
+                    case .activity: ActivityDashboard()
                     }
                 }
                 .toolbar {
