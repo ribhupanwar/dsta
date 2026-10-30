@@ -3,7 +3,7 @@ name: WHOOP IPA Mach-O protocol symbol audit
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feature/export-whoop-rr-raw-archive]
     paths:
       - ".github/workflows/whoop-ipa-mach-o-audit.yml"
 
@@ -52,8 +52,12 @@ jobs:
             > mach-o-evidence/swift-demangled-symbols.txt 2>&1 || true
           grep -Ei 'Hello(Packet|Response|Sending|Info)|sendGetHelloPacket|RealtimeHRPacket|RealtimeSequenceable|HistoricalSequenceable|FrameEnvelopePacket|RevisionRouter|RealtimeHeartRateData|HistoricalPull|WhoopPacket.*CRC|rrIntervals|RealtimeDataType' \
             mach-o-evidence/swift-demangled-symbols.txt > mach-o-evidence/protocol-symbols.txt || true
+          grep -Ei 'step.?count|stepcounter|pedometer|CMPedometer|CMAltimeter|HKQuantityTypeIdentifierStepCount|walking|stride|cadence|accelerometer|gyroscope|IMUStream|RealtimeIMU|HistoricalIMU|IMUPacket|ActivityDetection|Motion' \
+            mach-o-evidence/swift-demangled-symbols.txt > mach-o-evidence/step-motion-symbols.txt || true
           strings -a /tmp/whoop-arm64 | grep -Ei 'HelloPacketRev[34]|sendGetHelloPacket|HelloResponsePacket|RealtimeHRPacket|HistoricalSequenceable|rrIntervals|FD4B|Characteristics Subscribed|HELLO RESPONSE' \
             > mach-o-evidence/protocol-strings.txt || true
+          strings -a /tmp/whoop-arm64 | grep -Ei 'step.?count|stepcounter|pedometer|CMPedometer|CMAltimeter|HKQuantityTypeIdentifierStepCount|walking|stride|cadence|accelerometer|gyroscope|IMUStream|RealtimeIMU|HistoricalIMU|IMUPacket|ActivityDetection|Motion|/.*step' \
+            | sort -u > mach-o-evidence/step-motion-strings.txt || true
           otool -arch arm64 -l /tmp/whoop-arm64 > mach-o-evidence/load-commands.txt
           otool -arch arm64 -tvV /tmp/whoop-arm64 > /tmp/whoop-disassembly.txt 2>mach-o-evidence/otool-errors.txt || true
           python3 - <<'PY'
@@ -61,7 +65,7 @@ jobs:
           import re
           source = Path("/tmp/whoop-disassembly.txt").read_text(errors="replace")
           lines = source.splitlines()
-          terms = re.compile(r"hello|realtimehr|historical|frameenvelope|revisionrouter|rrinterval|sendgethellopacket|crc", re.I)
+          terms = re.compile(r"hello|realtimehr|historical|frameenvelope|revisionrouter|rrinterval|sendgethellopacket|crc|step.?count|stepcounter|pedometer|CMPedometer|HKQuantityTypeIdentifierStepCount|accelerometer|gyroscope|IMUStream|RealtimeIMU|IMUPacket|ActivityDetection|stride|cadence|motion", re.I)
           hits = [i for i, line in enumerate(lines) if terms.search(line)]
           keep = set()
           for i in hits:
@@ -76,6 +80,7 @@ jobs:
               previous = i
           Path("mach-o-evidence/protocol-disassembly-context.txt").write_text("\n".join(out) + "\n")
           print(f"Disassembly lines: {len(lines)}; matching context lines: {len(selected)}")
+          Path("mach-o-evidence/step-motion-disassembly-context.txt").write_text("\\n".join(out) + "\\n")
           PY
           echo "Targeted Swift symbols and disassembly context are static evidence only; they do not prove runtime BLE behaviour." >> mach-o-evidence/README.txt
           echo "No protocol payloads were modified or sent." >> mach-o-evidence/README.txt
