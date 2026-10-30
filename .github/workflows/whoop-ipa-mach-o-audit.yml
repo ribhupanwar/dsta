@@ -109,14 +109,18 @@ jobs:
                   continue
               address = int(addr, 0) if isinstance(addr, str) else int(addr)
               hits.append((address, value))
-          locations = ["# WHOOP step-count string locations (radare2 JSON virtual addresses)", "Static analysis only."]
+          # Keep the audit bounded: the stripped WHOOP binary contains many unrelated
+          # matches, and spawning radare2 once per match can exceed the whole job timeout.
+          hits.sort(key=lambda item: (0 if re.search(r"currentStepCount|lastStepCount|previousStepCount|HealthKitStepCount|step_count_samples|HKQuantityTypeIdentifierStepCount", item[1], re.I) else 1, item[0]))
+          hits = hits[:24]
+          locations = ["# WHOOP step-count string locations (radare2 JSON virtual addresses)", "Static analysis only; bounded to 24 high-priority matches."]
           for address, value in hits:
               locations.append(f"0x{address:x}  {value}")
           Path("mach-o-evidence/step-count-string-locations.txt").write_text("\n".join(locations) + "\n")
           xrefs = []
           functions = set()
           for address, value in hits:
-              cmd = subprocess.run(["r2", "-q", "-c", f"axtj @ 0x{address:x}", binary], text=True, capture_output=True, timeout=180)
+              cmd = subprocess.run(["r2", "-q", "-c", f"axtj @ 0x{address:x}", binary], text=True, capture_output=True, timeout=25)
               try:
                   refs = json.loads(cmd.stdout.strip() or "[]")
               except json.JSONDecodeError:
@@ -132,7 +136,7 @@ jobs:
               disasm.append(f"## Referencing function near 0x{address:x}\n{cmd.stdout[:20000]}")
           Path("mach-o-evidence/step-count-xrefs.txt").write_text("\n".join(xrefs) or "No matching strings with virtual addresses found.\n")
           Path("mach-o-evidence/step-count-xref-functions.txt").write_text("\n".join(disasm) or "No referencing functions resolved.\n")
-          print(f"Matching strings: {len(hits)}; xref source addresses: {len(functions)}")
+          print(f"Matching strings analyzed: {len(hits)}; xref source addresses: {len(functions)}; functions disassembled: {len(selected_functions)}")
           PY
       - name: Upload Mach-O evidence
         uses: actions/upload-artifact@v4
