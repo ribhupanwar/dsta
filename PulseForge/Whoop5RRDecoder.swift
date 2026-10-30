@@ -17,9 +17,9 @@ enum Whoop5RRDecoder {
         case truncatedIntervals(expectedBytes: Int, availableBytes: Int)
     }
 
-    /// Type-40 candidate extraction from NOOP fixtures only.
-    /// WHOOP IPA/device evidence does not establish these offsets or RR units.
-    /// Return raw little-endian words; never label or convert them as milliseconds.
+    /// Type-40 extraction using the NOOP Gen5 REALTIME_DATA layout:
+    /// count @17 and little-endian UInt16 RR milliseconds @18+.
+    /// The frame must already have passed the outer WHOOP CRC validation.
     static func decodeRealtimeCandidateRRWords(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 22, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
@@ -30,17 +30,15 @@ enum Whoop5RRDecoder {
         return try decodeRawWords(frame, countOffset: 17, wordsOffset: 18)
     }
 
-    /// WHOOP 5.0 Type-40 RR values are little-endian ticks at 1/1024 second.
-    /// The count is byte 17 and complete words begin at byte 18; the final four
-    /// bytes are the outer CRC32 and are excluded by decodeRawWords.
-    /// Zero words are placeholders and are omitted. Positive ticks are rounded
-    /// to integer milliseconds using the NOOP/OpenStrap protocol reference formula.
+    /// WHOOP 5.0 Type-40 RR values are already little-endian milliseconds.
+    /// NOOP's Gen5 interpreter documents count @17 and values @18+ (u16, ms),
+    /// matching the user's CRC-valid Type-40 captures. Do not apply a tick conversion.
+    /// Zero placeholders are omitted; implausible values reject the batch.
     static func decodeRealtimeRRIntervalsMilliseconds(_ frame: [UInt8]) throws -> [Int] {
-        let ticks = try decodeRealtimeCandidateRRWords(frame)
+        let rawWords = try decodeRealtimeCandidateRRWords(frame)
         var intervals: [Int] = []
-        intervals.reserveCapacity(ticks.count)
-        for tick in ticks where tick > 0 {
-            let milliseconds = (tick * 1000 + 512) / 1024
+        intervals.reserveCapacity(rawWords.count)
+        for milliseconds in rawWords where milliseconds > 0 {
             guard (250...3000).contains(milliseconds) else {
                 throw DecodeError.invalidIntervalValue(milliseconds)
             }
