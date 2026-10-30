@@ -23,6 +23,7 @@ enum ForgeTab: String, CaseIterable {
     case sleep = "Sleep"
     case strain = "Strain"
     case recovery = "Recovery"
+    case activity = "Activity"
     case run = "Run"
     case device = "WHOOP"
 
@@ -32,6 +33,7 @@ enum ForgeTab: String, CaseIterable {
         case .sleep: "moon.zzz.fill"
         case .strain: "flame.fill"
         case .recovery: "heart.fill"
+        case .activity: "list.bullet.rectangle"
         case .run: "figure.run"
         case .device: "waveform.path.ecg"
         }
@@ -62,6 +64,7 @@ struct MainTabView: View {
                 case .sleep: SleepDashboard()
                 case .strain: StrainDashboard()
                 case .recovery: RecoveryDashboard()
+                case .activity: ActivityDashboard()
                 case .run: RunningDashboard()
                 case .device: DeviceDashboard()
                 }
@@ -1108,6 +1111,85 @@ struct StrainDashboard: View {
             .padding(18).padding(.top, 16)
         }
         .refreshable { health.refresh(); insights.refresh() }
+    }
+}
+
+struct ActivityDashboard: View {
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+
+    private var sessions: [WorkoutSessionRecord] {
+        bluetooth.workoutHistory.sorted { $0.startedAt > $1.startedAt }
+    }
+
+    private func duration(_ seconds: TimeInterval) -> String {
+        let minutes = max(0, Int(seconds / 60))
+        return minutes >= 60
+            ? String(format: "%dh %02dm", minutes / 60, minutes % 60)
+            : String(format: "%dm", minutes)
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                HeaderView(eyebrow: "WORKOUT HISTORY", title: "Activity")
+                HStack(spacing: 10) {
+                    CompactMetric(title: "SESSIONS", value: "\(sessions.count)", unit: "saved")
+                    CompactMetric(title: "HR SAMPLES", value: "\(sessions.reduce(0) { $0 + $1.heartRateSamples.count })", unit: "recorded")
+                    CompactMetric(title: "AUTO-DETECTED", value: "\(sessions.filter(\.wasAutomatic).count)", unit: "sessions")
+                }
+                SectionHeader(title: "RECENT ACTIVITIES")
+                if sessions.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Image(systemName: "figure.run").font(.system(size: 25)).foregroundStyle(ForgeColors.muted)
+                        Text("No saved workouts yet").font(.system(size: 17, weight: .semibold))
+                        Text("WHOOP workout sessions will appear here after PulseForge records and saves their timestamped heart-rate and motion samples.")
+                            .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(18)
+                    .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+                } else {
+                    ForEach(sessions) { session in
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(alignment: .top) {
+                                Image(systemName: "figure.run")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(ForgeColors.lime)
+                                    .frame(width: 40, height: 40)
+                                    .background(ForgeColors.lime.opacity(0.11), in: RoundedRectangle(cornerRadius: 12))
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(session.wasAutomatic ? "Automatic workout" : "Recorded workout")
+                                        .font(.system(size: 14, weight: .semibold))
+                                    Text(session.startedAt.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                                }
+                                Spacer()
+                                Text(duration(session.durationSeconds))
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .monospacedDigit()
+                            }
+                            HStack(spacing: 16) {
+                                Label("\(session.heartRateSamples.count) HR samples", systemImage: "heart")
+                                Label("\(session.imuSamples.count) motion samples", systemImage: "waveform")
+                                if session.wasInterrupted {
+                                    Label("Interrupted", systemImage: "exclamationmark.circle")
+                                        .foregroundStyle(ForgeColors.strain)
+                                }
+                            }
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(ForgeColors.muted)
+                        }
+                        .padding(15)
+                        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 17))
+                        .overlay(RoundedRectangle(cornerRadius: 17).stroke(ForgeColors.stroke, lineWidth: 1))
+                    }
+                }
+                Text("Activity entries use saved PulseForge workout records. Missing GPS distance or pace is not inferred from heart-rate data.")
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                    .padding(.bottom, 110)
+            }
+            .padding(.horizontal, 17).padding(.top, 14)
+        }
     }
 }
 
