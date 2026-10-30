@@ -256,8 +256,8 @@ jobs:
           lines = Path("/tmp/whoop-disassembly.txt").read_text(errors="replace").splitlines()
           targets = {
               "step-sample-model-callee-0x10036e4a4.txt": "10036e4a4",
-      "step-sample-field-parser-0x10030b8c0.txt": "10030b8c0",
-      "step-sample-next-parser-0x10036e5a4.txt": "10036e5a4",
+              "step-sample-field-parser-0x10030b8c0.txt": "10030b8c0",
+              "step-sample-next-parser-0x10036e5a4.txt": "10036e5a4",
               "step-sample-ingestion-callsite-0x10036dcb4.txt": "10036dcb4",
               "step-count-state-accessors.txt": None,
           }
