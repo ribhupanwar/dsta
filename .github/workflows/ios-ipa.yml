@@ -47,7 +47,62 @@ jobs:
           set -euo pipefail
           ICON_DIR="PulseForge/Assets.xcassets/AppIcon.appiconset"
           mkdir -p "$ICON_DIR"
-          sips -s format png -z 1024 1024 "$ICON_DIR/PulseForgeIcon.svg" --out "$ICON_DIR/PulseForgeIcon.png" >/dev/null
+          cat > "$RUNNER_TEMP/generate-icon.swift" <<'SWIFT'
+          import AppKit
+          import Foundation
+
+          let size = 1024
+          let bitmap = NSBitmapImageRep(
+              bitmapDataPlanes: nil,
+              pixelsWide: size,
+              pixelsHigh: size,
+              bitsPerSample: 8,
+              samplesPerPixel: 4,
+              hasAlpha: true,
+              isPlanar: false,
+              colorSpaceName: .deviceRGB,
+              bytesPerRow: 0,
+              bitsPerPixel: 0
+          )!
+          NSGraphicsContext.saveGraphicsState()
+          let context = NSGraphicsContext(bitmapImageRep: bitmap)!
+          NSGraphicsContext.current = context
+          context.imageInterpolation = .high
+          let black = NSColor(calibratedRed: 0.008, green: 0.012, blue: 0.016, alpha: 1)
+          let white = NSColor(calibratedRed: 0.98, green: 0.985, blue: 0.97, alpha: 1)
+          black.setFill()
+          NSBezierPath(rect: NSRect(x: 0, y: 0, width: size, height: size)).fill()
+          white.setFill()
+          NSBezierPath(ovalIn: NSRect(x: 160, y: 160, width: 704, height: 704)).fill()
+          black.setFill()
+          // Original geometric P monogram, not a reproduction of another brand's mark.
+          NSBezierPath(roundedRect: NSRect(x: 365, y: 300, width: 78, height: 424), xRadius: 20, yRadius: 20).fill()
+          NSBezierPath(roundedRect: NSRect(x: 405, y: 490, width: 285, height: 235), xRadius: 105, yRadius: 105).fill()
+          white.setFill()
+          NSBezierPath(roundedRect: NSRect(x: 485, y: 560, width: 125, height: 82), xRadius: 38, yRadius: 38).fill()
+          // Distinctive pulse cut through the lower part of the monogram.
+          let pulse = NSBezierPath()
+          pulse.move(to: NSPoint(x: 330, y: 455))
+          pulse.line(to: NSPoint(x: 435, y: 455))
+          pulse.line(to: NSPoint(x: 485, y: 510))
+          pulse.line(to: NSPoint(x: 530, y: 385))
+          pulse.line(to: NSPoint(x: 575, y: 475))
+          pulse.line(to: NSPoint(x: 700, y: 475))
+          pulse.line(to: NSPoint(x: 700, y: 425))
+          pulse.line(to: NSPoint(x: 605, y: 425))
+          pulse.line(to: NSPoint(x: 525, y: 300))
+          pulse.line(to: NSPoint(x: 470, y: 420))
+          pulse.line(to: NSPoint(x: 445, y: 405))
+          pulse.line(to: NSPoint(x: 330, y: 405))
+          pulse.close()
+          white.setFill()
+          pulse.fill()
+          context.flushGraphics()
+          NSGraphicsContext.restoreGraphicsState()
+          let png = bitmap.representation(using: .png, properties: [:])!
+          try png.write(to: URL(fileURLWithPath: CommandLine.arguments[1]))
+          SWIFT
+          swift "$RUNNER_TEMP/generate-icon.swift" "$ICON_DIR/PulseForgeIcon.png"
           test -s "$ICON_DIR/PulseForgeIcon.png"
           cat > "$ICON_DIR/Contents.json" <<'JSON'
           {
@@ -65,7 +120,7 @@ jobs:
             }
           }
           JSON
-          echo "Generated 1024x1024 PulseForge app icon."
+          sips -g pixelWidth -g pixelHeight "$ICON_DIR/PulseForgeIcon.png"
 
       - name: Install XcodeGen
         run: |
@@ -115,7 +170,7 @@ jobs:
           cp PulseForge/Fonts/BarlowCondensed-OFL.txt "$APP/BarlowCondensed-OFL.txt"
           ls -lh "$APP"/*Pro* "$APP"/*Condensed*
 
-      - name: Verify bundled fonts before IPA packaging
+      - name: Verify fonts and app icon in archive
         shell: bash
         run: |
           set -euo pipefail
@@ -127,8 +182,14 @@ jobs:
               exit 1
             }
           done
+          test -s "$APP/Assets.car" || {
+            echo "::error::Assets.car missing; app icon asset catalog was not compiled."
+            find "$APP" -maxdepth 2 -print | sort
+            exit 1
+          }
           /usr/libexec/PlistBuddy -c "Print :UIAppFonts" "$APP/Info.plist"
-          echo "Verified both font binaries and OFL licence files in PulseForge.app."
+          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$APP/Info.plist"
+          echo "Verified licensed fonts and compiled asset catalog."
 
       - name: Package installable IPA container
         shell: bash
@@ -147,12 +208,14 @@ jobs:
             /usr/bin/zip -qry "$GITHUB_WORKSPACE/PulseForge-unsigned.ipa" Payload
           )
           test -s PulseForge-unsigned.ipa
+          unzip -l PulseForge-unsigned.ipa | grep -E 'Payload/PulseForge.app/(Assets.car|Info.plist|ReadexPro.ttf|BarlowCondensed-Bold.ttf)'
           shasum -a 256 PulseForge-unsigned.ipa | tee PulseForge-unsigned.ipa.sha256
           {
             echo "## Unsigned IPA created"
             echo "- File: PulseForge-unsigned.ipa"
             echo "- SHA-256: $(cut -d ' ' -f 1 PulseForge-unsigned.ipa.sha256)"
             echo "- Bundle ID: com.ribhupanwar.pulseforge"
+            echo "- Display name: PulseForge"
             echo "- Signing: unsigned; install through SideStore/AltStore signing flow."
           } >> "$GITHUB_STEP_SUMMARY"
 
