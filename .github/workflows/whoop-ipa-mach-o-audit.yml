@@ -69,7 +69,7 @@ jobs:
           "$OBJDUMP" --help > mach-o-evidence/llvm-objdump-help.txt
           grep -q -- '--start-address' mach-o-evidence/llvm-objdump-help.txt
           : > /tmp/whoop-disassembly.txt
-          for RANGE in "0x10036d000:0x100370000" "0x100802000:0x100804000" "0x10088e000:0x100892000" "0x105ce7000:0x105ce9000" "0x105cf6000:0x105cf7000"; do
+          for RANGE in "0x10036d000:0x100370000" "0x100802000:0x100804000" "0x10088e000:0x100892000" "0x105ce7000:0x105ce9000" "0x105cf6000:0x105cf7000" "0x100248000:0x10024a000" "0x100a4d000:0x100a4f000" "0x105d03c000:0x105d041000"; do
             START="${RANGE%%:*}"
             STOP="${RANGE##*:}"
             echo "### RANGE ${START} ${STOP}" >> /tmp/whoop-disassembly.txt
@@ -315,7 +315,7 @@ jobs:
           # Run whole-binary analysis once, then resolve all targets in the same
           # radare2 session. Repeating "aa" for each target needlessly rescans
           # the full Mach-O and can keep this job busy for a long time.
-          r2 -q -c 'aa; ?e BEGIN_R24_FACTORY_XREF; axtj @ 0x1008026fc; ?e BEGIN_PROCESSED_STEPS_XREF; axtj @ 0x1090d5e10; ?e BEGIN_HISTORICAL_R24_XREF; axtj @ 0x109218970; ?e BEGIN_R24_FACTORY_FUNCTION; afij @ 0x1008026fc; pdf @ 0x1008026fc; ?e BEGIN_IMU_ERROR_FUNCTION; afij @ 0x10088e4ec; pdf @ 0x10088e4ec' /tmp/whoop-arm64 > /tmp/r24-r2-session.txt 2>mach-o-evidence/radare2-crossrefs-errors.txt || true
+          r2 -q -c 'aa; ?e BEGIN_R24_FACTORY_XREF; axtj @ 0x1008026fc; ?e BEGIN_PROCESSED_STEPS_XREF; axtj @ 0x1090d5e10; ?e BEGIN_HISTORICAL_R24_XREF; axtj @ 0x109218970; ?e BEGIN_R24_FACTORY_FUNCTION; afij @ 0x1008026fc; pdf @ 0x1008026fc; ?e BEGIN_IMU_ERROR_FUNCTION; afij @ 0x10088e4ec; pdf @ 0x10088e4ec; ?e BEGIN_R24_CALLER_AUDIT; pdf @ 0x100248774; pdf @ 0x100a4deb4; pdf @ 0x105ce95dc; pdf @ 0x105d03cac' /tmp/whoop-arm64 > /tmp/r24-r2-session.txt 2>mach-o-evidence/radare2-crossrefs-errors.txt || true
           python3 - <<'PY'
           from pathlib import Path
           text = Path("/tmp/r24-r2-session.txt").read_text(errors="replace")
@@ -324,7 +324,7 @@ jobs:
               ("processed-steps-string-xrefs.json", "BEGIN_PROCESSED_STEPS_XREF", "BEGIN_HISTORICAL_R24_XREF"),
               ("historical-r24-string-xrefs.json", "BEGIN_HISTORICAL_R24_XREF", "BEGIN_R24_FACTORY_FUNCTION"),
               ("r24-factory-function.txt", "BEGIN_R24_FACTORY_FUNCTION", "BEGIN_IMU_ERROR_FUNCTION"),
-              ("imu-error-function.txt", "BEGIN_IMU_ERROR_FUNCTION", None),
+              ("imu-error-function.txt", "BEGIN_IMU_ERROR_FUNCTION", "BEGIN_R24_CALLER_AUDIT"),\n              ("r24-caller-functions.txt", "BEGIN_R24_CALLER_AUDIT", None),
           ]
           for filename, start, end in markers:
               i = text.find(start)
