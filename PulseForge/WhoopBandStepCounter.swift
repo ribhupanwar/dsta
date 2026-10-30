@@ -58,10 +58,21 @@ struct WhoopBandStepCounter {
 
         let elapsed = max(1, Int(sample.timestamp.timeIntervalSince(previous.timestamp).rounded(.down)))
         let key = Self.dayKey(sample.timestamp, calendar: calendar)
+        let previousDayKey = Self.dayKey(previous.timestamp, calendar: calendar)
         let dayStart = calendar.startOfDay(for: sample.timestamp)
+
+        // A cumulative delta spanning local midnight cannot be assigned to
+        // either day without an intermediate sample. Drop that ambiguous
+        // boundary rather than crediting the entire interval to the new day.
+        if previousDayKey != key {
+            coverageStarts[key] = sample.timestamp
+            dailyTotals[key] = dailyTotals[key] ?? 0
+            droppedBoundaries += 1
+            latestSample = sample
+            prune(keepingSince: calendar.date(byAdding: .day, value: -Self.retentionDays, to: sample.timestamp) ?? sample.timestamp, calendar: calendar)
+            return
+        }
         if coverageStarts[key] == nil {
-            // A sample pair straddling midnight gives us a boundary baseline
-            // for the new local day; otherwise this day is only partially seen.
             coverageStarts[key] = previous.timestamp < dayStart ? dayStart : previous.timestamp
         }
         if dailyTotals[key] == nil { dailyTotals[key] = 0 }
