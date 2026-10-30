@@ -2086,41 +2086,6 @@ struct DeviceDashboard: View {
                     .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     }
                     LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE · LAST 60 SECONDS")
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("STEP SIGNAL MONITOR")
-                                .font(.system(size: 10, weight: .bold)).tracking(1)
-                                .foregroundStyle(ForgeColors.lime)
-                            Spacer()
-                            Text(bluetooth.stepSignalFrameCount == 0 ? "NO TYPE-40" : "TYPE-40 SEEN")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundStyle(bluetooth.stepSignalFrameCount == 0 ? ForgeColors.muted : ForgeColors.lime)
-                        }
-                        Text(bluetooth.stepSignalLastOutcome)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white)
-                        HStack {
-                            stepDiagnosticValue("PACKET", bluetooth.stepSignalLastPacketType.map { "Type-\\($0)" } ?? "—")
-                            stepDiagnosticValue("BYTES", bluetooth.stepSignalLastPacketLength == 0 ? "—" : "\\(bluetooth.stepSignalLastPacketLength)")
-                            stepDiagnosticValue("FRAMES", "\\(bluetooth.stepSignalFrameCount)")
-                        }
-                        HStack {
-                            stepDiagnosticValue("SELECTED*", bluetooth.stepSignalSelectedCounter.map(String.init) ?? "—")
-                            stepDiagnosticValue("HARDWARE*", bluetooth.stepSignalHardwareCounter.map(String.init) ?? "—")
-                        }
-                        HStack {
-                            stepDiagnosticValue("CADENCE RAW", bluetooth.stepSignalCadence.map(String.init) ?? "—")
-                            stepDiagnosticValue("ACTIVITY RAW", bluetooth.stepSignalActivity.map(String.init) ?? "—")
-                            stepDiagnosticValue("OVERRIDE", bluetooth.stepSignalSoftwareOverride.map { $0 ? "YES" : "NO" } ?? "—")
-                        }
-                        Text(bluetooth.stepSignalLastSeenAt.map { "LAST PACKET · \\($0.formatted(date: .omitted, time: .standard))" } ?? "No CRC-valid Type-40 frame received")
-                            .font(.system(size: 8, design: .monospaced)).foregroundStyle(ForgeColors.muted)
-                        Text("* Candidate fields from current protocol mapping; not yet confirmed against WHOOP executable.")
-                            .font(.system(size: 8)).foregroundStyle(ForgeColors.muted)
-                    }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     WhoopRRCard()
                     WhoopMotionCard()
                     WhoopStepSignalMonitorCard()
