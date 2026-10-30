@@ -370,7 +370,9 @@ struct TodayDashboard: View {
                         HomeMetricDial(
                             title: "Recovery",
                             value: insights.recoveryScore.map { "\($0)%" } ?? "—",
-                            tint: ForgeColors.recovery,
+                            tint: insights.recoveryScore.map { score in
+                                score >= 67 ? ForgeColors.recoveryHigh : (score >= 34 ? ForgeColors.recoveryMedium : ForgeColors.recoveryLow)
+                            } ?? ForgeColors.track,
                             progress: insights.recoveryScore.map { Double($0) / 100 }
                         ) { selectedHomeMetric = .recovery }
                         HomeMetricDial(
@@ -2806,17 +2808,20 @@ struct ConnectPrompt: View {
 }
 
 enum ForgeColors {
-    // Unified WHOOP-inspired dark visual system. Semantic accents remain
-    // separate so Recovery, Sleep and Strain can retain their own identities.
-    static let background = Color(red: 0.025, green: 0.027, blue: 0.030)
-    static let card = Color(red: 0.075, green: 0.078, blue: 0.082)
-    static let track = Color(red: 0.145, green: 0.150, blue: 0.155)
-    static let stroke = Color.white.opacity(0.075)
-    static let muted = Color(red: 0.62, green: 0.64, blue: 0.66)
+    // Palette values recovered from the supplied WHOOP app asset catalog.
+    // Keep PulseForge identity and label its own estimates transparently.
+    static let background = Color.black
+    static let card = Color(red: 0.102, green: 0.133, blue: 0.153) // Grey Blue
+    static let track = Color(red: 0.22, green: 0.25, blue: 0.27)
+    static let stroke = Color.white.opacity(0.12)
+    static let muted = Color(red: 0.62, green: 0.66, blue: 0.69)
     static let lime = Color(red: 0.72, green: 0.91, blue: 0.24)
-    static let sleep = Color(red: 0.30, green: 0.62, blue: 0.96)
-    static let strain = Color(red: 1.00, green: 0.59, blue: 0.25)
-    static let recovery = Color(red: 0.15, green: 0.82, blue: 0.52)
+    static let sleep = Color(red: 0.482, green: 0.631, blue: 0.733) // Sleep
+    static let strain = Color(red: 0.0, green: 0.576, blue: 0.906) // Day Strain
+    static let recoveryHigh = Color(red: 0.098, green: 0.925, blue: 0.024)
+    static let recoveryMedium = Color(red: 1.0, green: 0.871, blue: 0.0)
+    static let recoveryLow = Color(red: 1.0, green: 0.0, blue: 0.149)
+    static let recovery = recoveryHigh
 }
 
 
@@ -2826,7 +2831,12 @@ struct RecoveryDashboard: View {
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
     @EnvironmentObject private var insights: TrainingInsightsStore
 
-    private var recoveryTint: Color { ForgeColors.recovery }
+    private var recoveryTint: Color {
+        guard let score = insights.recoveryScore else { return ForgeColors.track }
+        if score >= 67 { return ForgeColors.recoveryHigh }
+        if score >= 34 { return ForgeColors.recoveryMedium }
+        return ForgeColors.recoveryLow
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
