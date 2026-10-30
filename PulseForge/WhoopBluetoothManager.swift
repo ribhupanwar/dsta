@@ -2306,9 +2306,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             // Values are already milliseconds; do not scale as 1/1024-second ticks.
             // A zero-count packet is not an RR sample and must not erase the last valid batch.
             do {
-                let ticks = try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(b)
+                let rrWords = try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(b)
                 let intervals = try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(b)
-                whoopRealtimeCandidateRRWords = ticks
+                whoopRealtimeCandidateRRWords = rrWords
                 if !intervals.isEmpty {
                     appendRRIntervals(intervals, source: "WHOOP 5.0 realtime", receivedAt: receivedAt)
                     whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · RR \(intervals.count) interval(s) · raw UInt16 milliseconds"
