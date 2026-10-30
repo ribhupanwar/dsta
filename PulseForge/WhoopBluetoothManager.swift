@@ -245,9 +245,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         if let data = try? JSONEncoder().encode(Array(dashboardStandardRRHistory.suffix(20_000))) {
             defaults.set(data, forKey: DashboardHistoryKey.standardRRSamples)
         }
-        if let data = try? JSONEncoder().encode(whoopHistoricalRRIntervalsMilliseconds) {
-            defaults.set(data, forKey: DashboardHistoryKey.historicalRR)
-        }
+        // Historical v18 RR words are not yet verified milliseconds; do not persist them as such.
+        defaults.removeObject(forKey: DashboardHistoryKey.historicalRR)
         if let value = whoopHistoricalHeartRateBPM {
             defaults.set(value, forKey: DashboardHistoryKey.historicalHR)
         }
@@ -264,10 +263,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             dashboardHeartRateHistory = Array(samples.filter { $0.timestamp >= cutoff }.suffix(20_000))
             liveHeartRateSamples = Array(dashboardHeartRateHistory.suffix(120))
         }
-        if let data = defaults.data(forKey: DashboardHistoryKey.historicalRR),
-           let intervals = try? JSONDecoder().decode([Int].self, from: data) {
-            whoopHistoricalRRIntervalsMilliseconds = intervals
-        }
+        // Purge legacy v18 values that older builds incorrectly labelled milliseconds.
+        defaults.removeObject(forKey: DashboardHistoryKey.historicalRR)
+        whoopHistoricalRRIntervalsMilliseconds = []
+        whoopHistoricalRRLastUpdatedAt = nil
         if let data = defaults.data(forKey: DashboardHistoryKey.rrSamples),
            let samples = try? JSONDecoder().decode([PersistedRRIntervalSample].self, from: data) {
             dashboardRRHistory = Array(samples.suffix(20_000))
@@ -680,7 +679,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5HistoryRequestSequence: UInt8?
     /// Buffer historical frames and write them in batches; HISTORY_END forces a durable flush before ACK.
     private var pendingHistoricalRRArchiveRecords: [HistoricalRRPacketRecord] = []
-    private let historicalRRArchiveBatchSize = 25
+    private let historicalRRArchiveBatchSize = 10
     private var whoop5HelloRevision: Int?
     private var whoop5HelloTimestampSeconds: UInt32?
     private var whoop5HelloTimestampSubseconds: UInt32?
