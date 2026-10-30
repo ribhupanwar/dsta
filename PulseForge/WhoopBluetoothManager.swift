@@ -2363,31 +2363,19 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
 
             whoopRealtimeCandidateByteAt16 = bpm
-            // Preserve raw ticks and expose only bounded, rounded milliseconds.
-            // Live RMSSD remains diagnostic-only; it is not overnight HRV/Recovery.
+            // Firmware 50.42.1.0: retain Type-40 RR words as diagnostic candidates
+            // until this firmware's live values are cross-validated against an independent
+            // physiological RR source. Never publish candidate words as RR/HRV yet.
             do {
                 let rawWords = try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(b)
-                let intervals = try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(b)
                 whoopRealtimeCandidateRRWords = rawWords
-                if !intervals.isEmpty {
-                    whoopRRIntervalsMilliseconds = intervals
-                    whoopRRLastUpdatedAt = receivedAt
-                    whoopRRSource = "WHOOP5 Type-40 RR · ticks / 1024 s · \(intervals.count) verified-range interval(s)"
-                    whoopRRWindowMilliseconds.append(contentsOf: intervals)
-                    if whoopRRWindowMilliseconds.count > 60 {
-                        whoopRRWindowMilliseconds.removeFirst(whoopRRWindowMilliseconds.count - 60)
-                    }
-                    whoopLiveRMSSDMilliseconds = RealtimeRMSSDCalculator.calculate(
-                        intervalsMilliseconds: whoopRRWindowMilliseconds
-                    )
-                }
-                whoopRealtimeCandidateStatus = intervals.isEmpty
-                    ? "Type-40 HR \(bpm) bpm · no non-zero RR intervals in this frame"
-                    : "Type-40 HR \(bpm) bpm · RR \(intervals.map(String.init).joined(separator: ",")) ms"
+                whoopRealtimeCandidateStatus = rawWords.isEmpty
+                    ? "Type-40 HR \(bpm) bpm · candidate RR count is zero · raw frame retained"
+                    : "Type-40 HR \(bpm) bpm · \(rawWords.count) firmware-unverified RR candidate word(s) retained"
             } catch {
                 whoopRealtimeCandidateRRWords.removeAll(keepingCapacity: true)
-                whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · RR rejected · \(error)"
-                recordVendorTimeline("WHOOP Type-40 RR decode rejected · \(error) · raw frame retained")
+                whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · candidate words unavailable · \(error)"
+                recordVendorTimeline("WHOOP Type-40 candidate extraction rejected · \(error) · raw frame retained")
             }
             recordHeartRateSample(bpm, source: "WHOOP5 REALTIME_DATA")
             return "REALTIME_DATA · HR \(bpm) bpm · RR words \(whoopRealtimeCandidateRRWords.count) · \(whoopRealtimeCandidateStatus) · CRC valid"
