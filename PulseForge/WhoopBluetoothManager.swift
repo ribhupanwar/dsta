@@ -2557,7 +2557,6 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 stepSignalActivity = step.activityRaw
                 stepSignalSoftwareOverride = step.softwareOverride
                 stepSignalLastOutcome = "Extended Type-40 candidate decoded · awaiting counter movement / source validation"
-                recordWhoopStepSample(timestamp: step.timestamp, counter: step.selectedCounter)
                 recordVendorTimeline("WHOOP Type-40 step candidate · selected=\(step.selectedCounter) · hardware=\(step.hardwareCounter) · cadenceRaw=\(step.cadenceRaw) · activity=\(step.activityRaw) · softwareOverride=\(step.softwareOverride)")
             } catch {
                 stepSignalLastOutcome = b.count < 65
