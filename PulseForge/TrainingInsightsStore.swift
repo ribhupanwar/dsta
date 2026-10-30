@@ -37,6 +37,14 @@ final class TrainingInsightsStore: ObservableObject {
         isRefreshing = false
     }
 
+    /// Clearly labelled Apple Health sleep fallback. This never populates WHOOP-native
+    /// sleep fields, Sleep Need, Sleep Debt, or Recovery inputs.
+    func updateHealthKitSleep(_ hours: Double?) {
+        guard let hours, hours.isFinite, (0.1...24).contains(hours) else { return }
+        sleepHours = hours
+        sleepSourceStatus = "Apple Health sleep fallback · WHOOP sleep not yet validated"
+    }
+
     /// Computes a transparent PulseForge cardio-load estimate from saved WHOOP
     /// workout HR recordings. It is not WHOOP's proprietary 0–21 Strain score.
     func refreshWorkoutLoad(sessions: [WorkoutSessionRecord],
