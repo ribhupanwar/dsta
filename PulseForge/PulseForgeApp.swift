@@ -87,22 +87,34 @@ struct ForgeTabBar: View {
     @Binding var selected: ForgeTab
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 5) {
             ForEach(ForgeTab.allCases, id: \.self) { tab in
                 let isSelected = selected == tab
                 Button {
-                    withAnimation(.easeInOut(duration: 0.18)) { selected = tab }
+                    withAnimation(.spring(response: 0.30, dampingFraction: 0.82)) { selected = tab }
                 } label: {
                     VStack(spacing: 5) {
                         Image(systemName: tab.symbol)
-                            .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
-                            .frame(height: 23)
-                        Text(tab.rawValue)
-                            .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
+                            .font(.system(size: 18, weight: isSelected ? .semibold : .regular))
+                            .frame(height: 22)
+                        Text(tab.rawValue.uppercased())
+                            .font(.system(size: 9, weight: isSelected ? .bold : .medium))
+                            .tracking(0.35)
                             .lineLimit(1)
                     }
-                    .foregroundStyle(isSelected ? .white : ForgeColors.muted)
-                    .frame(maxWidth: .infinity).frame(height: 51)
+                    .foregroundStyle(isSelected ? ForgeColors.lime : ForgeColors.muted)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 53)
+                    .background {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .fill(ForgeColors.lime.opacity(0.10))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                        .stroke(ForgeColors.lime.opacity(0.22), lineWidth: 0.8)
+                                }
+                        }
+                    }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -110,11 +122,26 @@ struct ForgeTabBar: View {
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .padding(.horizontal, 10).padding(.top, 9).padding(.bottom, 23)
+        .padding(7)
         .background {
-            ForgeColors.background
-                .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.10)).frame(height: 0.5) }
-                .ignoresSafeArea(edges: .bottom)
+            RoundedRectangle(cornerRadius: 19, style: .continuous)
+                .fill(Color(red: 0.055, green: 0.067, blue: 0.075))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 19, style: .continuous)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 0.8)
+                }
+                .shadow(color: .black.opacity(0.35), radius: 18, y: 7)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 27)
+        .background {
+            LinearGradient(
+                colors: [ForgeColors.background.opacity(0), ForgeColors.background.opacity(0.96), ForgeColors.background],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .bottom)
         }
     }
 }
