@@ -121,7 +121,7 @@ jobs:
           import CoreGraphics
           let root = URL(fileURLWithPath: CommandLine.arguments[1])
           let fm = FileManager.default
-          let keys: [CFString] = [kCTFontNameAttribute, kCTFontFamilyNameAttribute, kCTFontStyleNameAttribute, kCTFontFullNameAttribute]
+          print("file\tpostscript_name\tfamily_name\tstyle_name\tfull_name")
           func walk(_ url: URL) {
               guard let items = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return }
               for item in items {
@@ -129,12 +129,16 @@ jobs:
                   if isDir { walk(item); continue }
                   let ext = item.pathExtension.lowercased()
                   guard ["ttf", "otf", "ttc"].contains(ext) else { continue }
-                  if let descriptors = CTFontManagerCreateFontDescriptorsFromURL(item as CFURL) as? [CTFontDescriptor] {
-                      for d in descriptors {
-                          let attrs = CTFontDescriptorCopyAttributes(d) as NSDictionary
-                          let values = keys.map { attrs[$0] ?? "" }
-                          print("\(item.path.replacingOccurrences(of: root.path + "/", with: ""))\t\(values.map { String(describing: $0) }.joined(separator: "\t"))")
-                      }
+                  guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(item as CFURL) as? [CTFontDescriptor] else { continue }
+                  for descriptor in descriptors {
+                      let font = CTFontCreateWithFontDescriptor(descriptor, 12, nil)
+                      let postscript = CTFontCopyPostScriptName(font) as String
+                      let family = CTFontCopyFamilyName(font) as String
+                      let style = (CTFontCopyName(font, kCTFontStyleNameKey) as String?) ?? ""
+                      let full = (CTFontCopyFullName(font) as String?) ?? ""
+                      let relative = item.path.replacingOccurrences(of: root.path + "/", with: "")
+                      let fields = [relative, postscript, family, style, full].map { $0.replacingOccurrences(of: "\\t", with: " ") }
+                      print(fields.joined(separator: "\\t"))
                   }
               }
           }
