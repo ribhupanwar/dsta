@@ -285,6 +285,13 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         lastWhoopIMUDiagnosticsPublishedAt = now
     }
 
+    private func publishIMUStatusIfNeeded(_ status: String, at now: Date = Date()) {
+        guard lastWhoopIMUDiagnosticsPublishedAt == nil ||
+            now.timeIntervalSince(lastWhoopIMUDiagnosticsPublishedAt!) >= 1.0 else { return }
+        whoopIMUStatus = status
+        lastWhoopIMUDiagnosticsPublishedAt = now
+    }
+
     private func appendVerifiedIMUHistory(_ samples: [WhoopIMUSample]) {
         guard !samples.isEmpty else { return }
         whoopIMUHistorySamples.append(contentsOf: samples)
@@ -535,6 +542,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
 
     private func archiveCurrentWorkout(startedAt: Date, duration: TimeInterval,
                                         automatic: Bool, interrupted: Bool) {
+        workoutWhoopIMUSamples = workoutWhoopIMUSampleBuffer
+        lastWorkoutIMUSnapshotPublishedAt = Date()
         let record = WorkoutSessionRecord(
             startedAt: startedAt,
             durationSeconds: duration,
@@ -1362,6 +1371,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopEventProbeStatus = "Controlled Event 33/34 probe not run in this connection"
         whoopIMUFrameCount = 0
         whoopIMUSampleCount = 0
+        accumulatedWhoopIMUFrameCount = 0
+        accumulatedWhoopIMUSampleCount = 0
+        lastWhoopIMUDiagnosticsPublishedAt = nil
         whoopIMULastFrameAt = nil
         whoopIMULastRawFrameHex = "none"
         whoopIMURawFrameHistory.removeAll()
@@ -2166,7 +2178,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             // never count them as decoded IMU samples until the inner schema is proven.
             whoopHistoricalIMUStreamPacketCount += 1
             whoopLastHistoricalIMUStreamRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
-            whoopIMUStatus = "WHOOP historical IMU stream received · raw frame retained · awaiting validated inner-layout decoder"
+            publishIMUStatusIfNeeded("WHOOP historical IMU stream received · raw frame retained · awaiting validated inner-layout decoder")
             recordVendorTimeline("HISTORICAL_IMU_DATA_STREAM(52) · CRC valid · bytes=\\(b.count) · raw retained · no samples counted")
             return "HISTORICAL_IMU_STREAM(52) · raw frame retained · layout pending · CRC valid"
 
@@ -2327,7 +2339,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 }
             }
 
-            whoopIMUStatus = "Historical WHOOP 5 frame retained · \(b.count) bytes · inner revision \(b.count > 9 ? Int(b[9]) : -1) · R21 decode not matched"
+            publishIMUStatusIfNeeded("Historical WHOOP 5 frame retained · \(b.count) bytes · inner revision \(b.count > 9 ? Int(b[9]) : -1) · R21 decode not matched")
             return "HISTORICAL_DATA(0x2F) · \(b.count) bytes · raw retained"
 
         case 40: // WHOOP 5.0 REALTIME_DATA · offsets correlated against 19 live device frames
