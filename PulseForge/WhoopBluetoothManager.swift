@@ -171,7 +171,11 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopIMUStatus = "Waiting for WHOOP motion stream"
     @Published private(set) var whoopIMULastRawFrameHex = "none"
     private var whoopIMURawFrameHistory: [String] = []
+    /// UI-facing IMU snapshot is published at most once per second. Raw decoded
+    /// samples continue to be retained at full rate in the private buffer.
     @Published private(set) var liveWhoopIMUSamples: [WhoopIMUSample] = []
+    private var liveWhoopIMUSampleBuffer: [WhoopIMUSample] = []
+    private var lastLiveIMUSnapshotPublishedAt: Date?
     /// Persisted decoded WHOOP motion history; never treated as a live stream.
     @Published private(set) var whoopIMUHistorySamples: [WhoopIMUSample] = []
     @Published private(set) var workoutWhoopIMUSamples: [WhoopIMUSample] = []
@@ -224,6 +228,23 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         guard let data = try? JSONEncoder().encode(retained) else { return }
         UserDefaults.standard.set(data, forKey: DashboardHistoryKey.imuSamples)
         lastDashboardIMUPersistedSampleCount = whoopIMUHistorySamples.count
+    }
+
+    /// Keep 100 Hz sensor ingestion independent from SwiftUI observation.
+    /// The workout and archival paths still receive every decoded sample; only
+    /// the dashboard snapshot is rate-limited to avoid invalidating scroll views
+    /// for every BLE notification.
+    private func appendLiveIMUSamples(_ samples: [WhoopIMUSample], now: Date = Date()) {
+        guard !samples.isEmpty else { return }
+        liveWhoopIMUSampleBuffer.append(contentsOf: samples)
+        if liveWhoopIMUSampleBuffer.count > 2_000 {
+            liveWhoopIMUSampleBuffer.removeFirst(liveWhoopIMUSampleBuffer.count - 2_000)
+        }
+        if lastLiveIMUSnapshotPublishedAt == nil ||
+            now.timeIntervalSince(lastLiveIMUSnapshotPublishedAt!) >= 1.0 {
+            liveWhoopIMUSamples = liveWhoopIMUSampleBuffer
+            lastLiveIMUSnapshotPublishedAt = now
+        }
     }
 
     private func appendVerifiedIMUHistory(_ samples: [WhoopIMUSample]) {
@@ -1284,6 +1305,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMULastRawFrameHex = "none"
         whoopIMURawFrameHistory.removeAll()
         liveWhoopIMUSamples.removeAll()
+        liveWhoopIMUSampleBuffer.removeAll()
+        lastLiveIMUSnapshotPublishedAt = nil
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoopRRIntervalsMilliseconds.removeAll()
         whoopStandardRRIntervalsMilliseconds.removeAll()
@@ -1413,6 +1436,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
         liveWhoopIMUSamples.removeAll()
+        liveWhoopIMUSampleBuffer.removeAll()
+        lastLiveIMUSnapshotPublishedAt = nil
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoopRRIntervalsMilliseconds.removeAll()
         whoopRRWindowMilliseconds.removeAll()
@@ -2043,11 +2068,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     whoopIMUStatus = "Gen5 R21 frame valid · no paired samples · raw retained"
                     return "GEN5_R21_IMU(0x2B) · no paired samples"
                 }
-                liveWhoopIMUSamples.append(contentsOf: decoded)
+                appendLiveIMUSamples(decoded)
                 appendVerifiedIMUHistory(decoded)
-                if liveWhoopIMUSamples.count > 2000 {
-                    liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 2000)
-                }
                 if workoutIsRecording {
                     workoutWhoopIMUSamples.append(contentsOf: decoded)
                 }
@@ -2206,11 +2228,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         whoopIMUStatus = "Historical Gen5 R21 buffer valid · no paired samples"
                         return "HISTORICAL_R21_IMU(0x2F) · no paired samples · CRC valid"
                     }
-                    liveWhoopIMUSamples.append(contentsOf: decoded)
+                    appendLiveIMUSamples(decoded)
                     appendVerifiedIMUHistory(decoded)
-                    if liveWhoopIMUSamples.count > 2000 {
-                        liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 2000)
-                    }
                     if workoutIsRecording {
                         workoutWhoopIMUSamples.append(contentsOf: decoded)
                     }
