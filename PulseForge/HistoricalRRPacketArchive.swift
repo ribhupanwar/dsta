@@ -36,11 +36,28 @@ enum HistoricalRRPacketArchive {
     static func append(_ record: HistoricalRRPacketRecord,
                        to fileURL: URL,
                        fileManager: FileManager = .default) throws -> Int {
+        try append(contentsOf: [record], to: fileURL, fileManager: fileManager)
+    }
+
+    /// Batch append high-rate raw frames and keep a separate rolling window per revision.
+    @discardableResult
+    static func append(contentsOf newRecords: [HistoricalRRPacketRecord],
+                       to fileURL: URL,
+                       fileManager: FileManager = .default) throws -> Int {
+        guard !newRecords.isEmpty else { return load(from: fileURL).count }
         var records = load(from: fileURL)
-        records.append(record)
-        if records.count > maximumRecords {
-            records.removeFirst(records.count - maximumRecords)
+        records.append(contentsOf: newRecords)
+
+        for revision in Set(newRecords.map { $0.revision }) {
+            let matchingIndices = records.indices.filter { records[$0].revision == revision }
+            let excess = matchingIndices.count - maximumRecords
+            if excess > 0 {
+                for index in matchingIndices.prefix(excess).reversed() {
+                    records.remove(at: index)
+                }
+            }
         }
+
         try fileManager.createDirectory(at: fileURL.deletingLastPathComponent(),
                                         withIntermediateDirectories: true)
         let encoder = JSONEncoder()
