@@ -90,7 +90,7 @@ struct WhoopBandStepCounter {
         if complete {
             return "WHOOP 5.0 band · experimental motion counter · day boundary covered"
         }
-        return "WHOOP 5.0 band · partial history since \(coverage.formatted(date: .omitted, time: .shortened))"
+        return "WHOOP 5.0 band · experimental motion counter · partial history since \(coverage.formatted(date: .omitted, time: .shortened))"
     }
 
     func snapshot() -> Snapshot {
