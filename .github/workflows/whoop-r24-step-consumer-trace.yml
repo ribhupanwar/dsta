@@ -38,16 +38,16 @@ jobs:
           from pathlib import Path
           import re
           lines = Path("/tmp/whoop-full-disassembly.txt").read_text(errors="replace").splitlines()
-          terms = re.compile(r"Historical Processed Steps Packet \\(R24\\)|Processed Steps Data \\(R24\\)|R24q|currentStepCount|previousStepCount|lastStepCount|delayedStepCountProcessingWorkItem|HealthKitStepCountRequest|HealthKitStepCountSubmissionDTO|step_count_samples|deleted_step_count_samples|IMUPacket|RealtimeIMUData", re.I)
-          addr_re = re.compile(r"^\\s*([0-9a-f]{16})\\s+")
-          adrp_re = re.compile(r"^\\s*([0-9a-f]{16})\\s+adrp\\s+(x\\d+),.*?;\\s*0x([0-9a-f]+)", re.I)
-          add_re = re.compile(r"^\\s*([0-9a-f]{16})\\s+add\\s+(x\\d+),\\s*(x\\d+),\\s*#0x([0-9a-f]+)", re.I)
-          bl_re = re.compile(r"\\bbl\\s+0x([0-9a-f]+)", re.I)
+          terms = re.compile(r"Historical Processed Steps Packet \(R24\)|Processed Steps Data \(R24\)|R24q|currentStepCount|previousStepCount|lastStepCount|delayedStepCountProcessingWorkItem|HealthKitStepCountRequest|HealthKitStepCountSubmissionDTO|step_count_samples|deleted_step_count_samples|IMUPacket|RealtimeIMUData", re.I)
+          addr_re = re.compile(r"^\s*([0-9a-f]{16})\s+")
+          adrp_re = re.compile(r"^\s*([0-9a-f]{16})\s+adrp\s+(x\d+),.*?;\s*0x([0-9a-f]+)", re.I)
+          add_re = re.compile(r"^\s*([0-9a-f]{16})\s+add\s+(x\d+),\s*(x\d+),\s*#0x([0-9a-f]+)", re.I)
+          bl_re = re.compile(r"\bbl\s+0x([0-9a-f]+)", re.I)
           hits = [i for i, line in enumerate(lines) if terms.search(line)]
           # Recover exact direct ADRP+ADD xrefs to named step/R24 strings.
           string_addrs = {}
           for i in hits:
-              m = re.search(r";\\s*0x([0-9a-f]+)", lines[i])
+              m = re.search(r";\s*0x([0-9a-f]+)", lines[i])
               if m:
                   string_addrs[int(m.group(1),16)] = lines[i].split("literal pool for:")[-1].strip() if "literal pool for:" in lines[i] else lines[i].strip()
           refs = []
@@ -64,7 +64,7 @@ jobs:
           out=["# WHOOP R24 / step consumer trace","",f"Full disassembly lines: {len(lines)}",f"String-context hits: {len(hits)}",f"Direct ADRP+ADD references: {len(refs)}",""]
           for i,j,target,name in refs:
               out += [f"## String xref 0x{target:x}: {name}",lines[i].strip(),lines[j].strip()]
-          Path("r24-step-trace/string-xrefs.txt").write_text("\\n".join(out)+"\\n")
+          Path("r24-step-trace/string-xrefs.txt").write_text("\n".join(out)+"\n")
           # Capture call sites to all known selector blocks and the containing
           # function neighbourhood, plus every step-state reference neighbourhood.
           targets={0x100802720,0x105ce7fdc,0x105ce8038,0x100802748}
@@ -83,10 +83,10 @@ jobs:
           context += ["","## Expanded disassembly context"]
           prev=-2
           for i in sorted(selected):
-              if i != prev+1: context.append("\\n--- context window ---")
+              if i != prev+1: context.append("\n--- context window ---")
               context.append(lines[i]); prev=i
-          Path("r24-step-trace/step-r24-context.txt").write_text("\\n".join(context)+"\\n")
-          print("\\n".join(out[:12]))
+          Path("r24-step-trace/step-r24-context.txt").write_text("\n".join(context)+"\n")
+          print("\n".join(out[:12]))
           print(f"Call-site matches: {len(call_sites)}; context lines: {len(selected)}")
           PY
       - name: Upload non-duplicative R24 trace evidence
