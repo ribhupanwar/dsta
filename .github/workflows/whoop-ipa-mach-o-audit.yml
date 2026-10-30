@@ -253,7 +253,6 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import re
           lines = Path("/tmp/whoop-disassembly.txt").read_text(errors="replace").splitlines()
           targets = {
               "step-sample-model-callee-0x10036e4a4.txt": "10036e4a4",
@@ -262,20 +261,17 @@ jobs:
           }
           for filename, target in targets.items():
               if target:
-                  matches = [i for i, line in enumerate(lines) if re.match(r"^\\s*0*"+target+r"\\s", line, re.I)]
-                  if not matches:
-                      matches = [i for i, line in enumerate(lines) if target in line.lower()]
-                  out = ["# Exact disassembly target: 0x"+target, f"Matching lines: {len(matches)}"]
+                  matches = [i for i, line in enumerate(lines) if target in line.lower()]
+                  out = ["# Exact disassembly target: 0x" + target, "Matching lines: " + str(len(matches))]
                   for i in matches[:4]:
-                      out += ["", f"--- context around line {i+1} ---"] + lines[max(0,i-80):min(len(lines),i+260)]
-                  Path("mach-o-evidence/"+filename).write_text("\\n".join(out)+"\\n")
+                      out += ["", "--- context around line " + str(i+1) + " ---"] + lines[max(0,i-80):min(len(lines),i+260)]
               else:
-                  terms = re.compile(r"currentStepCount|lastStepCount|previousStepCount|delayedStepCountProcessingWorkItem", re.I)
-                  hits = [i for i,line in enumerate(lines) if terms.search(line)]
-                  out = ["# Disassembly references to step-count state accessors", f"Matching instruction/string lines: {len(hits)}"]
+                  terms = ("currentStepCount", "lastStepCount", "previousStepCount", "delayedStepCountProcessingWorkItem")
+                  hits = [i for i,line in enumerate(lines) if any(term.lower() in line.lower() for term in terms)]
+                  out = ["# Disassembly references to step-count state accessors", "Matching instruction/string lines: " + str(len(hits))]
                   for i in hits:
-                      out += ["", f"--- context around line {i+1} ---"] + lines[max(0,i-45):min(len(lines),i+90)]
-                  Path("mach-o-evidence/"+filename).write_text("\\n".join(out)+"\\n")
+                      out += ["", "--- context around line " + str(i+1) + " ---"] + lines[max(0,i-45):min(len(lines),i+90)]
+              Path("mach-o-evidence/" + filename).write_text(chr(10).join(out) + chr(10))
           PY
           echo "Added exact callee and step-state accessor disassembly windows; interpretation remains static until matched to captured runtime payloads." >> mach-o-evidence/README.txt
 
