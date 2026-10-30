@@ -48,6 +48,14 @@ jobs:
           python3 -m pip install --user --quiet Pillow
           ICON_DIR="PulseForge/Assets.xcassets/AppIcon.appiconset"
           mkdir -p "$ICON_DIR"
+          cat > "PulseForge/Assets.xcassets/Contents.json" <<'JSON'
+          {
+            "info" : {
+              "author" : "xcode",
+              "version" : 1
+            }
+          }
+          JSON
           python3 - <<'PY'
           from PIL import Image, ImageDraw
           S = 1024
