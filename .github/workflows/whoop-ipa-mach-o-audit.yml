@@ -119,34 +119,73 @@ jobs:
           Path("mach-o-evidence/step-count-string-locations.txt").write_text("\n".join(locations) + "\n")
           xrefs = []
           functions = set()
-          for address, value in hits:
-              try:
-                  cmd = subprocess.run(["r2", "-q", "-e", "bin.relocs.apply=true", "-A", "-c", f"axtj @ 0x{address:x}", binary], text=True, capture_output=True, timeout=30)
+          # One persistent Radare2 session: avoid reloading and re-analyzing the
+          # ~295 MB Mach-O separately for every string address.
+          import os, sys
+          venv = "/tmp/r2-audit-venv"
+          subprocess.run([sys.executable, "-m", "venv", venv], check=True)
+          pip = f"{venv}/bin/pip"
+          py = f"{venv}/bin/python"
+          subprocess.run([pip, "install", "--disable-pip-version-check", "r2pipe"], check=True)
+          r2 = None
+          try:
+              import importlib.util
+              spec = importlib.util.spec_from_file_location("r2pipe", f"{venv}/lib/python3.*/site-packages/r2pipe/__init__.py")
+              # Import from the isolated venv using its interpreter, not this runner's Python.
+              driver = r"""
+          import json, sys, r2pipe
+          binary = sys.argv[1]
+          hits_path = sys.argv[2]
+          out_dir = sys.argv[3]
+          with open(hits_path) as f:
+              hits = json.load(f)
+          r2 = r2pipe.open(binary, flags=["-e", "bin.relocs.apply=true"])
+          try:
+              r2.cmd("aaa")
+              xrefs = []
+              functions = set()
+              for address, value in hits:
                   try:
-                      refs = json.loads(cmd.stdout.strip() or "[]")
-                  except json.JSONDecodeError:
+                      raw_refs = r2.cmd(f"axtj @ 0x{address:x}")
+                      refs = json.loads(raw_refs or "[]")
+                  except Exception as exc:
                       refs = []
-                  status = "xref scan completed with relocation application and analysis enabled"
-              except subprocess.TimeoutExpired:
-                  refs = []
-                  status = "xref scan timed out after 30 seconds; continuing with remaining strings"
-              xrefs.append(f"## 0x{address:x} {value}\n{status}\n{json.dumps(refs, indent=2)}")
-              for ref in refs if isinstance(refs, list) else []:
-                  origin = ref.get("from") or ref.get("fcn_addr")
-                  if origin is not None:
-                      functions.add(int(origin, 0) if isinstance(origin, str) else int(origin))
-          selected_functions = sorted(functions)[:12]
-          disasm = []
-          for address in selected_functions:
-              try:
-                  cmd = subprocess.run(["r2", "-q", "-A", "-c", f"pdf @ 0x{address:x}", binary], text=True, capture_output=True, timeout=25)
-                  output = cmd.stdout[:20000]
-              except subprocess.TimeoutExpired:
-                  output = "Timed out after 25 seconds; function omitted from detailed disassembly."
-              disasm.append(f"## Referencing function near 0x{address:x}\n{output}")
-          Path("mach-o-evidence/step-count-xrefs.txt").write_text("\n".join(xrefs) or "No matching strings with virtual addresses found.\n")
-          Path("mach-o-evidence/step-count-xref-functions.txt").write_text("\n".join(disasm) or "No referencing functions resolved.\n")
-          print(f"Matching strings analyzed: {len(hits)}; xref source addresses: {len(functions)}; functions disassembled: {len(selected_functions)}")
+                      error = str(exc)
+                  else:
+                      error = ""
+                  xrefs.append(f"## 0x{address:x} {value}\n{('xref query error: ' + error) if error else 'xref query completed'}\n{json.dumps(refs, indent=2)}")
+                  for ref in refs if isinstance(refs, list) else []:
+                      origin = ref.get("from") or ref.get("fcn_addr")
+                      if origin is not None:
+                          functions.add(int(origin, 0) if isinstance(origin, str) else int(origin))
+              selected = sorted(functions)[:20]
+              disasm = []
+              for address in selected:
+                  try:
+                      output = r2.cmd(f"pdf @ 0x{address:x}")[:30000]
+                  except Exception as exc:
+                      output = f"Disassembly error: {exc}"
+                  disasm.append(f"## Referencing function near 0x{address:x}\n{output}")
+              from pathlib import Path
+              Path(out_dir, "step-count-xrefs.txt").write_text("\n".join(xrefs) or "No matching strings with virtual addresses found.\n")
+              Path(out_dir, "step-count-xref-functions.txt").write_text("\n".join(disasm) or "No referencing functions resolved.\n")
+              print(f"Matching strings analyzed: {len(hits)}; xref source addresses: {len(functions)}; functions disassembled: {len(selected)}")
+          finally:
+              r2.quit()
+          """
+              Path("/tmp/r2-audit-driver.py").write_text(driver)
+              Path("/tmp/r2-audit-hits.json").write_text(json.dumps(hits))
+              cmd = subprocess.run([py, "/tmp/r2-audit-driver.py", binary, "/tmp/r2-audit-hits.json", "mach-o-evidence"], text=True, capture_output=True, timeout=18*60)
+              print(cmd.stdout)
+              if cmd.stderr:
+                  print(cmd.stderr[-12000:])
+              if cmd.returncode:
+                  raise SystemExit(cmd.returncode)
+          except subprocess.TimeoutExpired:
+              Path("mach-o-evidence/step-count-xrefs.txt").write_text("Persistent Radare2 analysis timed out after 18 minutes.\n")
+              Path("mach-o-evidence/step-count-xref-functions.txt").write_text("No function trace produced before timeout.\n")
+              print("Persistent Radare2 analysis timed out after 18 minutes.")
+
           PY
       - name: Upload Mach-O evidence
         uses: actions/upload-artifact@v4
