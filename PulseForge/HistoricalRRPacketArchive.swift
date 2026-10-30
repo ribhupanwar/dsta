@@ -8,7 +8,10 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
     let receivedAt: Date
     let recordType: Int
     let revision: Int
+    /// Only populated after RR units have been independently verified.
     let intervalsMilliseconds: [Int]
+    /// Candidate v18 little-endian words, retained without claiming milliseconds.
+    let rawRRWords: [Int]?
     let rawFrameHex: String
     /// Historical v18 heart rate from the band, if the frame validates.
     let heartRateBPM: Int?
@@ -19,8 +22,10 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
 }
 
 enum HistoricalRRPacketArchive {
-    /// Retain up to 500 frames for each Type-47 revision independently.
-    static let maximumRecords = 500
+    /// Keep a full-day-plus forensic window for compact v18 biometric frames.
+    /// Large motion-oriented revisions retain a smaller bounded window.
+    static let maximumRecords = 100_000
+    static let maximumRecordsForOtherRevisions = 500
 
     static func load(from fileURL: URL) -> [HistoricalRRPacketRecord] {
         guard let data = try? Data(contentsOf: fileURL) else { return [] }
@@ -50,7 +55,8 @@ enum HistoricalRRPacketArchive {
 
         for revision in Set(newRecords.map { $0.revision }) {
             let matchingIndices = records.indices.filter { records[$0].revision == revision }
-            let excess = matchingIndices.count - maximumRecords
+            let limit = revision == 18 ? maximumRecords : maximumRecordsForOtherRevisions
+            let excess = matchingIndices.count - limit
             if excess > 0 {
                 for index in matchingIndices.prefix(excess).reversed() {
                     records.remove(at: index)
