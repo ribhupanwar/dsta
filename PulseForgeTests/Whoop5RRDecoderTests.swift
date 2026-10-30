@@ -57,6 +57,36 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtimeHeartRate(frame))
     }
 
+    func testDecodesRealtimeType40StepTupleAndOverrideMode() throws {
+        var frame = [UInt8](repeating: 0, count: 65)
+        frame[0] = 0xAA
+        frame[1] = 0x01
+        frame[8] = 40
+        let seconds: UInt32 = 1_793_301_242
+        frame[10] = UInt8(seconds & 0xFF)
+        frame[11] = UInt8((seconds >> 8) & 0xFF)
+        frame[12] = UInt8((seconds >> 16) & 0xFF)
+        frame[13] = UInt8((seconds >> 24) & 0xFF)
+        frame[57] = 0x34
+        frame[58] = 0x12
+        frame[59] = 88
+        frame[61] = 0x78
+        frame[62] = 0x56
+        frame[63] = 2
+        let hardware = try Whoop5RRDecoder.decodeRealtimeStepCounter(frame)
+        XCTAssertEqual(hardware.selectedCounter, 0x1234)
+        XCTAssertEqual(hardware.hardwareCounter, 0x5678)
+        XCTAssertFalse(hardware.softwareOverride)
+        XCTAssertEqual(hardware.cadenceRaw, 88)
+        XCTAssertEqual(hardware.activityRaw, 2)
+
+        frame[64] = 0x10
+        let software = try Whoop5RRDecoder.decodeRealtimeStepCounter(frame)
+        XCTAssertEqual(software.selectedCounter, 0x1234)
+        XCTAssertEqual(software.hardwareCounter, 0x5678)
+        XCTAssertTrue(software.softwareOverride)
+    }
+
     func testExtractsCandidateHistoricalV18RRWordsWithoutUnitClaim() throws {
         // NOOP-sourced type-47 fixture only; offsets and units are not WHOOP-verified.
         let frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
