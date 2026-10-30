@@ -930,7 +930,7 @@ struct StrainDashboard: View {
             VStack(alignment: .leading, spacing: 22) {
                 HeaderView(eyebrow: "CARDIOVASCULAR LOAD", title: "Strain")
                 VStack(alignment: .leading, spacing: 15) {
-                    SectionHeader(title: "TODAY'S STRAIN")
+                    SectionHeader(title: "TODAY'S CARDIO LOAD")
                     HStack(spacing: 22) {
                         ZStack {
                             Circle().stroke(ForgeColors.track, lineWidth: 9)
@@ -943,7 +943,7 @@ struct StrainDashboard: View {
                         }
                         .frame(width: 132, height: 132)
                         VStack(alignment: .leading, spacing: 7) {
-                            Text(todayCardioLoad == nil ? "Collecting workout HR" : "Cardio load recorded")
+                            Text(todayCardioLoad == nil ? "Collecting workout HR" : "PulseForge load recorded")
                                 .font(.system(size: 18, weight: .semibold))
                             Text(todayCardioLoad == nil
                                  ? (measuredMaxHeartRate == 0 ? "Set your measured maximum HR in Running to unlock workout load." : "Record a WHOOP workout with valid HR samples today.")
@@ -985,7 +985,7 @@ struct StrainDashboard: View {
                     Text("WHOOP STRAIN · NOT YET SCORED")
                         .font(.system(size: 9, weight: .bold)).tracking(0.8)
                         .foregroundStyle(ForgeColors.muted)
-                    Text("PulseForge cardio-load points are an auditable workout-HR estimate, not WHOOP's proprietary nonlinear 0–21 Strain score. Full-day strain needs continuous all-day HR coverage and validated activity load.")
+                    Text("Today's number is PulseForge cardio load from saved WHOOP workout HR, not WHOOP's proprietary nonlinear 0–21 Strain. Full-day WHOOP Strain needs validated all-day HR coverage and activity load.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(14).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 14))
