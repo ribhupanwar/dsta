@@ -2660,6 +2660,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             guard let self, self.whoopEventProbeActive,
                   let peripheral = self.connectedPeripheral,
                   peripheral.state == .connected else { return }
+            self.whoopEventProbeOffSequence = nil
             self.whoop5HRStreamEnableSent = false
             self.sendRealtimeHrEnable(to: peripheral)
         }
@@ -3033,9 +3034,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 recordVendorTimeline("Event probe OFF write callback failed · \(error.localizedDescription)")
                 scheduleWhoopEventProbeRearm(after: 0.25)
             } else {
-                whoopEventProbeStatus = "OFF write acknowledged · waiting up to 1.5s for Event 34"
-                recordVendorTimeline("Event probe OFF write acknowledged by CoreBluetooth")
-                scheduleWhoopEventProbeRearm(after: 1.5)
+                whoopEventProbeStatus = "OFF write acknowledged by CoreBluetooth · waiting for strap response; 2s safety re-arm armed"
+                recordVendorTimeline("Event probe OFF write acknowledged by CoreBluetooth · awaiting strap COMMAND_RESPONSE before ON")
+                // Keep the original 2s failsafe armed. A CRC-valid strap response
+                // schedules the normal 1.5s observation window; no response still
+                // restores HR automatically when the failsafe fires.
             }
             return
         }
