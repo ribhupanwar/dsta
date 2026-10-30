@@ -2808,7 +2808,8 @@ struct ConnectPrompt: View {
 }
 
 enum ForgeColors {
-    // Palette values recovered from the supplied WHOOP app asset catalog.
+    // Approximate dark palette pending pixel-sampled comparison against the original WHOOP screenshots.
+    // The decoded asset-catalog inventory contains image renditions, not directly decoded color components.
     // Keep PulseForge identity and label its own estimates transparently.
     static let background = Color.black
     static let card = Color(red: 0.102, green: 0.133, blue: 0.153) // Grey Blue
