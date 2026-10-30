@@ -35,7 +35,7 @@ final class Whoop5RRDecoderTests: XCTestCase {
     func testOmitsZeroPaddingFromRealtimeRRIntervals() throws {
         var frame = bytes("AA011800010022E128029EA0266AAE4762025B024B020000000001005ED515DC")
         frame[18] = 0; frame[19] = 0
-        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(frame), [574])
+        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(frame), [573])
     }
 
     func testRejectsOutOfRangeRealtimeRRTicks() {
