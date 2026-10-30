@@ -59,6 +59,7 @@ jobs:
           JSON
           ICON_DIR="$ICON_DIR" "$RUNNER_TEMP/icon-venv/bin/python" - <<'PY'
           from PIL import Image, ImageDraw
+          ICON_DIR = "PulseForge/Assets.xcassets/AppIcon.appiconset"
           S = 1024
           im = Image.new("RGB", (S, S), (0, 0, 0))
           d = ImageDraw.Draw(im)
