@@ -58,6 +58,11 @@ jobs:
           find "$APP" \( -name '*.nib' -o -name '*.storyboardc' -o -name '*.car' -o -name '*.strings' -o -name '*.stringsdict' -o -name '*.json' \) -print | sed "s#^$APP/##" | sort > reference-report/ui-resource-inventory.txt
           echo "App bundle and UI resource inventories generated."
 
+      - name: Set up Go for nibkit decoder
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
       - name: Decode compiled UI navigation, scene classes, and wiring
         shell: bash
         run: |
