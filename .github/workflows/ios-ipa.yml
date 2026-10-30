@@ -77,6 +77,18 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             | tee "$RUNNER_TEMP/pulseforge-archive.log"
 
+      - name: Stage licensed fonts into app bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/PulseForge.xcarchive/Products/Applications/PulseForge.app"
+          mkdir -p "$APP"
+          cp PulseForge/Fonts/ReadexPro.ttf "$APP/ReadexPro.ttf"
+          cp PulseForge/Fonts/BarlowCondensed-Bold.ttf "$APP/BarlowCondensed-Bold.ttf"
+          cp PulseForge/Fonts/ReadexPro-OFL.txt "$APP/ReadexPro-OFL.txt"
+          cp PulseForge/Fonts/BarlowCondensed-OFL.txt "$APP/BarlowCondensed-OFL.txt"
+          ls -lh "$APP"/*Pro* "$APP"/*Condensed*
+
       - name: Verify bundled fonts before IPA packaging
         shell: bash
         run: |
