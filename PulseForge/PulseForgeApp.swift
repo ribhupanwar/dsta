@@ -119,31 +119,34 @@ struct ForgeTabBar: View {
 }
 
 struct HealthHubDashboard: View {
-    @State private var page: HealthPage = .recovery
-    enum HealthPage: String, CaseIterable { case recovery = "Recovery"; case sleep = "Sleep"; case strain = "Strain" }
+    @EnvironmentObject private var health: HealthDataStore
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+    @EnvironmentObject private var insights: TrainingInsightsStore
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack { Text("Health").font(.system(size: 27, weight: .semibold)); Spacer() }
-                .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 15)
-            HStack(spacing: 8) {
-                ForEach(HealthPage.allCases, id: \.self) { item in
-                    Button { page = item } label: {
-                        Text(item.rawValue).font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(page == item ? ForgeColors.background : ForgeColors.muted)
-                            .frame(maxWidth: .infinity).padding(.vertical, 10)
-                            .background(page == item ? Color.white : ForgeColors.card, in: Capsule())
-                    }.buttonStyle(.plain)
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                HeaderView(eyebrow: "HEALTH MONITOR", title: "Health")
+                LiveHeartRateCard()
+                LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE HEART RATE")
+                HStack(spacing: 10) {
+                    CompactMetric(title: "HEART RATE", value: bluetooth.liveHeartRateBPM.map(String.init) ?? "—", unit: "bpm · WHOOP live")
+                    CompactMetric(title: "STEPS", value: health.stepsToday.map { $0.formatted() } ?? "—", unit: "Apple Health")
                 }
-            }.padding(.horizontal, 18).padding(.bottom, 12)
-            Group {
-                switch page {
-                case .recovery: RecoveryDashboard()
-                case .sleep: SleepDashboard()
-                case .strain: StrainDashboard()
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionHeader(title: "HEALTH DATA SOURCES")
+                    Text("Health metrics are shown with their source. Additional trends will appear as verified WHOOP or Apple Health measurements become available.")
+                        .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                    Text(insights.recoverySourceStatus)
+                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
+                .padding(15)
+                .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 17))
+                .padding(.bottom, 105)
             }
+            .padding(.horizontal, 17).padding(.top, 14)
         }
+        .refreshable { health.refresh(); insights.refresh() }
     }
 }
 
@@ -177,11 +180,59 @@ struct MoreDashboard: View {
     }
 }
 
+enum HomeMetric: String, Identifiable {
+    case recovery = "Recovery"
+    case sleep = "Sleep"
+    case strain = "Strain"
+    var id: String { rawValue }
+}
+
+struct HomeMetricDial: View {
+    let title: String
+    let value: String
+    let tint: Color
+    let progress: Double?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle().stroke(ForgeColors.track, lineWidth: 7)
+                    if let progress {
+                        Circle().trim(from: 0, to: min(1, max(0, progress)))
+                            .stroke(tint, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                    }
+                    Text(value)
+                        .font(.system(size: 18, weight: .medium, design: .rounded))
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.7)
+                        .lineLimit(1)
+                }
+                .frame(width: 76, height: 76)
+                Text(title.uppercased())
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.7)
+                    .foregroundStyle(.white)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(ForgeColors.muted)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 17))
+            .contentShape(RoundedRectangle(cornerRadius: 17))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct TodayDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
-    @State private var showingRecovery = false
+    @State private var selectedHomeMetric: HomeMetric?
 
     private var recoveryTint: Color { Color(red: 0.12, green: 0.82, blue: 0.62) }
 
@@ -200,38 +251,26 @@ struct TodayDashboard: View {
                     Image(systemName: "figure.run.circle").font(.system(size: 27, weight: .light))
                         .foregroundStyle(Color(red: 0.24, green: 0.78, blue: 0.91))
                 }
-                VStack(spacing: 13) {
-                    ZStack {
-                        Circle().stroke(ForgeColors.track, lineWidth: 12)
-                        Circle().trim(from: 0, to: min(1, max(0, Double(insights.recoveryScore ?? 0) / 100)))
-                            .stroke(recoveryTint, style: StrokeStyle(lineWidth: 12, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                            .shadow(color: recoveryTint.opacity(0.25), radius: 8)
-                        VStack(spacing: 4) {
-                            Text("RECOVERY").font(.system(size: 10, weight: .bold)).tracking(1.3)
-                                .foregroundStyle(ForgeColors.muted)
-                            Text(insights.recoveryScore.map { "\($0)%" } ?? "—")
-                                .font(.system(size: 43, weight: .medium, design: .rounded)).monospacedDigit()
-                            Text(insights.recoveryStatus.uppercased())
-                                .font(.system(size: 9, weight: .bold)).tracking(0.8)
-                                .foregroundStyle(recoveryTint)
-                        }
-                    }
-                    .frame(width: 176, height: 176)
-                    Button { showingRecovery = true } label: {
-                        HStack(spacing: 5) {
-                            Text("RECOVERY DETAILS")
-                            Image(systemName: "chevron.right")
-                        }
-                        .font(.system(size: 9, weight: .bold)).tracking(0.9)
-                        .foregroundStyle(Color(red: 0.28, green: 0.78, blue: 0.92))
-                    }
-                    .buttonStyle(.plain)
+                HStack(spacing: 9) {
+                    HomeMetricDial(
+                        title: "Recovery",
+                        value: insights.recoveryScore.map { "\($0)%" } ?? "—",
+                        tint: ForgeColors.recovery,
+                        progress: insights.recoveryScore.map { Double($0) / 100 }
+                    ) { selectedHomeMetric = .recovery }
+                    HomeMetricDial(
+                        title: "Sleep",
+                        value: insights.sleepHours.map { String(format: "%.1fh", $0) } ?? "—",
+                        tint: ForgeColors.sleep,
+                        progress: nil
+                    ) { selectedHomeMetric = .sleep }
+                    HomeMetricDial(
+                        title: "Strain",
+                        value: insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—",
+                        tint: ForgeColors.strain,
+                        progress: nil
+                    ) { selectedHomeMetric = .strain }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-                .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
-                .overlay(RoundedRectangle(cornerRadius: 22).stroke(ForgeColors.stroke, lineWidth: 1))
 
                 HStack(spacing: 9) {
                     CompactMetric(title: "WHOOP HRV", value: "—", unit: "ms")
@@ -298,11 +337,22 @@ struct TodayDashboard: View {
             .padding(.horizontal, 17).padding(.top, 14)
         }
         .refreshable { health.refresh(); insights.refresh() }
-        .sheet(isPresented: $showingRecovery) {
-            RecoveryDetailSheet()
-                .environmentObject(health)
-                .environmentObject(insights)
-                .preferredColorScheme(.dark)
+        .sheet(item: $selectedHomeMetric) { metric in
+            NavigationStack {
+                Group {
+                    switch metric {
+                    case .recovery: RecoveryDashboard()
+                    case .sleep: SleepDashboard()
+                    case .strain: StrainDashboard()
+                    }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { selectedHomeMetric = nil }
+                    }
+                }
+            }
+            .preferredColorScheme(.dark)
         }
     }
 }
