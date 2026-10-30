@@ -308,6 +308,19 @@ jobs:
           PY
           echo "Added exact callee and step-state accessor disassembly windows; interpretation remains static until matched to captured runtime payloads." >> mach-o-evidence/README.txt
 
+      - name: Resolve WHOOP R24 factory callers and parser cross-references
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Basic analysis is sufficient for direct code xrefs; keep each target
+          # separate so one unresolved target does not suppress the others.
+          r2 -q -c 'aa; axtj @ 0x1008026fc' /tmp/whoop-arm64 > mach-o-evidence/r24-factory-xrefs.json 2>mach-o-evidence/r24-factory-xrefs-errors.txt || true
+          r2 -q -c 'aa; axtj @ 0x1090d5e10' /tmp/whoop-arm64 > mach-o-evidence/processed-steps-string-xrefs.json 2>mach-o-evidence/processed-steps-string-xrefs-errors.txt || true
+          r2 -q -c 'aa; axtj @ 0x109218970' /tmp/whoop-arm64 > mach-o-evidence/historical-r24-string-xrefs.json 2>mach-o-evidence/historical-r24-string-xrefs-errors.txt || true
+          r2 -q -c 'afij @ 0x1008026fc; pdf @ 0x1008026fc' /tmp/whoop-arm64 > mach-o-evidence/r24-factory-function.txt 2>mach-o-evidence/r24-factory-function-errors.txt || true
+          r2 -q -c 'afij @ 0x10088e4ec; pdf @ 0x10088e4ec' /tmp/whoop-arm64 > mach-o-evidence/imu-error-function.txt 2>mach-o-evidence/imu-error-function-errors.txt || true
+          echo "Cross-reference analysis is static; verify any candidate parser against captured BLE frames before decoding steps." >> mach-o-evidence/README.txt
+
       - name: Upload Mach-O evidence
         uses: actions/upload-artifact@v4
         with:
