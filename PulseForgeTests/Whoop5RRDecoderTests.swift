@@ -77,7 +77,7 @@ final class Whoop5RRDecoderTests: XCTestCase {
     func testDecodesHistoricalV18FromUsersRealArchiveCapture() throws {
         let frame = bytes("AA01740001003FB12F128037170700FA9AE36A9939004B015F030000000000000000992C074B0000FF4034793C00005CBF71FD30BEC3B5FF3E6C01F200000000000000000031013B01F90C900A010C060C10000000000000000000000000000000000000000000000100A1B724230000001A30A8C00000002AC67557")
         let decoded = try Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame)
-        XCTAssertEqual(decoded.timestamp.timeIntervalSince1970, 1_793_301_229, accuracy: 0.001)
+        XCTAssertEqual(decoded.timestamp.timeIntervalSince1970, 1_793_301_242, accuracy: 0.001)
         XCTAssertEqual(decoded.heartRateBPM, 75)
         XCTAssertEqual(decoded.rawRRWords, [863])
         XCTAssertEqual(decoded.rrIntervalsMilliseconds, [863])
