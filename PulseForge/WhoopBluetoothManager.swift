@@ -2310,6 +2310,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · RR \(intervals.count) interval(s) decoded from \(ticks.count) tick word(s) · milliseconds"
                 } else {
                     whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · current frame declares 0 usable RR intervals · last valid RR retained"
+                    whoopRRSource = "WHOOP Type-40 latest frame has 0 RR intervals · last verified RR batch retained"
                 }
             } catch {
                 whoopRealtimeCandidateRRWords.removeAll(keepingCapacity: true)
