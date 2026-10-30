@@ -83,6 +83,19 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(decoded.rrIntervalsMilliseconds, [863])
     }
 
+    func testDecodesFullWidthGen5BandNativeStepCounterAndCompanionFields() throws {
+        var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
+        frame[57] = 0x34
+        frame[58] = 0x12
+        frame[59] = 88
+        frame[63] = 2
+
+        let decoded = try Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame)
+        XCTAssertEqual(decoded.stepMotionCounter, 0x1234)
+        XCTAssertEqual(decoded.stepCadenceRaw, 88)
+        XCTAssertEqual(decoded.activityClassRaw, 2)
+    }
+
     func testHistoricalV18ZeroHeartRateMeansUnavailableButKeepsRR() throws {
         var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
         frame[22] = 0
