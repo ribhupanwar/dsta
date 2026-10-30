@@ -319,6 +319,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           text = Path("/tmp/r24-r2-session.txt").read_text(errors="replace")
+          # Split each radare2 section independently; use chr(10) for a literal newline.
           markers = [
               ("r24-factory-xrefs.json", "BEGIN_R24_FACTORY_XREF", "BEGIN_PROCESSED_STEPS_XREF"),
               ("processed-steps-string-xrefs.json", "BEGIN_PROCESSED_STEPS_XREF", "BEGIN_HISTORICAL_R24_XREF"),
