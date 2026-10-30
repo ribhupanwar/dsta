@@ -1797,41 +1797,86 @@ final class HealthDataStore: ObservableObject {
     }
 
     private func loadSleepDuration(completion: @escaping () -> Void) {
-        guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { completion(); return }
-        let start = Calendar.current.date(byAdding: .hour, value: -36, to: Date()) ?? Date().addingTimeInterval(-129600)
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: [])
-        let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1000, sortDescriptors: nil) { [weak self] _, samples, _ in
+        guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
+            completion()
+            return
+        }
+
+        // Read enough history to identify the latest complete sleep session.
+        // Never add several nights together into one misleading "hours slept" value.
+        let now = Date()
+        let start = Calendar.current.date(byAdding: .day, value: -14, to: now)
+            ?? now.addingTimeInterval(-14 * 86400)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: now, options: [])
+        let query = HKSampleQuery(
+            sampleType: type,
+            predicate: predicate,
+            limit: HKObjectQueryNoLimit,
+            sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+        ) { [weak self] _, samples, _ in
             let entries = samples as? [HKCategorySample] ?? []
-            func mergedMinutes(for values: Set<Int>) -> Double {
+            let asleepValues: Set<Int> = [
+                HKCategoryValueSleepAnalysis.asleep.rawValue,
+                HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+                HKCategoryValueSleepAnalysis.asleepREM.rawValue,
+                HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+            ]
+            let asleepIntervals = entries
+                .filter { asleepValues.contains($0.value) && $0.startDate < $0.endDate && $0.endDate <= now }
+                .map { DateInterval(start: $0.startDate, end: $0.endDate) }
+            let summary = SleepNightCalculator.summarize(
+                intervals: asleepIntervals,
+                now: now,
+                calendar: Calendar.current
+            )
+
+            func mergedMinutes(for values: Set<Int>, within night: SleepNightCalculator.Night?) -> Double? {
+                guard let night else { return nil }
                 let intervals = entries
-                    .filter { values.contains($0.value) }
-                    .map { (start: $0.startDate, end: $0.endDate) }
+                    .filter {
+                        values.contains($0.value) &&
+                        $0.startDate < night.endDate &&
+                        $0.endDate > night.startDate
+                    }
+                    .map {
+                        DateInterval(
+                            start: max($0.startDate, night.startDate),
+                            end: min($0.endDate, night.endDate)
+                        )
+                    }
+                    .filter { $0.start < $0.end }
                     .sorted { $0.start < $1.start }
-                guard var current = intervals.first else { return 0 }
+
+                guard var current = intervals.first else { return nil }
                 var seconds = 0.0
                 for interval in intervals.dropFirst() {
                     if interval.start <= current.end {
-                        current.end = max(current.end, interval.end)
+                        current = DateInterval(start: current.start, end: max(current.end, interval.end))
                     } else {
-                        seconds += current.end.timeIntervalSince(current.start)
+                        seconds += current.duration
                         current = interval
                     }
                 }
-                seconds += current.end.timeIntervalSince(current.start)
-                return seconds / 60
+                seconds += current.duration
+                return seconds > 0 ? seconds / 60 : nil
             }
-            let deep = mergedMinutes(for: [HKCategoryValueSleepAnalysis.asleepDeep.rawValue])
-            let rem = mergedMinutes(for: [HKCategoryValueSleepAnalysis.asleepREM.rawValue])
-            let core = mergedMinutes(for: [HKCategoryValueSleepAnalysis.asleepCore.rawValue])
-            let unspecified = mergedMinutes(for: [HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue])
-            let awake = mergedMinutes(for: [HKCategoryValueSleepAnalysis.awake.rawValue])
-            let asleep = deep + rem + core + unspecified
+
+            let latest = summary.latestNight
+            let deep = mergedMinutes(for: [HKCategoryValueSleepAnalysis.asleepDeep.rawValue], within: latest)
+            let rem = mergedMinutes(for: [HKCategoryValueSleepAnalysis.asleepREM.rawValue], within: latest)
+            let core = mergedMinutes(for: [
+                HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+            ], within: latest)
+            let awake = mergedMinutes(for: [HKCategoryValueSleepAnalysis.awake.rawValue], within: latest)
+
             Task { @MainActor in
-                self?.deepSleepMinutes = deep > 0 ? deep : nil
-                self?.remSleepMinutes = rem > 0 ? rem : nil
-                self?.coreSleepMinutes = (core + unspecified) > 0 ? core + unspecified : nil
-                self?.awakeMinutes = awake > 0 ? awake : nil
-                self?.sleepHours = asleep > 0 ? asleep / 60 : nil
+                self?.deepSleepMinutes = deep
+                self?.remSleepMinutes = rem
+                self?.coreSleepMinutes = core
+                self?.awakeMinutes = awake
+                self?.sleepHours = latest.map { $0.durationMinutes / 60 }
                 completion()
             }
         }
