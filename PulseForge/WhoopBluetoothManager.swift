@@ -2153,13 +2153,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     // A zero RR count is a successfully decoded empty interval list,
                     // not a packet/layout failure. Preserve the raw frame and keep
                     // the diagnostic distinct from genuine decode errors.
-                    if !rr.isEmpty {
-                        // Historical/offloaded intervals must never replace the
-                        // live type-40 RR window or its freshness timestamp.
-                        whoopHistoricalRRIntervalsMilliseconds = rr
-                        whoopHistoricalRRLastUpdatedAt = receivedAt
-                        persistDashboardHistory()
-                    }
+                    // The v18 words are not yet verified as milliseconds.
+                    // Never publish them through an ms-labelled property or HRV input.
+                    whoopHistoricalRRIntervalsMilliseconds = []
+                    whoopHistoricalRRLastUpdatedAt = nil
                 } catch {
                     decodeError = String(describing: error)
                     whoopRRSource = "Historical v18 RR candidate rejected · \(error)"
@@ -2169,7 +2166,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     receivedAt: receivedAt,
                     recordType: 47,
                     revision: 18,
-                    intervalsMilliseconds: rr,
+                    intervalsMilliseconds: [],
+                    rawRRWords: rr,
                     rawFrameHex: rawHex,
                     heartRateBPM: historicalHeartRateBPM,
                     physiologicalTimestamp: physiologicalTimestamp,
