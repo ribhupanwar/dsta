@@ -365,14 +365,22 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         beginWorkoutRecording(automatic: false)
     }
 
-    private func beginWorkoutRecording(automatic: Bool, baselineBPM: Int? = nil) {
+    private func beginWorkoutRecording(automatic: Bool, baselineBPM: Int? = nil,
+                                        startedAt requestedStart: Date? = nil,
+                                        initialHeartRateSamples: [LiveHeartRateSample] = []) {
         guard connectedName != nil, !workoutIsRecording else { return }
-        workoutHeartRateSamples.removeAll()
+        let sessionStart = requestedStart ?? Date()
+        // Auto-detection confirms only after sustained elevation. Preserve the
+        // candidate's real start and the already-observed HR samples instead of
+        // silently trimming the first five minutes from the workout.
+        workoutHeartRateSamples = initialHeartRateSamples
+            .filter { $0.timestamp >= sessionStart }
+            .sorted { $0.timestamp < $1.timestamp }
         workoutWhoopIMUSampleCount = 0
         workoutWhoopIMUSampleBuffer.removeAll(keepingCapacity: true)
         lastWorkoutIMUSnapshotPublishedAt = nil
         lastWhoopIMUPersistedSampleCount = 0
-        workoutStartedAt = Date()
+        workoutStartedAt = sessionStart
         lastWorkoutStartedAt = workoutStartedAt
         lastWorkoutWasAutomatic = automatic
         lastWorkoutWasInterrupted = false
@@ -529,7 +537,12 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             if elapsed >= 5 * 60 &&
                 hasContinuousSamples(elevatedSamples, minimumCount: 4,
                                      minimumSpan: 4 * 60, maximumGap: 2 * 60) {
-                beginWorkoutRecording(automatic: true, baselineBPM: baseline)
+                let initialSamples = workoutDetectionSamples
+                    .filter { $0.timestamp >= candidateSince && $0.timestamp <= timestamp }
+                    .sorted { $0.timestamp < $1.timestamp }
+                beginWorkoutRecording(automatic: true, baselineBPM: baseline,
+                                      startedAt: candidateSince,
+                                      initialHeartRateSamples: initialSamples)
             } else {
                 workoutDetectionStatus = "Possible workout · validating HR continuity · \(min(elapsed, 300))/300 sec"
             }
