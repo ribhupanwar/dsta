@@ -130,10 +130,15 @@ jobs:
                   origin = ref.get("from") or ref.get("fcn_addr")
                   if origin is not None:
                       functions.add(int(origin, 0) if isinstance(origin, str) else int(origin))
+          selected_functions = sorted(functions)[:12]
           disasm = []
-          for address in sorted(functions):
-              cmd = subprocess.run(["r2", "-q", "-A", "-c", f"pdf @ 0x{address:x}", binary], text=True, capture_output=True, timeout=180)
-              disasm.append(f"## Referencing function near 0x{address:x}\n{cmd.stdout[:20000]}")
+          for address in selected_functions:
+              try:
+                  cmd = subprocess.run(["r2", "-q", "-A", "-c", f"pdf @ 0x{address:x}", binary], text=True, capture_output=True, timeout=25)
+                  output = cmd.stdout[:20000]
+              except subprocess.TimeoutExpired:
+                  output = "Timed out after 25 seconds; function omitted from detailed disassembly."
+              disasm.append(f"## Referencing function near 0x{address:x}\n{output}")
           Path("mach-o-evidence/step-count-xrefs.txt").write_text("\n".join(xrefs) or "No matching strings with virtual addresses found.\n")
           Path("mach-o-evidence/step-count-xref-functions.txt").write_text("\n".join(disasm) or "No referencing functions resolved.\n")
           print(f"Matching strings analyzed: {len(hits)}; xref source addresses: {len(functions)}; functions disassembled: {len(selected_functions)}")
