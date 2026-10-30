@@ -57,7 +57,7 @@ jobs:
             }
           }
           JSON
-          "$RUNNER_TEMP/icon-venv/bin/python" - <<'PY'
+          ICON_DIR="$ICON_DIR" "$RUNNER_TEMP/icon-venv/bin/python" - <<'PY'
           from PIL import Image, ImageDraw
           S = 1024
           im = Image.new("RGB", (S, S), (0, 0, 0))
