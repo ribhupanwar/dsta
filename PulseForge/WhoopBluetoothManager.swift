@@ -2272,15 +2272,6 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
 
             whoopRealtimeCandidateByteAt16 = bpm
-            lastWhoopRealtimeHRAt = receivedAt
-            if !whoop5HRDataObserved {
-                whoop5HRDataObserved = true
-                recordVendorTimeline("WHOOP Type-40 realtime HR data observed · event 33 confirmation \(whoop5HRStreamConfirmed ? "present" : "not yet received")")
-            }
-            if !whoop5HRStreamConfirmed {
-                whoopSessionPhase = "Realtime HR data observed · event 33 not received · generation \(whoopConnectionGeneration)"
-            }
-
             // Keep RR words as raw candidates only. The observed byte pattern
             // correlates HR@16 and count@17, but the RR unit/physiological meaning
             // is not yet independently proven. Never feed candidates to RMSSD/HRV.
@@ -2294,7 +2285,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · RR candidate rejected · \(error)"
             }
             recordHeartRateSample(bpm, source: "WHOOP5 REALTIME_DATA")
-            return "REALTIME_DATA · HR \(bpm) bpm · \(rrSummary) · CRC valid"
+            return "REALTIME_DATA · HR \(bpm) bpm · RR raw candidates \(whoopRealtimeCandidateRRWords.count) · CRC valid"
 
         case 53, 54: // PUFFIN event transports; preserve raw until their payload schemas are independently verified.
             whoopPuffinEventTypeCounts[type, default: 0] += 1
