@@ -75,6 +75,7 @@ struct MainTabView: View {
         .onAppear { refreshSavedWorkoutLoad() }
         .onReceive(bluetooth.$workoutHistory) { _ in refreshSavedWorkoutLoad() }
         .onReceive(health.$sleepHours) { value in insights.updateHealthKitSleep(value) }
+        .onReceive(health.$sleepNights) { nights in insights.updateHealthKitSleepHistory(nights) }
         .onChange(of: measuredMaxHeartRate) { _, _ in refreshSavedWorkoutLoad() }
         .onChange(of: health.hasCompletedAuthorizationRequest) { _, authorized in
             if authorized { insights.refresh() }
@@ -2164,6 +2165,7 @@ final class HealthDataStore: ObservableObject {
     @Published private(set) var respiratoryRate: Double?
     @Published private(set) var bloodOxygenPercent: Double?
     @Published private(set) var sleepHours: Double?
+    @Published private(set) var sleepNights: [SleepNightCalculator.Night] = []
     @Published private(set) var deepSleepMinutes: Double?
     @Published private(set) var remSleepMinutes: Double?
     @Published private(set) var coreSleepMinutes: Double?
@@ -2485,8 +2487,10 @@ final class HealthDataStore: ObservableObject {
         // Read enough history to identify the latest complete sleep session.
         // Never add several nights together into one misleading "hours slept" value.
         let now = Date()
-        let start = Calendar.current.date(byAdding: .day, value: -14, to: now)
-            ?? now.addingTimeInterval(-14 * 86400)
+        // 35 days allows a trailing 28-day baseline plus a buffer for the
+        // wake-day boundary and a complete recent 7-night debt window.
+        let start = Calendar.current.date(byAdding: .day, value: -35, to: now)
+            ?? now.addingTimeInterval(-35 * 86400)
         let predicate = HKQuery.predicateForSamples(withStart: start, end: now, options: [])
         let query = HKSampleQuery(
             sampleType: type,
@@ -2557,6 +2561,7 @@ final class HealthDataStore: ObservableObject {
                 self?.coreSleepMinutes = core
                 self?.awakeMinutes = awake
                 self?.sleepHours = latest.map { $0.durationMinutes / 60 }
+                self?.sleepNights = summary.nights
                 completion()
             }
         }
