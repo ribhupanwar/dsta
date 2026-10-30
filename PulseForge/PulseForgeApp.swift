@@ -3306,10 +3306,13 @@ enum ForgeColors {
     static let track = Color.white.opacity(0.20)
     static let stroke = Color.white.opacity(0.15)
     static let muted = Color.white.opacity(0.50)
-    static let lime = Color.white
+    // Shared semantic palette used across every dashboard and detail screen.
+    // Recovery green is the primary status accent; sleep and strain retain
+    // their own data colours so the UI never confuses metric categories.
+    static let recoveryHigh = Color(red: 0.09804, green: 0.92549, blue: 0.02353)
+    static let lime = recoveryHigh
     static let sleep = Color(red: 0.48235, green: 0.63137, blue: 0.73333) // Sleep
     static let strain = Color(red: 0.0, green: 0.57647, blue: 0.90588) // Day Strain
-    static let recoveryHigh = Color(red: 0.09804, green: 0.92549, blue: 0.02353)
     static let recoveryMedium = Color(red: 1.0, green: 0.87059, blue: 0.0)
     static let recoveryLow = Color(red: 1.0, green: 0.0, blue: 0.14902)
     static let recovery = recoveryHigh
