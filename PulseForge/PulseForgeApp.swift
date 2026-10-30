@@ -604,7 +604,7 @@ struct TodayDashboard: View {
                         CompactMetric(
                             title: "STEPS",
                             value: bluetooth.whoopStepsToday.map { $0.formatted() } ?? "—",
-                            unit: bluetooth.whoopStepsToday == nil ? "WHOOP · sync history" : "WHOOP 5.0 band"
+                            unit: bluetooth.whoopStepsToday == nil ? "WHOOP · sync history" : "WHOOP 5.0 · experimental counter"
                         )
                     }
                     Divider().overlay(ForgeColors.stroke)
