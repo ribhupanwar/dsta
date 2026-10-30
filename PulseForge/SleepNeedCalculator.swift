@@ -62,3 +62,72 @@ enum SleepNeedCalculator {
         ))?.targetHours
     }
 }
+
+
+/// Learns a personal sleep baseline from real, dated sleep sessions.
+/// Requires at least 14 distinct wake-days in the trailing 28 days; debt is
+/// reported only with at least 5 of the most recent 7 nights present.
+enum SleepNeedHistoryCalculator {
+    struct Result: Equatable {
+        let baselineHours: Double?
+        let sleepDebtHours: Double?
+        let sleepNeedHours: Double?
+        let baselineNightCount: Int
+        let debtNightCount: Int
+    }
+
+    static func calculate(nights: [SleepNightCalculator.Night],
+                          now: Date,
+                          calendar: Calendar = .current) -> Result {
+        let today = calendar.startOfDay(for: now)
+        let baselineStart = calendar.date(byAdding: .day, value: -28, to: today)
+            ?? today.addingTimeInterval(-28 * 86_400)
+        let baselineNights = nights.filter {
+            $0.wakeDate >= baselineStart && $0.wakeDate <= today &&
+            $0.durationMinutes.isFinite && $0.durationMinutes > 0
+        }.sorted { $0.wakeDate > $1.wakeDate }
+
+        let baseline: Double?
+        if baselineNights.count >= 14 {
+            let values = baselineNights.map { $0.durationMinutes / 60 }.sorted()
+            let middle = values.count / 2
+            baseline = values.count.isMultiple(of: 2)
+                ? (values[middle - 1] + values[middle]) / 2
+                : values[middle]
+        } else {
+            baseline = nil
+        }
+
+        let debtStart = calendar.date(byAdding: .day, value: -8, to: today)
+            ?? today.addingTimeInterval(-8 * 86_400)
+        let recentNights = nights.filter {
+            $0.wakeDate >= debtStart && $0.wakeDate <= today &&
+            $0.durationMinutes.isFinite && $0.durationMinutes > 0
+        }.sorted { $0.wakeDate > $1.wakeDate }.prefix(7)
+
+        let debt: Double?
+        if let baseline, recentNights.count >= 5 {
+            debt = recentNights.reduce(0.0) {
+                $0 + max(0, baseline * 60 - $1.durationMinutes)
+            } / 60
+        } else {
+            debt = nil
+        }
+
+        let need = baseline.flatMap {
+            SleepNeedCalculator.calculate(.init(
+                personalBaselineHours: $0,
+                sleepDebtHours: debt,
+                napMinutes: nil,
+                strainAdjustmentHours: nil
+            ))?.targetHours
+        }
+        return Result(
+            baselineHours: baseline,
+            sleepDebtHours: debt,
+            sleepNeedHours: need,
+            baselineNightCount: baselineNights.count,
+            debtNightCount: recentNights.count
+        )
+    }
+}
