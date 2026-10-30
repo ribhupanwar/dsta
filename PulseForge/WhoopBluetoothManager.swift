@@ -109,6 +109,17 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopStepsToday: Int?
     @Published private(set) var whoopStepsSourceStatus = "Waiting for WHOOP 5.0 step history"
     @Published private(set) var whoopStepCounterLastUpdatedAt: Date?
+    // Visible Type-40 step-signal diagnostics. Counter fields remain candidates until independently validated.
+    @Published private(set) var stepSignalLastPacketType: Int?
+    @Published private(set) var stepSignalLastPacketLength = 0
+    @Published private(set) var stepSignalLastSeenAt: Date?
+    @Published private(set) var stepSignalLastOutcome = "Waiting for WHOOP Type-40 realtime packet"
+    @Published private(set) var stepSignalSelectedCounter: Int?
+    @Published private(set) var stepSignalHardwareCounter: Int?
+    @Published private(set) var stepSignalCadence: Int?
+    @Published private(set) var stepSignalActivity: Int?
+    @Published private(set) var stepSignalSoftwareOverride: Bool?
+    @Published private(set) var stepSignalFrameCount = 0
     private var whoopBandStepCounter = WhoopBandStepCounter()
     private var lastWhoopStepSnapshotPersistedAt: Date?
     @Published private(set) var whoopEventPacketCount = 0
@@ -2527,13 +2538,31 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopRealtimeRRRawFrameHistory.removeFirst(whoopRealtimeRRRawFrameHistory.count - 20)
             }
             whoop5Type40FrameObserved = true
+            stepSignalLastPacketType = 40
+            stepSignalLastPacketLength = b.count
+            stepSignalLastSeenAt = receivedAt
+            stepSignalFrameCount += 1
+            stepSignalSelectedCounter = nil
+            stepSignalHardwareCounter = nil
+            stepSignalCadence = nil
+            stepSignalActivity = nil
+            stepSignalSoftwareOverride = nil
 
-            // Type-40 extended Gen5 frames carry the selected cumulative step
-            // counter. Short 32-byte HR-only captures remain valid for HR but
-            // cannot supply steps; never infer a count from cadence or IMU magnitude.
-            if let step = try? Whoop5RRDecoder.decodeRealtimeStepCounter(b) {
+            // Only the extended candidate layout can currently expose step counters.
+            do {
+                let step = try Whoop5RRDecoder.decodeRealtimeStepCounter(b)
+                stepSignalSelectedCounter = step.selectedCounter
+                stepSignalHardwareCounter = step.hardwareCounter
+                stepSignalCadence = step.cadenceRaw
+                stepSignalActivity = step.activityRaw
+                stepSignalSoftwareOverride = step.softwareOverride
+                stepSignalLastOutcome = "Extended Type-40 candidate decoded · awaiting counter movement / source validation"
                 recordWhoopStepSample(timestamp: step.timestamp, counter: step.selectedCounter)
-                recordVendorTimeline("WHOOP Type-40 steps · selected=\(step.selectedCounter) · hardware=\(step.hardwareCounter) · cadenceRaw=\(step.cadenceRaw) · activity=\(step.activityRaw) · softwareOverride=\(step.softwareOverride)")
+                recordVendorTimeline("WHOOP Type-40 step candidate · selected=\(step.selectedCounter) · hardware=\(step.hardwareCounter) · cadenceRaw=\(step.cadenceRaw) · activity=\(step.activityRaw) · softwareOverride=\(step.softwareOverride)")
+            } catch {
+                stepSignalLastOutcome = b.count < 65
+                    ? "HR-only / short frame (\(b.count) bytes); step fields are not present"
+                    : "Step candidate decode rejected: \(error)"
             }
 
             // Device-captured 32-byte frames correlate HR at byte[16]. Independent
