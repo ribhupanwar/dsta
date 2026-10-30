@@ -25,7 +25,10 @@ enum Whoop5RRDecoder {
         let heartRateBPM: Int?
         let rawRRWords: [Int]
         let rrIntervalsMilliseconds: [Int]
-        /// Candidate motion counter, UInt16 LE at frame offsets 57...58; not yet verified against WHOOP.
+        /// Gen5 v18 historical motion counter, UInt16 LE at frame offsets 57...58.
+        /// OpenStrap independently maps these bytes in real CRC-valid Gen5 v18
+        /// fixtures; exact producer semantics (steps vs. motion ticks) still
+        /// require ground-truth correlation on this strap/firmware.
         let stepMotionCounter: Int
         /// Raw companion fields retained for diagnostics; their exact semantics remain provisional.
         let stepCadenceRaw: Int
@@ -132,8 +135,11 @@ enum Whoop5RRDecoder {
         return try decodeRawWords(frame, countOffset: 23, wordsOffset: 24)
     }
 
-    /// Candidate v18 motion field is decoded independently from RR. Its meaning and offset remain unverified.
-    /// A malformed RR word must not discard an otherwise valid step-counter sample.
+    /// Decode the Gen5 v18 motion counter independently from RR. OpenStrap
+    /// maps the same frame bytes as a cumulative step/motion counter in real
+    /// CRC-valid Gen5 v18 fixtures. Its exact producer semantics still need
+    /// ground-truth validation on this strap/firmware. A malformed RR word
+    /// must not discard an otherwise valid motion-counter sample.
     struct HistoricalV18StepCounter: Equatable {
         let timestamp: Date
         let stepMotionCounter: Int
