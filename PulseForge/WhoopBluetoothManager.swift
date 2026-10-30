@@ -1823,8 +1823,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             lastBLEEvent = "Standard HR notification received · raw bytes retained · payload could not be parsed"
             return
         }
-        // Type-40 inner fields remain unverified. Until matched to WHOOP IPA/device
-        // evidence, Bluetooth SIG 2A37 is the trusted live HR and millisecond-RR source.
+        // Type-40 RR fields remain unverified. Bluetooth SIG 2A37 is the only currently
+        // trusted live millisecond-RR source.
         let standardRR = StandardHeartRateRRParser.parseMilliseconds(data)
         if !standardRR.isEmpty {
             whoopStandardRRIntervalsMilliseconds = standardRR
@@ -2355,8 +2355,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
             // Device-captured 32-byte frames show a stable HR progression at byte[16]
             // (87, 87, 88, 89 ... 77 bpm); byte[12] is a sequence/header field, not HR.
-            // NOOP's Gen5 REALTIME_DATA parser verifies RR count@17 and UInt16
-            // milliseconds beginning at byte[18]. Keep the raw words alongside decoded values.
+            // NOOP-derived Type-40 RR offsets are candidate-only; preserve raw evidence.
             guard let bpm = try? Whoop5RRDecoder.decodeRealtimeHeartRate(b) else {
                 whoopRealtimeCandidateByteAt16 = b.count > 16 ? Int(b[16]) : nil
                 whoopRealtimeCandidateRRWords.removeAll(keepingCapacity: true)
@@ -2365,24 +2364,19 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
 
             whoopRealtimeCandidateByteAt16 = bpm
-            // WHOOP 5.0 Type-40: count@17, little-endian RR milliseconds@18+.
-            // Values are already milliseconds; do not scale as 1/1024-second ticks.
-            // A zero-count packet is not an RR sample and must not erase the last valid batch.
+            // Type-40 RR offsets/units are not independently verified against WHOOP's
+            // own implementation. Preserve candidate words for diagnostics only;
+            // never promote them into the millisecond RR, RMSSD, HRV or Recovery path.
             do {
-                let rrWords = try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(b)
-                let intervals = try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(b)
-                whoopRealtimeCandidateRRWords = rrWords
-                if !intervals.isEmpty {
-                    appendRRIntervals(intervals, source: "WHOOP 5.0 realtime", receivedAt: receivedAt)
-                    whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · RR \(intervals.count) interval(s) · raw UInt16 milliseconds"
-                } else {
-                    whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · current frame declares 0 usable RR intervals · last valid RR retained"
-                    whoopRRSource = "WHOOP Type-40 latest frame has 0 RR intervals · last verified RR batch retained"
-                }
+                let rawWords = try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(b)
+                whoopRealtimeCandidateRRWords = rawWords
+                whoopRealtimeCandidateStatus = rawWords.isEmpty
+                    ? "Type-40 HR \(bpm) bpm · candidate RR count is zero · raw frame retained"
+                    : "Type-40 HR \(bpm) bpm · \(rawWords.count) unverified RR candidate word(s) retained · no RR values published"
             } catch {
                 whoopRealtimeCandidateRRWords.removeAll(keepingCapacity: true)
-                whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · RR decode rejected · \(error)"
-                recordVendorTimeline("WHOOP Type-40 RR decode rejected · \(error) · raw frame retained")
+                whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · candidate words unavailable · \(error)"
+                recordVendorTimeline("WHOOP Type-40 candidate extraction rejected · \(error) · raw frame retained")
             }
             recordHeartRateSample(bpm, source: "WHOOP5 REALTIME_DATA")
             return "REALTIME_DATA · HR \(bpm) bpm · RR words \(whoopRealtimeCandidateRRWords.count) · \(whoopRealtimeCandidateStatus) · CRC valid"

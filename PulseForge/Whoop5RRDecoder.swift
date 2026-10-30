@@ -30,23 +30,6 @@ enum Whoop5RRDecoder {
         return try decodeRawWords(frame, countOffset: 17, wordsOffset: 18)
     }
 
-    /// WHOOP 5.0 Type-40 RR values are already little-endian milliseconds.
-    /// NOOP's Gen5 interpreter documents count @17 and values @18+ (u16, ms),
-    /// matching the user's CRC-valid Type-40 captures. Do not apply a tick conversion.
-    /// Zero placeholders are omitted; implausible values reject the batch.
-    static func decodeRealtimeRRIntervalsMilliseconds(_ frame: [UInt8]) throws -> [Int] {
-        let rawWords = try decodeRealtimeCandidateRRWords(frame)
-        var intervals: [Int] = []
-        intervals.reserveCapacity(rawWords.count)
-        for milliseconds in rawWords where milliseconds > 0 {
-            guard (250...3000).contains(milliseconds) else {
-                throw DecodeError.invalidIntervalValue(milliseconds)
-            }
-            intervals.append(milliseconds)
-        }
-        return intervals
-    }
-
     /// Device-correlated WHOOP 5.0 REALTIME_DATA HR byte at absolute offset 16.
     /// Correlated against 19 CRC-valid 32-byte WHOOP 5.0 device frames captured
     /// 2026-10-30; candidate must still pass a conservative physiological bound.

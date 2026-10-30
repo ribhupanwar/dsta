@@ -26,31 +26,6 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame), [1135])
     }
 
-    func testDecodesType40RRWordsDirectlyAsMilliseconds() throws {
-        // NOOP Gen5 REALTIME_DATA: count@17, little-endian RR milliseconds@18.
-        let frame = bytes("AA011800010022E12802ECFFE36A8F4257016F04000000000000010023BAA03D")
-        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(frame), [1135])
-    }
-
-    func testNOOPGen5FixtureRRValuesRemainMilliseconds() throws {
-        // Captured Type-40 fixture used by NOOP's Gen5 decoder.
-        let frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
-        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(frame), [603, 587])
-    }
-
-    func testOmitsZeroRRPlaceholders() throws {
-        let frame = bytes("AA011800010022E12802ECFFE36A8F4257016F04000000000000010023BAA03D")
-        var zeroed = frame
-        zeroed[18] = 0
-        zeroed[19] = 0
-        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(zeroed), [])
-    }
-
-    func testZeroRRCountProducesNoIntervals() throws {
-        let frame = bytes("AA011800010022E128024918E46AF5486700000000000000000001006075D594")
-        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(frame), [])
-    }
-
     func testRealtimeHRRejectsWrongCandidateByteRange() {
         var frame = bytes("AA011800010022E12802ECFFE36A8F4257016F04000000000000010023BAA03D")
         frame[16] = 0xF3
