@@ -2456,11 +2456,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     whoopHistoricalRRSource = "Historical v18 decode rejected · raw frame retained · \(error)"
                 }
 
-                // Step-counter decoding is independent from RR validity: one
-                // bad RR word must not throw away a valid band motion counter.
-                if let step = try? Whoop5RRDecoder.decodeHistoricalV18StepCounter(b) {
-                    recordWhoopStepSample(timestamp: step.timestamp, counter: step.stepMotionCounter)
-                }
+                // Type-47 v18 offsets 57...58 are only a motion-field candidate.
+                // Do not publish them as steps; live Type-40 carries the selected
+                // cumulative pedometer counter on the validated protocol layout.
 
                 let record = HistoricalRRPacketRecord(
                     receivedAt: receivedAt,
@@ -2543,6 +2541,14 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopRealtimeRRRawFrameHistory.removeFirst(whoopRealtimeRRRawFrameHistory.count - 20)
             }
             whoop5Type40FrameObserved = true
+
+            // Type-40 extended Gen5 frames carry the selected cumulative step
+            // counter. Short 32-byte HR-only captures remain valid for HR but
+            // cannot supply steps; never infer a count from cadence or IMU magnitude.
+            if let step = try? Whoop5RRDecoder.decodeRealtimeStepCounter(b) {
+                recordWhoopStepSample(timestamp: step.timestamp, counter: step.selectedCounter)
+                recordVendorTimeline("WHOOP Type-40 steps · selected=\(step.selectedCounter) · hardware=\(step.hardwareCounter) · cadenceRaw=\(step.cadenceRaw) · activity=\(step.activityRaw) · softwareOverride=\(step.softwareOverride)")
+            }
 
             // Device-captured 32-byte frames correlate HR at byte[16]. Independent
             // WHOOP 5 protocol references map Type-40 RR ticks at byte[18+] in 1/1024 s.
