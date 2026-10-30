@@ -239,7 +239,7 @@ jobs:
               ]
           except Exception as exc:
               imu_text = [f"Could not decode IMUPacket jump table JSON: {exc}", Path("/tmp/imu-packet-jump-table.json").read_text(errors="replace")]
-          Path("mach-o-evidence/imu-packet-jump-table.txt").write_text("\\n".join(imu_text) + "\\n")
+          Path("mach-o-evidence/imu-packet-jump-table.txt").write_text("\n".join(imu_text) + "\n")
 
           # Historical packet enum: switch input byte indexes this table. The
           # R24 branch is 0x105ce8038 relative to branch base 0x105ce7ff8,
