@@ -1746,9 +1746,15 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         let inspection = errorCount == 0
             ? "GATT profile and descriptors inspected"
             : "GATT inspection finished · \(errorCount) discovery error(s)"
-        statusText = isStandardHeartRateNotifying
-            ? "Connected · HR notifications enabled · waiting for first sample · \(inspection)"
-            : "Connected · HR notification not enabled yet · \(inspection)"
+        if isStandardHeartRateNotifying {
+            if let bpm = freshHeartRateBPM {
+                statusText = "Live HR · \(bpm) bpm · \(heartRateUpdateCount) update(s) · \(inspection)"
+            } else {
+                statusText = "Connected · HR notifications enabled · waiting for first sample · \(inspection)"
+            }
+        } else {
+            statusText = "Connected · HR notification not enabled yet · \(inspection)"
+        }
     }
 
     /// Stitch WHOOP protocol frames split across BLE notification values.
