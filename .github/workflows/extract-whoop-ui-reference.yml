@@ -111,7 +111,7 @@ jobs:
           set -euo pipefail
           APP="$(cat "$RUNNER_TEMP/whoop-app-path.txt")"
           mkdir -p reference-report/fonts
-          find "$APP" -type f \\( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' -o -iname '*.woff' -o -iname '*.woff2' \\) -print | sed "s#^$APP/##" | sort > reference-report/fonts/font-files.txt
+          find "$APP" -type f \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' -o -iname '*.woff' -o -iname '*.woff2' \) -print | sed "s#^$APP/##" | sort > reference-report/fonts/font-files.txt
           if [ -f "$APP/Info.plist" ]; then
             /usr/libexec/PlistBuddy -c 'Print :UIAppFonts' "$APP/Info.plist" > reference-report/fonts/ui-app-fonts.txt 2>&1 || true
           fi
