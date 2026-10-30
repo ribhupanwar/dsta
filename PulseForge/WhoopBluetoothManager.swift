@@ -377,7 +377,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                 .filter { $0.recordType == 47 && $0.revision == 18 }
             let samples = records.compactMap { record -> WhoopBandStepCounter.Sample? in
                 guard let frame = Self.bytes(fromHex: record.rawFrameHex),
-                      let decoded = try? Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame) else {
+                      let decoded = try? Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame) else {
                     return nil
                 }
                 return WhoopBandStepCounter.Sample(
@@ -405,12 +405,12 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         return bytes
     }
 
-    private func recordWhoopStepSample(_ decoded: Whoop5RRDecoder.HistoricalV18Biometrics) {
+    private func recordWhoopStepSample(timestamp: Date, counter: Int) {
         whoopBandStepCounter.ingest(.init(
-            timestamp: decoded.timestamp,
-            counter: decoded.stepMotionCounter
+            timestamp: timestamp,
+            counter: counter
         ))
-        whoopStepCounterLastUpdatedAt = decoded.timestamp
+        whoopStepCounterLastUpdatedAt = timestamp
         publishWhoopStepCount()
         if lastWhoopStepSnapshotPersistedAt.map({ Date().timeIntervalSince($0) >= 5 }) ?? true {
             persistWhoopStepCounterSnapshot()
@@ -2456,8 +2456,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     whoopHistoricalRRSource = "Historical v18 decode rejected · raw frame retained · \(error)"
                 }
 
-                if let decoded {
-                    recordWhoopStepSample(decoded)
+                // Step-counter decoding is independent from RR validity: one
+                // bad RR word must not throw away a valid band motion counter.
+                if let step = try? Whoop5RRDecoder.decodeHistoricalV18StepCounter(b) {
+                    recordWhoopStepSample(timestamp: step.timestamp, counter: step.stepMotionCounter)
                 }
 
                 let record = HistoricalRRPacketRecord(
