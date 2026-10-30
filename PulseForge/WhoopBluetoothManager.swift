@@ -2025,7 +2025,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 // WHOOP 5.75.0's RealtimeStreamService logs an OFF→ON lifecycle.
                 // Mirror one bounded reset after HELLO so a stale band-side stream
                 // cannot leave PulseForge attached to an old HR session.
-                if !runWhoopEventProbe() {
+                if !startWhoopEventProbe() {
                     sendRealtimeHrEnable(to: peripheral)
                 }
                 return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR OFF→ON reset and history setup requested"
@@ -2616,8 +2616,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
     /// Bounded OFF→ON reset to elicit both Gen5 realtime-HR events.
     /// Mirrors WHOOP's RealtimeStreamService lifecycle and restores HR automatically.
+    func runWhoopEventProbe() {
+        _ = startWhoopEventProbe()
+    }
+
     @discardableResult
-    func runWhoopEventProbe() -> Bool {
+    private func startWhoopEventProbe() -> Bool {
         guard let peripheral = connectedPeripheral,
               peripheral.state == .connected,
               let command = whoop5CommandCharacteristic,
