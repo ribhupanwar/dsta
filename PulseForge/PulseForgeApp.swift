@@ -160,6 +160,34 @@ struct TodayDashboard: View {
                     CompactMetric(title: "WHOOP RHR", value: "—", unit: "bpm")
                     CompactMetric(title: "SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                 }
+                HStack(spacing: 9) {
+                    CompactMetric(title: "LIVE WHOOP HR", value: bluetooth.liveHeartRateBPM.map(String.init) ?? "—", unit: "bpm")
+                    CompactMetric(title: "SLEEP DEBT", value: insights.sleepDebtHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                    CompactMetric(title: "DAY STRAIN", value: insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—", unit: "load pts")
+                }
+                HStack(spacing: 10) {
+                    TodayHealthStatusCard(
+                        title: "SLEEP",
+                        value: insights.sleepHours.map { String(format: "%.1fh", $0) } ?? "—",
+                        detail: insights.sleepSourceStatus,
+                        symbol: "moon.zzz.fill",
+                        tint: Color(red: 0.55, green: 0.62, blue: 1.0)
+                    )
+                    TodayHealthStatusCard(
+                        title: "RECOVERY",
+                        value: insights.recoveryScore.map { "\($0)%" } ?? "—",
+                        detail: insights.recoverySourceStatus,
+                        symbol: "heart.fill",
+                        tint: recoveryTint
+                    )
+                    TodayHealthStatusCard(
+                        title: "STRAIN",
+                        value: insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—",
+                        detail: insights.strainSourceStatus,
+                        symbol: "flame.fill",
+                        tint: Color(red: 1.0, green: 0.58, blue: 0.25)
+                    )
+                }
                 LiveHeartRateCard()
                 LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE HEART RATE")
                 VStack(alignment: .leading, spacing: 7) {
@@ -187,6 +215,39 @@ struct TodayDashboard: View {
                 .environmentObject(insights)
                 .preferredColorScheme(.dark)
         }
+    }
+}
+
+struct TodayHealthStatusCard: View {
+    let title: String
+    let value: String
+    let detail: String
+    let symbol: String
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(tint)
+            Text(title)
+                .font(.system(size: 9, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(ForgeColors.muted)
+            Text(value)
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+            Text(detail)
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(ForgeColors.muted)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 118, alignment: .leading)
+        .padding(11)
+        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 15))
+        .overlay(RoundedRectangle(cornerRadius: 15).stroke(ForgeColors.stroke, lineWidth: 1))
     }
 }
 
