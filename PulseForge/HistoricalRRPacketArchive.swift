@@ -20,6 +20,21 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
     /// Present when a CRC-valid v18 frame could not be decoded as RR.
     let decodeError: String?
 
+    init(receivedAt: Date, recordType: Int, revision: Int,
+         intervalsMilliseconds: [Int], rawRRWords: [Int]? = nil,
+         rawFrameHex: String, heartRateBPM: Int?,
+         physiologicalTimestamp: Date?, decodeError: String?) {
+        self.receivedAt = receivedAt
+        self.recordType = recordType
+        self.revision = revision
+        self.intervalsMilliseconds = intervalsMilliseconds
+        self.rawRRWords = rawRRWords
+        self.rawFrameHex = rawFrameHex
+        self.heartRateBPM = heartRateBPM
+        self.physiologicalTimestamp = physiologicalTimestamp
+        self.decodeError = decodeError
+    }
+
     private enum CodingKeys: String, CodingKey {
         case receivedAt, recordType, revision, intervalsMilliseconds
         case rawRRWords, rawFrameHex, heartRateBPM, physiologicalTimestamp, decodeError
