@@ -89,24 +89,53 @@ struct ForgeTabBar: View {
     @Binding var selected: ForgeTab
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 5) {
             ForEach(ForgeTab.allCases, id: \.self) { tab in
-                Button { selected = tab } label: {
-                    VStack(spacing: 5) {
-                        Image(systemName: tab.symbol).font(.system(size: 18, weight: .semibold))
-                        Text(tab.rawValue).font(.system(size: 10, weight: .semibold))
+                let isSelected = selected == tab
+                Button {
+                    withAnimation(.snappy(duration: 0.22)) { selected = tab }
+                } label: {
+                    VStack(spacing: 6) {
+                        Image(systemName: tab.symbol)
+                            .font(.system(size: 17, weight: .semibold))
+                            .frame(height: 20)
+                        Text(tab.rawValue.uppercased())
+                            .font(.system(size: 8, weight: .bold))
+                            .tracking(0.45)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
-                    .foregroundStyle(selected == tab ? ForgeColors.lime : ForgeColors.muted)
+                    .foregroundStyle(isSelected ? ForgeColors.lime : ForgeColors.muted)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 9)
+                    .background {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(ForgeColors.lime.opacity(0.10))
+                                .overlay(alignment: .top) {
+                                    Capsule().fill(ForgeColors.lime).frame(width: 22, height: 2)
+                                }
+                        }
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(tab.rawValue)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 18)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) { Rectangle().fill(ForgeColors.stroke).frame(height: 1) }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 22)
+        .background {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(ForgeColors.stroke).frame(height: 1)
+                }
+                .ignoresSafeArea(edges: .bottom)
+        }
     }
 }
 
