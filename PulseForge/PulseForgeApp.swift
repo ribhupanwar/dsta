@@ -3316,12 +3316,12 @@ enum ForgeColors {
 }
 
 enum ForgeTypography {
-    // WHOOP's declared UI font families, mapped by role. DINPro is reserved
-    // for numeric readouts; Proxima Nova handles text and headings.
-    static func body(_ size: CGFloat) -> Font { .custom("ProximaNova-Regular", size: size) }
-    static func semibold(_ size: CGFloat) -> Font { .custom("ProximaNova-Semibold", size: size) }
-    static func bold(_ size: CGFloat) -> Font { .custom("ProximaNova-Bold", size: size) }
-    static func number(_ size: CGFloat) -> Font { .custom("DINPro-Bold", size: size) }
+    // Bundled Google Fonts alternatives: Readex Pro for interface text and
+    // Barlow Condensed Bold for compact numeric emphasis. Both are OFL 1.1.
+    static func body(_ size: CGFloat) -> Font { .custom("ReadexPro-Regular", size: size) }
+    static func semibold(_ size: CGFloat) -> Font { .custom("ReadexPro-Regular", size: size).weight(.semibold) }
+    static func bold(_ size: CGFloat) -> Font { .custom("ReadexPro-Regular", size: size).weight(.bold) }
+    static func number(_ size: CGFloat) -> Font { .custom("BarlowCondensed-Bold", size: size) }
 }
 
 
