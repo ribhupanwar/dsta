@@ -176,6 +176,9 @@ enum Whoop5RRDecoder {
         guard seconds >= 1_577_836_800, seconds <= 4_102_444_800 else {
             throw DecodeError.invalidFrame
         }
+        guard frame[64] == 0x00 || frame[64] == 0x10 else {
+            throw DecodeError.invalidFrame
+        }
         return HistoricalV18StepCounter(
             timestamp: Date(timeIntervalSince1970: TimeInterval(seconds)),
             stepMotionCounter: Int(frame[57]) | (Int(frame[58]) << 8),
