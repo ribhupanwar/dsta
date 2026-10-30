@@ -81,6 +81,11 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(decoded.heartRateBPM, 75)
         XCTAssertEqual(decoded.rawRRWords, [863])
         XCTAssertEqual(decoded.rrIntervalsMilliseconds, [863])
+        // Same frame also contains the independently mapped Gen5 v18
+        // cumulative motion counter at absolute bytes 57...58.
+        XCTAssertEqual(decoded.stepMotionCounter, 364)
+        XCTAssertEqual(decoded.stepCadenceRaw, 242)
+        XCTAssertEqual(decoded.activityClassRaw, 0)
     }
 
     func testDecodesGen5V18MotionCounterFromRealCRCValidFixture() throws {
