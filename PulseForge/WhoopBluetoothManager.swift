@@ -180,7 +180,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var lastLiveIMUSnapshotPublishedAt: Date?
     /// Persisted decoded WHOOP motion history; never treated as a live stream.
     private var whoopIMUHistorySamples: [WhoopIMUSample] = []
-    @Published private(set) var workoutWhoopIMUSamples: [WhoopIMUSample] = []
+    @Published private(set) var workoutWhoopIMUSampleCount = 0
     // Full-resolution workout IMU is retained privately. SwiftUI receives a
     // one-second snapshot instead of invalidating the entire screen per BLE frame.
     private var workoutWhoopIMUSampleBuffer: [WhoopIMUSample] = []
@@ -264,7 +264,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         workoutWhoopIMUSampleBuffer.append(contentsOf: samples)
         if lastWorkoutIMUSnapshotPublishedAt == nil ||
             now.timeIntervalSince(lastWorkoutIMUSnapshotPublishedAt!) >= 1.0 {
-            workoutWhoopIMUSamples = workoutWhoopIMUSampleBuffer
+            workoutWhoopIMUSampleCount = workoutWhoopIMUSampleBuffer.count
             lastWorkoutIMUSnapshotPublishedAt = now
         }
     }
@@ -368,7 +368,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private func beginWorkoutRecording(automatic: Bool, baselineBPM: Int? = nil) {
         guard connectedName != nil, !workoutIsRecording else { return }
         workoutHeartRateSamples.removeAll()
-        workoutWhoopIMUSamples.removeAll()
+        workoutWhoopIMUSampleCount = 0
         workoutWhoopIMUSampleBuffer.removeAll(keepingCapacity: true)
         lastWorkoutIMUSnapshotPublishedAt = nil
         lastWhoopIMUPersistedSampleCount = 0
@@ -542,7 +542,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
 
     private func archiveCurrentWorkout(startedAt: Date, duration: TimeInterval,
                                         automatic: Bool, interrupted: Bool) {
-        workoutWhoopIMUSamples = workoutWhoopIMUSampleBuffer
+        workoutWhoopIMUSampleCount = workoutWhoopIMUSampleBuffer.count
         lastWorkoutIMUSnapshotPublishedAt = Date()
         let record = WorkoutSessionRecord(
             startedAt: startedAt,
@@ -816,7 +816,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         if let imuData = UserDefaults.standard.data(forKey: "pulseforge.whoop.lastVerifiedWorkoutIMUSamples"),
            let savedIMUSamples = try? JSONDecoder().decode([WhoopIMUSample].self, from: imuData) {
             workoutWhoopIMUSampleBuffer = savedIMUSamples
-            workoutWhoopIMUSamples = savedIMUSamples
+            workoutWhoopIMUSampleCount = savedIMUSamples.count
         }
         lastWorkoutDurationSeconds = UserDefaults.standard.object(forKey: "pulseforge.whoop.lastWorkoutDuration") as? Double
         lastWorkoutStartedAt = UserDefaults.standard.object(forKey: "pulseforge.whoop.lastWorkoutStartedAt") as? Date
@@ -1079,7 +1079,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP Event 33/34 controlled probe: \(whoopEventProbeStatus)",
             "WHOOP automatic IMU request: \(whoop5AutoIMUStartRequested ? "yes" : "no")",
             "WHOOP automatic IMU enabled: \(whoop5AutoIMUEnabled ? "yes" : "no")",
-            "WHOOP IMU frames: \(whoopIMUFrameCount) · samples: \(whoopIMUSampleCount) · live buffer: \(liveWhoopIMUSamples.count) · workout samples: \(workoutWhoopIMUSamples.count) · status: \(whoopIMUStatus)",
+            "WHOOP IMU frames: \(whoopIMUFrameCount) · samples: \(whoopIMUSampleCount) · live buffer: \(liveWhoopIMUSamples.count) · workout samples: \(workoutWhoopIMUSampleCount) · status: \(whoopIMUStatus)",
             "WHOOP latest IMU sample: \(liveWhoopIMUSamples.last.map { String(format: "A %.3f, %.3f, %.3f g · G %.1f, %.1f, %.1f dps", $0.accelerationXG, $0.accelerationYG, $0.accelerationZG, $0.rotationXDPS, $0.rotationYDPS, $0.rotationZDPS) } ?? "none")",
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP latest CRC-valid raw IMU frame hex (outer type 43 · inner 0x2B/R21): \(whoopIMULastRawFrameHex)",
