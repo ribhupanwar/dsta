@@ -2,11 +2,13 @@ import Foundation
 
 /// Computes HRV only inside an explicitly supplied sleep window.
 /// It accepts exclusively verified WHOOP Type-47 revision-18 physiology.
-/// RR values are never stitched across packet gaps larger than two minutes.
+/// RR differences are calculated within each packet only; packet boundaries
+/// are not assumed to contain a contiguous pair of beats.
 enum OvernightRRMetricsCalculator {
     struct Metrics: Equatable {
         let rmssdMilliseconds: Double
         let intervalCount: Int
+        let differenceCount: Int
         let packetCount: Int
         let medianHeartRateBPM: Int?
         let firstSampleAt: Date
@@ -22,31 +24,43 @@ enum OvernightRRMetricsCalculator {
             return nil
         }
 
-        let eligible = records
-            .filter {
-                $0.recordType == 47 &&
-                $0.revision == 18 &&
-                $0.physiologyLayoutVerified &&
-                $0.physiologicalTimestamp.map { $0 >= sleepStart && $0 < sleepEnd } == true
-            }
-            .sorted {
-                ($0.physiologicalTimestamp ?? .distantPast) <
-                ($1.physiologicalTimestamp ?? .distantPast)
-            }
+        let eligible = records.filter {
+            $0.recordType == 47 &&
+            $0.revision == 18 &&
+            $0.physiologyLayoutVerified &&
+            $0.physiologicalTimestamp.map { $0 >= sleepStart && $0 < sleepEnd } == true
+        }
 
-        guard !eligible.isEmpty else { return nil }
+        // Multiple archive writes/reconnects can contain the same physiological
+        // second. Keep one deterministic record per timestamp, preferring the
+        // record with the most validated RR intervals.
+        let deduplicated = Dictionary(grouping: eligible) {
+            $0.physiologicalTimestamp!.timeIntervalSince1970
+        }.compactMap { _, candidates in
+            candidates.sorted {
+                if $0.intervalsMilliseconds.count != $1.intervalsMilliseconds.count {
+                    return $0.intervalsMilliseconds.count > $1.intervalsMilliseconds.count
+                }
+                return $0.rawFrameHex < $1.rawFrameHex
+            }.first
+        }.sorted {
+            $0.physiologicalTimestamp! < $1.physiologicalTimestamp!
+        }
 
-        var validIntervals: [Int] = []
+        guard !deduplicated.isEmpty else { return nil }
+
+        var intervalCount = 0
+        var squaredDifferenceSum = 0.0
+        var differenceCount = 0
         var acceptedPackets = 0
         var heartRates: [Int] = []
         var previousPacketAt: Date?
 
-        for record in eligible {
+        for record in deduplicated {
             guard let timestamp = record.physiologicalTimestamp else { continue }
             if let previousPacketAt,
                timestamp.timeIntervalSince(previousPacketAt) > maximumPacketGap {
-                // A long discontinuity invalidates the overnight aggregate:
-                // RMSSD must not bridge an unknown section of the night.
+                // Do not aggregate across an unknown section of the night.
                 return nil
             }
             previousPacketAt = timestamp
@@ -56,37 +70,46 @@ enum OvernightRRMetricsCalculator {
                   intervals.allSatisfy({ (300...2000).contains($0) }) else {
                 continue
             }
-            validIntervals.append(contentsOf: intervals)
+
+            intervalCount += intervals.count
             acceptedPackets += 1
+
+            // Never calculate a synthetic RR pair between separate packets.
+            for (left, right) in zip(intervals, intervals.dropFirst()) {
+                let difference = right - left
+                guard abs(difference) <= 300 else { return nil }
+                squaredDifferenceSum += Double(difference * difference)
+                differenceCount += 1
+            }
+
             if let bpm = record.heartRateBPM, (30...220).contains(bpm) {
                 heartRates.append(bpm)
             }
         }
 
-        guard validIntervals.count >= minimumIntervals else { return nil }
-        let differences = zip(validIntervals, validIntervals.dropFirst()).map {
-            Double($1 - $0)
-        }
-        guard differences.count >= minimumIntervals - 1,
-              differences.allSatisfy({ abs($0) <= 300 }) else { return nil }
+        guard intervalCount >= minimumIntervals,
+              differenceCount >= minimumIntervals - 1 else { return nil }
 
-        let rmssd = sqrt(differences.reduce(0) { $0 + $1 * $1 } /
-                         Double(differences.count))
+        let rmssd = sqrt(squaredDifferenceSum / Double(differenceCount))
         guard rmssd.isFinite, rmssd > 0 else { return nil }
 
         let sortedHR = heartRates.sorted()
         let medianHR: Int?
         if sortedHR.isEmpty {
             medianHR = nil
+        } else if sortedHR.count.isMultiple(of: 2) {
+            medianHR = Int((Double(sortedHR[sortedHR.count / 2 - 1] +
+                                   sortedHR[sortedHR.count / 2]) / 2).rounded())
         } else {
             medianHR = sortedHR[sortedHR.count / 2]
         }
 
         return Metrics(rmssdMilliseconds: rmssd,
-                       intervalCount: validIntervals.count,
+                       intervalCount: intervalCount,
+                       differenceCount: differenceCount,
                        packetCount: acceptedPackets,
                        medianHeartRateBPM: medianHR,
-                       firstSampleAt: eligible.first?.physiologicalTimestamp ?? sleepStart,
-                       lastSampleAt: eligible.last?.physiologicalTimestamp ?? sleepEnd)
+                       firstSampleAt: deduplicated.first?.physiologicalTimestamp ?? sleepStart,
+                       lastSampleAt: deduplicated.last?.physiologicalTimestamp ?? sleepEnd)
     }
 }
