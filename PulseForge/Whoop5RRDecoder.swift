@@ -16,6 +16,16 @@ enum Whoop5RRDecoder {
         case truncatedIntervals(expectedBytes: Int, availableBytes: Int)
     }
 
+    /// WHOOP 5.0 Type-47 / revision-18 historical biometric fields.
+    /// Offsets and RR units are hardware-verified: unix@15, HR@22,
+    /// rr_count@23, and UInt16 RR milliseconds at 24+2*i.
+    struct HistoricalV18Biometrics: Equatable {
+        let timestamp: Date
+        let heartRateBPM: Int?
+        let rawRRWords: [Int]
+        let rrIntervalsMilliseconds: [Int]
+    }
+
     /// Type-40 raw RR words (ticks @18+, 1/1024 second). CRC must be validated first.
     static func decodeRealtimeCandidateRRWords(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 22, frame[0] == 0xAA, frame[1] == 0x01 else {
@@ -79,6 +89,53 @@ enum Whoop5RRDecoder {
         // Defensive bound for this candidate parser, not a WHOOP protocol maximum.
         guard count <= 4 else { throw DecodeError.invalidIntervalCount(count) }
         return try decodeRawWords(frame, countOffset: 23, wordsOffset: 24)
+    }
+
+    /// Decode hardware-verified WHOOP 5.0 Type-47 revision-18 biometrics.
+    /// Caller must validate the complete outer frame CRC before calling.
+    /// RR words are already milliseconds; unlike Type-40 ticks, do NOT scale by 1000/1024.
+    static func decodeHistoricalV18Biometrics(_ frame: [UInt8]) throws -> HistoricalV18Biometrics {
+        guard frame.count >= 28, frame[0] == 0xAA, frame[1] == 0x01 else {
+            throw DecodeError.invalidFrame
+        }
+        guard Int(frame[8]) == 47 else {
+            throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
+        }
+        guard Int(frame[9]) == 18 else {
+            throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
+        }
+
+        let seconds = UInt32(frame[15])
+            | (UInt32(frame[16]) << 8)
+            | (UInt32(frame[17]) << 16)
+            | (UInt32(frame[18]) << 24)
+        guard seconds >= 1_577_836_800, seconds <= 4_102_444_800 else {
+            throw DecodeError.invalidFrame
+        }
+
+        let rawHeartRate = Int(frame[22])
+        let heartRate: Int?
+        if rawHeartRate == 0 {
+            heartRate = nil // WHOOP uses zero for an unavailable/off-wrist HR sample.
+        } else {
+            guard (25...240).contains(rawHeartRate) else {
+                throw DecodeError.invalidIntervalValue(rawHeartRate)
+            }
+            heartRate = rawHeartRate
+        }
+
+        let words = try decodeHistoricalV18CandidateRRWords(frame)
+        let intervals = words.filter { $0 > 0 }
+        for value in intervals where !(250...3000).contains(value) {
+            throw DecodeError.invalidIntervalValue(value)
+        }
+
+        return HistoricalV18Biometrics(
+            timestamp: Date(timeIntervalSince1970: TimeInterval(seconds)),
+            heartRateBPM: heartRate,
+            rawRRWords: words,
+            rrIntervalsMilliseconds: intervals
+        )
     }
 
     /// Candidate timestamp extraction from the NOOP-derived fixture only.
