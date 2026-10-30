@@ -1406,6 +1406,8 @@ struct StrainDashboard: View {
                 }
                 SectionHeader(title: "7-DAY WORKOUT LOAD")
                 CardioLoadTrendCard(sessions: bluetooth.workoutHistory, measuredMaxHeartRate: measuredMaxHeartRate)
+                SectionHeader(title: "TIME IN HEART RATE ZONES")
+                HeartRateZoneBreakdownCard(sessions: todaySessions, measuredMaxHeartRate: measuredMaxHeartRate)
                 SectionHeader(title: "LATEST RUN")
                 VStack(spacing: 13) {
                     HStack {
@@ -3185,6 +3187,73 @@ struct CardioLoadTrendCard: View {
                     .frame(maxWidth: .infinity, minHeight: 105, alignment: .center)
             }
             Text("PulseForge workout-only cardio-load estimate · not WHOOP Day Strain")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(ForgeColors.muted)
+        }
+        .padding(16)
+        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+struct HeartRateZoneBreakdownCard: View {
+    let sessions: [WorkoutSessionRecord]
+    let measuredMaxHeartRate: Int
+
+    private var zones: [HeartRateZoneSummary] {
+        guard (100...240).contains(measuredMaxHeartRate) else { return [] }
+        let points = sessions.flatMap { session -> [WorkoutHeartRatePoint] in
+            let samples = session.heartRateSamples.sorted { $0.timestamp < $1.timestamp }
+            return samples.enumerated().map { index, sample in
+                let next = index + 1 < samples.count
+                    ? samples[index + 1].timestamp
+                    : session.startedAt.addingTimeInterval(session.durationSeconds)
+                let seconds = min(30, max(0, next.timeIntervalSince(sample.timestamp)))
+                return WorkoutHeartRatePoint(
+                    elapsedMinutes: sample.timestamp.timeIntervalSince(session.startedAt) / 60,
+                    beatsPerMinute: Double(sample.bpm),
+                    durationSeconds: seconds
+                )
+            }
+        }
+        return heartRateZones(maxHR: measuredMaxHeartRate, points: points)
+    }
+
+    private var totalMinutes: Double { zones.reduce(0) { $0 + $1.minutes } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if zones.isEmpty || totalMinutes <= 0 {
+                Text(measuredMaxHeartRate == 0
+                     ? "Add your measured maximum heart rate to calculate workout zones."
+                     : "No valid timestamped workout heart-rate samples for today.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(ForgeColors.muted)
+                    .frame(maxWidth: .infinity, minHeight: 90, alignment: .center)
+            } else {
+                ForEach(zones, id: \.name) { zone in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(zone.name)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.white)
+                            Spacer()
+                            Text(String(format: "%.0f min", zone.minutes))
+                                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                                .foregroundStyle(ForgeColors.muted)
+                        }
+                        GeometryReader { proxy in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(ForgeColors.track)
+                                Capsule()
+                                    .fill(zone.color)
+                                    .frame(width: proxy.size.width * min(1, max(0, zone.minutes / totalMinutes)))
+                            }
+                        }
+                        .frame(height: 6)
+                    }
+                }
+            }
+            Text("Based on saved WHOOP workout HR samples · zone time is capped to observed sample intervals")
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(ForgeColors.muted)
         }
