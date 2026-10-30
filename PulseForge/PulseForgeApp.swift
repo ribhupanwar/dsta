@@ -510,13 +510,13 @@ struct TodayDashboard: View {
                         ) { selectedHomeMetric = .recovery }
                         HomeMetricDial(
                             title: "Sleep",
-                            value: insights.sleepHours.map { String(format: "%.1fh", $0) } ?? "—",
+                            value: "—",
                             tint: ForgeColors.sleep,
                             progress: nil
                         ) { selectedHomeMetric = .sleep }
                         HomeMetricDial(
                             title: "Strain",
-                            value: insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—",
+                            value: "—",
                             tint: ForgeColors.strain,
                             progress: nil
                         ) { selectedHomeMetric = .strain }
@@ -1371,30 +1371,25 @@ struct StrainDashboard: View {
             VStack(alignment: .leading, spacing: 22) {
                 HeaderView(eyebrow: "CARDIOVASCULAR LOAD", title: "Strain")
                 VStack(alignment: .leading, spacing: 15) {
-                    SectionHeader(title: "TODAY'S CARDIO LOAD")
+                    SectionHeader(title: "DAY STRAIN")
                     HStack(spacing: 22) {
                         ZStack {
                             Circle().stroke(ForgeColors.track, lineWidth: 9)
-                            Circle().trim(from: 0, to: 0)
-                                .stroke(Color(red: 0.98, green: 0.58, blue: 0.27), style: StrokeStyle(lineWidth: 9, lineCap: .round))
-                                .rotationEffect(.degrees(-90))
-                            Text(todayCardioLoad.map { String(format: "%.0f", $0) } ?? "—")
-                                .font(.system(size: 39, weight: .light, design: .rounded))
-                                .monospacedDigit()
+                            Text("—")
+                                .font(.system(size: 43, weight: .light))
+                                .foregroundStyle(.white)
                         }
                         .frame(width: 132, height: 132)
                         VStack(alignment: .leading, spacing: 7) {
-                            Text(todayCardioLoad == nil ? "Collecting workout HR" : "PulseForge load recorded")
+                            Text("WHOOP Strain unavailable")
                                 .font(.system(size: 18, weight: .semibold))
-                            Text(todayCardioLoad == nil
-                                 ? (measuredMaxHeartRate == 0 ? "Set your measured maximum HR in Running to unlock workout load." : "Record a WHOOP workout with valid HR samples today.")
-                                 : "Calculated from saved WHOOP workout HR samples and your measured maximum HR.")
+                            Text("The 0–21 Day Strain score needs validated all-day heart-rate and activity-load history. Workout-only load is shown separately.")
                                 .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                         }
                     }
                 }
                 .padding(20).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
-                SectionHeader(title: "CARDIO LOAD")
+                SectionHeader(title: "PULSEFORGE WORKOUT LOAD")
                 HStack(spacing: 10) {
                     CompactMetric(title: "CARDIO LOAD", value: todayCardioLoad.map { String(format: "%.0f", $0) } ?? "—", unit: "load pts")
                     CompactMetric(title: "ACTIVITIES", value: String(todaySessions.count), unit: "today")
@@ -2813,9 +2808,9 @@ struct HeaderView: View {
     let title: String
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(eyebrow).font(.system(size: 10, weight: .bold)).tracking(1.7).foregroundStyle(ForgeColors.lime)
+            Text(eyebrow).font(.system(size: 10, weight: .semibold)).tracking(1.1).foregroundStyle(ForgeColors.muted)
             HStack {
-                Text(title).font(.system(size: 31, weight: .bold, design: .rounded)).tracking(-0.8)
+                Text(title).font(.system(size: 30, weight: .bold)).tracking(-0.6)
                 Spacer()
                 Image(systemName: "person.crop.circle").font(.system(size: 25, weight: .light)).foregroundStyle(ForgeColors.muted)
             }
@@ -2898,9 +2893,9 @@ struct SleepStageBreakdown: View {
 
     private var stages: [(String, Double?, Color)] {
         [
-            ("Deep", deep, Color(red: 0.38, green: 0.34, blue: 0.9)),
-            ("REM", rem, Color(red: 0.42, green: 0.64, blue: 0.95)),
-            ("Light", core, ForgeColors.lime),
+            ("Deep", deep, Color(red: 0.30, green: 0.39, blue: 0.88)),
+            ("REM", rem, Color(red: 0.55, green: 0.42, blue: 0.88)),
+            ("Light", core, ForgeColors.sleep),
             ("Awake", awake, ForgeColors.muted)
         ]
     }
@@ -2950,20 +2945,19 @@ struct ConnectPrompt: View {
 }
 
 enum ForgeColors {
-    // Approximate dark palette pending pixel-sampled comparison against the original WHOOP screenshots.
-    // The decoded asset-catalog inventory contains image renditions, not directly decoded color components.
-    // Keep PulseForge identity and label its own estimates transparently.
+    // WHOOP-derived dark visual system. Reconstructed from the extracted v5.75
+    // UI reference; final pixel match is subject to same-device screenshot diff.
     static let background = Color.black
-    static let card = Color(red: 0.102, green: 0.133, blue: 0.153) // Grey Blue
-    static let track = Color(red: 0.22, green: 0.25, blue: 0.27)
-    static let stroke = Color.white.opacity(0.12)
-    static let muted = Color(red: 0.62, green: 0.66, blue: 0.69)
-    static let lime = Color(red: 0.72, green: 0.91, blue: 0.24)
-    static let sleep = Color(red: 0.482, green: 0.631, blue: 0.733) // Sleep
-    static let strain = Color(red: 0.0, green: 0.576, blue: 0.906) // Day Strain
-    static let recoveryHigh = Color(red: 0.098, green: 0.925, blue: 0.024)
-    static let recoveryMedium = Color(red: 1.0, green: 0.871, blue: 0.0)
-    static let recoveryLow = Color(red: 1.0, green: 0.0, blue: 0.149)
+    static let card = Color(red: 0.075, green: 0.075, blue: 0.075)
+    static let track = Color(red: 0.20, green: 0.20, blue: 0.20)
+    static let stroke = Color.white.opacity(0.075)
+    static let muted = Color(red: 0.64, green: 0.64, blue: 0.64)
+    static let lime = Color.white
+    static let sleep = Color(red: 0.43, green: 0.64, blue: 0.86)
+    static let strain = Color(red: 0.16, green: 0.52, blue: 0.91)
+    static let recoveryHigh = Color(red: 0.04, green: 0.82, blue: 0.43)
+    static let recoveryMedium = Color(red: 1.0, green: 0.78, blue: 0.12)
+    static let recoveryLow = Color(red: 0.94, green: 0.20, blue: 0.24)
     static let recovery = recoveryHigh
 }
 
@@ -3015,9 +3009,9 @@ struct RecoveryDashboard: View {
                 .padding(20)
                 .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 HStack(spacing: 10) {
-                    CompactMetric(title: "LIVE RR", value: "\(bluetooth.whoopRRIntervalsMilliseconds.count)", unit: "intervals")
-                    CompactMetric(title: "BATTERY", value: bluetooth.whoopBatteryPercent.map { String(format: "%.0f", $0) } ?? "—", unit: "%")
-                    CompactMetric(title: "SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                    CompactMetric(title: "OVERNIGHT HRV", value: "—", unit: "ms · validating")
+                    CompactMetric(title: "RESTING HR", value: "—", unit: "bpm · validating")
+                    CompactMetric(title: "RESPIRATORY", value: "—", unit: "rpm · validating")
                 }
                 VStack(alignment: .leading, spacing: 9) {
                     SectionHeader(title: "DATA VALIDATION")
