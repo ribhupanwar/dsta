@@ -2378,13 +2378,22 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             do {
                 let rawWords = try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(b)
                 whoopRealtimeCandidateRRWords = rawWords
-                whoopRealtimeCandidateStatus = rawWords.isEmpty
-                    ? "Type-40 HR \(bpm) bpm · candidate RR count is zero · raw frame retained"
-                    : "Type-40 HR \(bpm) bpm · \(rawWords.count) firmware-unverified RR candidate word(s) retained"
+                if rawWords.isEmpty {
+                    whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · RR count is zero"
+                } else {
+                    // WHOOP 5.0 firmware 50.42.1 Type-40 RR values are
+                    // UInt16 ticks at 1/1024 second. Convert only after the
+                    // complete CRC-valid frame and declared count are checked.
+                    let intervals = try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(b)
+                    if !intervals.isEmpty {
+                        appendRRIntervals(intervals, source: "WHOOP 5.0 realtime")
+                    }
+                    whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · \(intervals.count) RR interval(s) · 1/1024s ticks → ms"
+                }
             } catch {
                 whoopRealtimeCandidateRRWords.removeAll(keepingCapacity: true)
-                whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · candidate words unavailable · \(error)"
-                recordVendorTimeline("WHOOP Type-40 candidate extraction rejected · \(error) · raw frame retained")
+                whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · RR decode rejected · \(error)"
+                recordVendorTimeline("WHOOP Type-40 RR decode rejected · \(error) · raw frame retained")
             }
             recordHeartRateSample(bpm, source: "WHOOP5 REALTIME_DATA")
             return "REALTIME_DATA · HR \(bpm) bpm · RR words \(whoopRealtimeCandidateRRWords.count) · \(whoopRealtimeCandidateStatus) · CRC valid"
