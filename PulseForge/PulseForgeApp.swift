@@ -1773,6 +1773,9 @@ final class HealthDataStore: ObservableObject {
         if let distanceType = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) {
             shareTypes.insert(distanceType)
         }
+        if let energyType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) {
+            shareTypes.insert(energyType)
+        }
         do {
             try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
             isAuthorized = true
@@ -1781,6 +1784,93 @@ final class HealthDataStore: ObservableObject {
         } catch {
             isAuthorized = false
         }
+    }
+
+    /// Writes a completed WHOOP/PulseForge workout into Apple Health.
+    /// externalID is used as a HealthKit sync identifier so repeated imports do not
+    /// create duplicate workout records. Raw WHOOP HR samples are not fabricated.
+    func saveWorkoutToHealthKit(
+        activityType: HKWorkoutActivityType,
+        startDate: Date,
+        endDate: Date,
+        distanceMeters: Double? = nil,
+        energyKilocalories: Double? = nil,
+        externalID: String,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        guard HKHealthStore.isHealthDataAvailable(),
+              endDate > startDate,
+              !externalID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            completion(.failure(NSError(
+                domain: "PulseForge.HealthKit",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Invalid workout dates or external identifier"]
+            )))
+            return
+        }
+
+        let predicate = HKQuery.predicateForObjects(
+            withMetadataKey: HKMetadataKeySyncIdentifier,
+            allowedValues: ["pulseforge.\\(externalID)"]
+        )
+        let duplicateQuery = HKSampleQuery(
+            sampleType: HKObjectType.workoutType(),
+            predicate: predicate,
+            limit: 1,
+            sortDescriptors: nil
+        ) { [weak self] _, samples, error in
+            guard let self else { return }
+            if let error {
+                completion(.failure(error))
+                return
+            }
+            if samples?.isEmpty == false {
+                completion(.success(()))
+                return
+            }
+
+            var metadata: [String: Any] = [
+                HKMetadataKeySyncIdentifier: "pulseforge.\\(externalID)",
+                HKMetadataKeySyncVersion: 1,
+                HKMetadataKeyWorkoutBrandName: "PulseForge"
+            ]
+            if let distanceMeters, distanceMeters.isFinite, distanceMeters > 0 {
+                metadata["PulseForge.SourceDistanceMeters"] = distanceMeters
+            }
+            let distance = distanceMeters.flatMap {
+                $0.isFinite && $0 > 0
+                    ? HKQuantity(unit: .meter(), doubleValue: $0)
+                    : nil
+            }
+            let energy = energyKilocalories.flatMap {
+                $0.isFinite && $0 > 0
+                    ? HKQuantity(unit: .kilocalorie(), doubleValue: $0)
+                    : nil
+            }
+            let workout = HKWorkout(
+                activityType: activityType,
+                start: startDate,
+                end: endDate,
+                duration: endDate.timeIntervalSince(startDate),
+                totalEnergyBurned: energy,
+                totalDistance: distance,
+                metadata: metadata
+            )
+            self.store.save(workout) { success, saveError in
+                if let saveError {
+                    completion(.failure(saveError))
+                } else if success {
+                    completion(.success(()))
+                } else {
+                    completion(.failure(NSError(
+                        domain: "PulseForge.HealthKit",
+                        code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: "HealthKit did not confirm workout save"]
+                    )))
+                }
+            }
+        }
+        store.execute(duplicateQuery)
     }
 
     private func loadHealthMetrics(completion: @escaping () -> Void) {
