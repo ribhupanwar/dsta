@@ -18,7 +18,10 @@ targets:
         excludes:
           - Fonts/**
     resources:
-      - path: PulseForge/Fonts
+      - path: PulseForge/Fonts/ReadexPro.ttf
+      - path: PulseForge/Fonts/BarlowCondensed-Bold.ttf
+      - path: PulseForge/Fonts/ReadexPro-OFL.txt
+      - path: PulseForge/Fonts/BarlowCondensed-OFL.txt
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ribhupanwar.pulseforge
