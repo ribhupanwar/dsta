@@ -467,6 +467,7 @@ struct WhoopRRCard: View {
 
     private var intervals: [Int] { bluetooth.whoopRRIntervalsMilliseconds }
     private var rollingIntervals: [Int] { bluetooth.whoopRRWindowMilliseconds }
+    private var isType40Source: Bool { bluetooth.whoopRRSource.contains("WHOOP 5.0 realtime") }
     private var meanInterval: Double? {
         guard !intervals.isEmpty else { return nil }
         return Double(intervals.reduce(0, +)) / Double(intervals.count)
@@ -475,67 +476,66 @@ struct WhoopRRCard: View {
         WhoopRealtimeFreshness.isFresh(lastPacketAt: bluetooth.whoopRRLastUpdatedAt, now: Date())
     }
     private var shortWindowRMSSD: Double? {
-        // Keep the last calculated window visible when packets pause, but label
-        // it STALE below. Freshness controls the status, not whether a valid
-        // previously calculated value abruptly disappears from the card.
-        RRVariabilityCalculator.rmssdMilliseconds(from: rollingIntervals)
+        guard isType40Source else { return nil }
+        return RRVariabilityCalculator.rmssdMilliseconds(from: rollingIntervals)
     }
 
     var body: some View {
-        // Tick independently of BLE traffic so LIVE becomes STALE even when
-        // both RR and HR notifications go quiet.
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("WHOOP TYPE-40 RR", systemImage: "waveform.path")
-                    .font(.system(size: 9, weight: .bold)).tracking(0.9)
-                    .foregroundStyle(ForgeColors.muted)
-                Spacer()
-                Text(intervals.isEmpty ? "WAITING" : (isRRFresh ? "LIVE DATA" : "STALE"))
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(isRRFresh ? ForgeColors.lime : ForgeColors.muted)
+                HStack {
+                    Label(isType40Source ? "WHOOP TYPE-40 RR" : "WHOOP RR · BLE SIG FALLBACK",
+                          systemImage: "waveform.path")
+                        .font(.system(size: 9, weight: .bold)).tracking(0.9)
+                        .foregroundStyle(ForgeColors.muted)
+                    Spacer()
+                    Text(intervals.isEmpty ? "WAITING" : (isRRFresh ? "LIVE DATA" : "STALE"))
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(isRRFresh ? ForgeColors.lime : ForgeColors.muted)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(meanInterval.map { String(format: "%.0f", $0) } ?? "—")
+                        .font(.system(size: 27, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                    Text("ms mean RR")
+                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                    Spacer()
+                    Text("\(intervals.count) in batch")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundStyle(ForgeColors.muted)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(shortWindowRMSSD.map { String(format: "%.1f", $0) } ?? "—")
+                        .font(.system(size: 22, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                    Text("ms short-window RMSSD")
+                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                    Spacer()
+                    Text(shortWindowRMSSD == nil ? "NOT VERIFIED" : (isRRFresh ? "ESTIMATE" : "STALE"))
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(shortWindowRMSSD == nil || !isRRFresh ? ForgeColors.muted : ForgeColors.lime)
+                }
+                Text(intervals.isEmpty
+                     ? "Waiting for RR notifications. Standard 2A37 RR will appear here when supplied by the strap."
+                     : intervals.map { "\($0) ms" }.joined(separator: "  ·  "))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                Text(bluetooth.whoopRRSource + (bluetooth.whoopRRLastUpdatedAt.map {
+                    " · last RR batch \(Int(max(0, Date().timeIntervalSince($0))))s ago"
+                } ?? " · no RR batch timestamp"))
+                    .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                Text(bluetooth.whoopRealtimeCandidateStatus)
+                    .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                Text(isType40Source
+                     ? "Type-40 RR source active. Live RMSSD is diagnostic only; it is never used as overnight HRV or Recovery input."
+                     : "Showing Bluetooth SIG 2A37 RR fallback in milliseconds. Type-40 raw candidates remain separate until firmware 50.42.1 units are validated; fallback RR is not overnight HRV.")
+                    .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text(meanInterval.map { String(format: "%.0f", $0) } ?? "—")
-                    .font(.system(size: 27, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                Text("ms latest mean RR")
-                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
-                Spacer()
-                Text("\(intervals.count) in batch")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundStyle(ForgeColors.muted)
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text(shortWindowRMSSD.map { String(format: "%.1f", $0) } ?? "—")
-                    .font(.system(size: 22, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                Text("ms short-window RMSSD")
-                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
-                Spacer()
-                Text(shortWindowRMSSD == nil ? "WITHHELD" : (isRRFresh ? "ESTIMATE" : "STALE"))
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(shortWindowRMSSD == nil || !isRRFresh ? ForgeColors.muted : ForgeColors.lime)
-            }
-            Text(intervals.isEmpty
-                 ? "Waiting for a valid WHOOP Type-40 RR batch."
-                 : intervals.map { "\($0) ms" }.joined(separator: "  ·  "))
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white)
-                .lineLimit(2)
-            Text(bluetooth.whoopRRSource + (bluetooth.whoopRRLastUpdatedAt.map {
-                " · last RR batch \(Int(max(0, Date().timeIntervalSince($0))))s ago"
-            } ?? " · no RR batch timestamp"))
-                .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
-            Text(bluetooth.whoopRealtimeCandidateStatus)
-                .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
-            Text("Type-40 RR values are decoded as milliseconds using the NOOP Gen5 layout. Live RMSSD is diagnostic only; it is never used as overnight HRV or Recovery input.")
-                .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+            .padding(16)
+            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
         }
-        .padding(16)
-        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
-            }
     }
 }
 
