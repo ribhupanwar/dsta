@@ -315,21 +315,21 @@ jobs:
           # Run whole-binary analysis once, then resolve all targets in the same
           # radare2 session. Repeating "aa" for each target needlessly rescans
           # the full Mach-O and can keep this job busy for a long time.
-          r2 -q -c 'aa; axtj @ 0x1008026fc; axtj @ 0x1090d5e10; axtj @ 0x109218970; afij @ 0x1008026fc; pdf @ 0x1008026fc; afij @ 0x10088e4ec; pdf @ 0x10088e4ec' /tmp/whoop-arm64 > /tmp/r24-r2-session.txt 2>mach-o-evidence/radare2-crossrefs-errors.txt || true
+          r2 -q -c 'aa; ?e BEGIN_R24_FACTORY_XREF; axtj @ 0x1008026fc; ?e BEGIN_PROCESSED_STEPS_XREF; axtj @ 0x1090d5e10; ?e BEGIN_HISTORICAL_R24_XREF; axtj @ 0x109218970; ?e BEGIN_R24_FACTORY_FUNCTION; afij @ 0x1008026fc; pdf @ 0x1008026fc; ?e BEGIN_IMU_ERROR_FUNCTION; afij @ 0x10088e4ec; pdf @ 0x10088e4ec' /tmp/whoop-arm64 > /tmp/r24-r2-session.txt 2>mach-o-evidence/radare2-crossrefs-errors.txt || true
           python3 - <<'PY'
           from pathlib import Path
           text = Path("/tmp/r24-r2-session.txt").read_text(errors="replace")
           markers = [
-              ("r24-factory-xrefs.json", "axtj @ 0x1008026fc", "axtj @ 0x1090d5e10"),
-              ("processed-steps-string-xrefs.json", "axtj @ 0x1090d5e10", "axtj @ 0x109218970"),
-              ("historical-r24-string-xrefs.json", "axtj @ 0x109218970", "afij @ 0x1008026fc"),
-              ("r24-factory-function.txt", "afij @ 0x1008026fc", "afij @ 0x10088e4ec"),
-              ("imu-error-function.txt", "afij @ 0x10088e4ec", None),
+              ("r24-factory-xrefs.json", "BEGIN_R24_FACTORY_XREF", "BEGIN_PROCESSED_STEPS_XREF"),
+              ("processed-steps-string-xrefs.json", "BEGIN_PROCESSED_STEPS_XREF", "BEGIN_HISTORICAL_R24_XREF"),
+              ("historical-r24-string-xrefs.json", "BEGIN_HISTORICAL_R24_XREF", "BEGIN_R24_FACTORY_FUNCTION"),
+              ("r24-factory-function.txt", "BEGIN_R24_FACTORY_FUNCTION", "BEGIN_IMU_ERROR_FUNCTION"),
+              ("imu-error-function.txt", "BEGIN_IMU_ERROR_FUNCTION", None),
           ]
           for filename, start, end in markers:
               i = text.find(start)
               j = text.find(end, i + len(start)) if end else -1
-              chunk = text[i:j if j >= 0 else None] if i >= 0 else ""
+              chunk = text[i + len(start):j if j >= 0 else None] if i >= 0 else ""
               Path("mach-o-evidence/" + filename).write_text(chunk.strip() + "\\n")
           PY
           echo "Cross-reference analysis is static; verify any candidate parser against captured BLE frames before decoding steps." >> mach-o-evidence/README.txt
