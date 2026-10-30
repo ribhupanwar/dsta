@@ -56,24 +56,52 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
         let storedHeartRate = try values.decodeIfPresent(Int.self, forKey: .heartRateBPM)
         let storedTimestamp = try values.decodeIfPresent(Date.self, forKey: .physiologicalTimestamp)
         let verifiedLayout = try values.decodeIfPresent(Bool.self, forKey: .physiologyLayoutVerified) ?? false
-        // Legacy v18 archives may contain candidate offsets previously labelled
-        // as milliseconds/HR/time. A non-nil timestamp alone is not proof; require
-        // the explicit verification marker written by the hardware-verified decoder.
-        if revision == 18 && !verifiedLayout {
+        rawFrameHex = try values.decode(String.self, forKey: .rawFrameHex)
+
+        // Re-decode legacy raw v18 frames during migration. Earlier builds saved
+        // CRC-valid rawFrameHex and candidate words but intentionally withheld
+        // their physiological fields. The verified decoder can now recover the
+        // exact unix/HR/RR values without asking the user to repeat the offload.
+        let migratedV18: Whoop5RRDecoder.HistoricalV18Biometrics?
+        if revision == 18 && !verifiedLayout,
+           rawFrameHex.count.isMultiple(of: 2) {
+            let chars = Array(rawFrameHex.utf8)
+            var bytes: [UInt8] = []
+            bytes.reserveCapacity(chars.count / 2)
+            var validHex = true
+            for index in stride(from: 0, to: chars.count, by: 2) {
+                guard let byte = UInt8(String(decoding: chars[index..<(index + 2)], as: UTF8.self), radix: 16) else {
+                    validHex = false
+                    break
+                }
+                bytes.append(byte)
+            }
+            migratedV18 = validHex ? try? Whoop5RRDecoder.decodeHistoricalV18Biometrics(bytes) : nil
+        } else {
+            migratedV18 = nil
+        }
+
+        if let migratedV18 {
+            intervalsMilliseconds = migratedV18.rrIntervalsMilliseconds
+            rawRRWords = migratedV18.rawRRWords
+            heartRateBPM = migratedV18.heartRateBPM
+            physiologicalTimestamp = migratedV18.timestamp
+            physiologyLayoutVerified = true
+        } else if revision == 18 && !verifiedLayout {
+            // Legacy v18 records whose raw frame cannot be decoded are retained
+            // as forensic raw words only; never trust the old ms/HR/time labels.
             intervalsMilliseconds = []
             rawRRWords = storedRawWords ?? (storedMilliseconds.isEmpty ? nil : storedMilliseconds)
             heartRateBPM = nil
             physiologicalTimestamp = nil
+            physiologyLayoutVerified = false
         } else {
-            // A v18 record with its verified embedded timestamp was decoded using
-            // the hardware-verified layout: RR words are direct milliseconds.
             intervalsMilliseconds = storedMilliseconds
             rawRRWords = storedRawWords
             heartRateBPM = storedHeartRate
             physiologicalTimestamp = storedTimestamp
+            physiologyLayoutVerified = verifiedLayout
         }
-        physiologyLayoutVerified = verifiedLayout
-        rawFrameHex = try values.decode(String.self, forKey: .rawFrameHex)
         decodeError = try values.decodeIfPresent(String.self, forKey: .decodeError)
     }
 }
