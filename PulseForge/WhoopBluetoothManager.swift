@@ -2281,7 +2281,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     rawFrameHex: rawHex,
                     heartRateBPM: decoded?.heartRateBPM,
                     physiologicalTimestamp: decoded?.timestamp,
-                    decodeError: decodeError
+                    decodeError: decodeError,
+                    physiologyLayoutVerified: decoded != nil
                 )
                 pendingHistoricalRRArchiveRecords.append(record)
                 if pendingHistoricalRRArchiveRecords.count >= historicalRRArchiveBatchSize {
