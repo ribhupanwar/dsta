@@ -187,7 +187,23 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url), corrupt)
     }
 
-    func testMissingOrInvalidArchiveLoadsAsEmpty() {
-        XCTAssertTrue(HistoricalRRPacketArchive.load(from: temporaryURL()).isEmpty)
+    func testMissingArchiveLoadsAsEmpty() throws {
+        let url = temporaryURL()
+        XCTAssertTrue(try HistoricalRRPacketArchive.loadThrowing(from: url).isEmpty)
+        XCTAssertTrue(HistoricalRRPacketArchive.load(from: url).isEmpty)
+    }
+
+    func testCorruptArchiveIsDistinguishableFromMissingArchive() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        let corrupt = Data("not-json".utf8)
+        try corrupt.write(to: url)
+
+        XCTAssertThrowsError(try HistoricalRRPacketArchive.loadThrowing(from: url))
+        // Preserve the historical non-throwing API for existing call sites.
+        XCTAssertTrue(HistoricalRRPacketArchive.load(from: url).isEmpty)
+        XCTAssertEqual(try Data(contentsOf: url), corrupt)
     }
 }

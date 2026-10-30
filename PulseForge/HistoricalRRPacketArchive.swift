@@ -74,26 +74,30 @@ enum HistoricalRRPacketArchive {
     static let maximumRecords = 100_000
     static let maximumRecordsForOtherRevisions = 500
 
-    static func load(from fileURL: URL) -> [HistoricalRRPacketRecord] {
-        guard let data = try? Data(contentsOf: fileURL) else { return [] }
+    /// Throwing read for diagnostics and recovery flows that must distinguish a
+    /// missing archive from a corrupt or inaccessible one. A missing file is a
+    /// valid empty archive; decoding and I/O failures are surfaced to the caller.
+    static func loadThrowing(from fileURL: URL,
+                             fileManager: FileManager = .default) throws -> [HistoricalRRPacketRecord] {
+        guard fileManager.fileExists(atPath: fileURL.path) else { return [] }
+        let data = try Data(contentsOf: fileURL)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let records = try? decoder.decode([HistoricalRRPacketRecord].self, from: data) else {
-            return []
-        }
-        return records
+        return try decoder.decode([HistoricalRRPacketRecord].self, from: data)
+    }
+
+    /// Backward-compatible convenience read. Prefer loadThrowing when an empty
+    /// result must not hide a corrupt archive.
+    static func load(from fileURL: URL) -> [HistoricalRRPacketRecord] {
+        (try? loadThrowing(from: fileURL)) ?? []
     }
 
     /// Export through the decoding/migration path so legacy v18 candidate HR/time
     /// fields are never re-emitted as trusted physiological values.
     /// Returns nil for unreadable or corrupt files; it never rewrites the source archive.
     static func exportJSON(from fileURL: URL) -> String? {
-        guard let data = try? Data(contentsOf: fileURL) else { return nil }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        guard let records = try? decoder.decode([HistoricalRRPacketRecord].self, from: data) else {
-            return nil
-        }
+        guard FileManager.default.fileExists(atPath: fileURL.path),
+              let records = try? loadThrowing(from: fileURL) else { return nil }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -115,14 +119,9 @@ enum HistoricalRRPacketArchive {
                        fileManager: FileManager = .default) throws -> Int {
         guard !newRecords.isEmpty else { return load(from: fileURL).count }
         var records: [HistoricalRRPacketRecord] = []
-        if fileManager.fileExists(atPath: fileURL.path) {
-            // A corrupt existing archive must never be mistaken for an empty
-            // archive and silently overwritten by the next batch.
-            let existingData = try Data(contentsOf: fileURL)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            records = try decoder.decode([HistoricalRRPacketRecord].self, from: existingData)
-        }
+        // A corrupt existing archive must never be mistaken for an empty
+        // archive and silently overwritten by the next batch.
+        records = try loadThrowing(from: fileURL, fileManager: fileManager)
         records.append(contentsOf: newRecords)
 
         for revision in Set(newRecords.map { $0.revision }) {

@@ -75,7 +75,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var lastHeartRateAt: Date?
     @Published private(set) var whoopProtocolDiagnostics = "No WHOOP 5.0 protocol frame decoded yet"
     @Published private(set) var whoopRealtimePacketCount = 0
-    /// Latest RR intervals from the realtime type-40 stream only.
+    /// Latest RR intervals from a trusted BLE source, in verified milliseconds.
+    /// Unverified Type-40 candidate words are never written to this property.
     @Published private(set) var whoopRRIntervalsMilliseconds: [Int] = []
     @Published private(set) var whoopStandardRRIntervalsMilliseconds: [Int] = []
     @Published private(set) var whoopStandardRRLastUpdatedAt: Date?
@@ -965,6 +966,23 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         return HistoricalRRPacketArchive.load(from: archiveURL).count
     }
 
+    /// Explicitly reports archive corruption/I/O failure instead of presenting
+    /// the compatibility loader's empty fallback as a genuine zero-record archive.
+    var historicalRRArchiveReadStatus: String {
+        guard let support = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return "read unavailable · Application Support directory missing" }
+        let archiveURL = support
+            .appendingPathComponent("PulseForge", isDirectory: true)
+            .appendingPathComponent("historical-whoop-rr-v1.json")
+        do {
+            let count = try HistoricalRRPacketArchive.loadThrowing(from: archiveURL).count
+            return "read OK · \(count) records"
+        } catch {
+            return "read failed · \(error.localizedDescription) · original archive preserved"
+        }
+    }
+
     var diagnosticSnapshot: String {
         var lines = [
             "GATT summary: \(gattCapabilitySummary)",
@@ -1018,7 +1036,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP standard 2A37 raw notifications: \(whoopStandardHeartRateRawFrameHistory.count) retained · latest: \(whoopStandardHeartRateRawFrameHistory.last ?? "none")",
             "WHOOP standard 2A37 RR: \(whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · last update: \(whoopStandardRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP historical sync: \(whoopHistorySyncStatus)",
-            "WHOOP historical Type-47 v18 archive: \(historicalRRArchiveRecordCount) raw frames · latest HR: \(whoopHistoricalHeartRateBPM.map(String.init) ?? "none") bpm · physiological timestamp: \(whoopHistoricalTimestampLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none") · source: \(whoopHistoricalRRSource)",
+            "WHOOP historical Type-47 v18 archive: \(historicalRRArchiveRecordCount) raw frames · archive read: \(historicalRRArchiveReadStatus) · latest HR: \(whoopHistoricalHeartRateBPM.map(String.init) ?? "none") bpm · physiological timestamp: \(whoopHistoricalTimestampLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none") · source: \(whoopHistoricalRRSource)",
             "WHOOP IMU recent CRC-valid raw frames (oldest first):",
         ]
         lines.append(contentsOf: whoopIMURawFrameHistory.isEmpty ? ["  none"] : whoopIMURawFrameHistory.map { "  \($0)" })
@@ -2263,7 +2281,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
             // Device-captured 32-byte frames show a stable HR progression at byte[16]
             // (87, 87, 88, 89 ... 77 bpm); byte[12] is a sequence/header field, not HR.
-            // RR count is byte[17], followed by little-endian 1/1024-second tick words.
+            // Byte[17] and following words are retained only as raw RR candidates:
+            // their schema, units and physiological meaning remain unverified.
             guard let bpm = try? Whoop5RRDecoder.decodeRealtimeHeartRate(b) else {
                 whoopRealtimeCandidateByteAt16 = b.count > 16 ? Int(b[16]) : nil
                 whoopRealtimeCandidateRRWords.removeAll(keepingCapacity: true)
