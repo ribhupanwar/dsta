@@ -72,10 +72,10 @@ final class WhoopBandStepCounterTests: XCTestCase {
         let start = Date(timeIntervalSince1970: 1_800_000_000)
         let calendar = Calendar(identifier: .gregorian)
         counter.ingest(.init(timestamp: start, counter: 100, softwareOverride: false), calendar: calendar)
-        counter.ingest(.init(timestamp: start.addingTimeInterval(1), counter: 110, softwareOverride: false), calendar: calendar)
+        counter.ingest(.init(timestamp: start.addingTimeInterval(2), counter: 110, softwareOverride: false), calendar: calendar)
         // Software override can start at a different cumulative value.
-        counter.ingest(.init(timestamp: start.addingTimeInterval(2), counter: 5_000, softwareOverride: true), calendar: calendar)
-        counter.ingest(.init(timestamp: start.addingTimeInterval(3), counter: 5_006, softwareOverride: true), calendar: calendar)
+        counter.ingest(.init(timestamp: start.addingTimeInterval(3), counter: 5_000, softwareOverride: true), calendar: calendar)
+        counter.ingest(.init(timestamp: start.addingTimeInterval(5), counter: 5_006, softwareOverride: true), calendar: calendar)
         XCTAssertEqual(counter.steps(for: start, calendar: calendar), 16)
         XCTAssertEqual(counter.droppedBoundaries, 1)
     }
