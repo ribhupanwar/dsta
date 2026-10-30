@@ -51,7 +51,7 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
         // stored under an ms-labelled field despite unverified units.
         if revision == 18, storedRawWords == nil {
             intervalsMilliseconds = []
-            rawRRWords = storedMilliseconds
+            rawRRWords = storedMilliseconds.isEmpty ? nil : storedMilliseconds
         } else {
             intervalsMilliseconds = storedMilliseconds
             rawRRWords = storedRawWords
