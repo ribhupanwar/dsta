@@ -2388,10 +2388,11 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             if metadataType == 1 {
                 whoopHistorySyncStatus = "HISTORY_START received · waiting for Type-47 records"
             } else if metadataType == 3 {
+                persistWhoopStepCounterSnapshot()
                 if flushHistoricalRRArchive() {
-                    whoopHistorySyncStatus = "HISTORY_COMPLETE received · historical archive flushed"
+                    whoopHistorySyncStatus = "HISTORY_COMPLETE received · historical archive flushed · step counter snapshot saved"
                 } else {
-                    whoopHistorySyncStatus = "HISTORY_COMPLETE received · archive flush failed · inspect diagnostics"
+                    whoopHistorySyncStatus = "HISTORY_COMPLETE received · archive flush failed · step counter snapshot saved · inspect diagnostics"
                 }
             }
             if metadataType == 2 { // HISTORY_END
@@ -2400,6 +2401,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     recordVendorTimeline("HISTORY_END ACK withheld · historical RR archive flush failed")
                     return "METADATA · HISTORY_END · ACK withheld · archive flush failed"
                 }
+                // Persist the decoded step-counter watermark before acknowledging
+                // the trim cursor; the band may discard acknowledged history.
+                persistWhoopStepCounterSnapshot()
                 let endData = Array(b[21..<29])
                 let trimCursor = UInt32(endData[0])
                     | (UInt32(endData[1]) << 8)
