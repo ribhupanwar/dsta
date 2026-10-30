@@ -299,37 +299,50 @@ struct HomeMetricDial: View {
     let progress: Double?
     let action: () -> Void
 
+    private var hasVerifiedProgress: Bool { progress != nil }
+
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
+            VStack(spacing: 9) {
                 ZStack {
-                    Circle().stroke(ForgeColors.track, lineWidth: 7)
+                    Circle()
+                        .stroke(ForgeColors.track, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                     if let progress {
-                        Circle().trim(from: 0, to: min(1, max(0, progress)))
+                        Circle()
+                            .trim(from: 0, to: min(1, max(0, progress)))
                             .stroke(tint, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                             .rotationEffect(.degrees(-90))
                     }
-                    Text(value)
-                        .font(.system(size: 18, weight: .medium, design: .rounded))
-                        .monospacedDigit()
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(1)
+                    VStack(spacing: 2) {
+                        Text(value)
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .minimumScaleFactor(0.65)
+                            .lineLimit(1)
+                        if !hasVerifiedProgress {
+                            Text("—")
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundStyle(ForgeColors.muted)
+                        }
+                    }
+                    .foregroundStyle(.white)
                 }
-                .frame(width: 76, height: 76)
+                .frame(width: 78, height: 78)
                 Text(title.uppercased())
                     .font(.system(size: 9, weight: .bold))
-                    .tracking(0.7)
+                    .tracking(0.85)
                     .foregroundStyle(.white)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(ForgeColors.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 17))
-            .contentShape(RoundedRectangle(cornerRadius: 17))
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(value)")
+        .accessibilityHint("Opens \(title.lowercased()) details")
     }
 }
 
