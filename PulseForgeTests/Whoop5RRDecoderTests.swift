@@ -86,6 +86,10 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(decoded.stepMotionCounter, 364)
         XCTAssertEqual(decoded.stepCadenceRaw, 242)
         XCTAssertEqual(decoded.activityClassRaw, 0)
+        let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame)
+        XCTAssertEqual(step.hardwareCounter, 0)
+        XCTAssertFalse(step.softwareOverride)
+        XCTAssertEqual(step.accumulationCounter, 364)
     }
 
     func testDecodesGen5V18MotionCounterFromRealCRCValidFixture() throws {
@@ -96,8 +100,28 @@ final class Whoop5RRDecoderTests: XCTestCase {
         let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame)
         XCTAssertEqual(step.timestamp.timeIntervalSince1970, 1_780_916_150, accuracy: 0.001)
         XCTAssertEqual(step.stepMotionCounter, 50)
+        XCTAssertEqual(step.hardwareCounter, 0)
+        XCTAssertFalse(step.softwareOverride)
+        XCTAssertEqual(step.accumulationCounter, 50)
         XCTAssertEqual(step.stepCadenceRaw, 170)
         XCTAssertEqual(step.activityClassRaw, 0)
+    }
+
+    func testUsesHardwareCounterDuringSoftwareOverride() throws {
+        var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
+        // The selected/software counter is 900, while byte 61 retains the
+        // hardware counter 420 and byte 64 marks the software override.
+        frame[57] = 0x84
+        frame[58] = 0x03
+        frame[61] = 0xA4
+        frame[62] = 0x01
+        frame[64] = 0x10
+
+        let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame)
+        XCTAssertEqual(step.stepMotionCounter, 900)
+        XCTAssertEqual(step.hardwareCounter, 420)
+        XCTAssertTrue(step.softwareOverride)
+        XCTAssertEqual(step.accumulationCounter, 420)
     }
 
     func testDecodesFullWidthGen5BandNativeStepCounterAndCompanionFields() throws {
