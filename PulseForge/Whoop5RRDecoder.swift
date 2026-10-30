@@ -142,13 +142,25 @@ enum Whoop5RRDecoder {
     /// must not discard an otherwise valid motion-counter sample.
     struct HistoricalV18StepCounter: Equatable {
         let timestamp: Date
+        /// Counter selected by the band at bytes 57...58 (hardware normally,
+        /// software when the override flag at byte 64 is active).
         let stepMotionCounter: Int
+        /// Hardware counter retained at bytes 61...62 during software override.
+        let hardwareCounter: Int
+        let softwareOverride: Bool
         let stepCadenceRaw: Int
         let activityClassRaw: Int
+
+        /// Keep the accumulated source on the hardware counter across override
+        /// transitions, avoiding a false delta between software and hardware
+        /// counter domains.
+        var accumulationCounter: Int {
+            softwareOverride ? hardwareCounter : stepMotionCounter
+        }
     }
 
     static func decodeHistoricalV18StepCounter(_ frame: [UInt8]) throws -> HistoricalV18StepCounter {
-        guard frame.count >= 64, frame[0] == 0xAA, frame[1] == 0x01 else {
+        guard frame.count >= 65, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
         }
         guard Int(frame[8]) == 47 else {
@@ -167,6 +179,8 @@ enum Whoop5RRDecoder {
         return HistoricalV18StepCounter(
             timestamp: Date(timeIntervalSince1970: TimeInterval(seconds)),
             stepMotionCounter: Int(frame[57]) | (Int(frame[58]) << 8),
+            hardwareCounter: Int(frame[61]) | (Int(frame[62]) << 8),
+            softwareOverride: frame[64] == 0x10,
             stepCadenceRaw: Int(frame[59]),
             activityClassRaw: Int(frame[63])
         )
