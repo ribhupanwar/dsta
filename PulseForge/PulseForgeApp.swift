@@ -1664,18 +1664,18 @@ struct DeviceDashboard: View {
                     HStack {
                         Label("Health data access", systemImage: "heart.text.square")
                         Spacer()
-                        Text(health.isAuthorized ? "REQUESTED" : "NOT SET UP")
-                            .font(.system(size: 9, weight: .bold)).foregroundStyle(health.isAuthorized ? ForgeColors.lime : ForgeColors.muted)
+                        Text(health.hasCompletedAuthorizationRequest ? "REQUESTED" : "NOT SET UP")
+                            .font(.system(size: 9, weight: .bold)).foregroundStyle(health.hasCompletedAuthorizationRequest ? ForgeColors.lime : ForgeColors.muted)
                     }
                     Text("\(health.authorizationRequestStatus). HealthKit does not disclose read-permission choices to apps; check Apple Health settings if data is missing.")
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                     Button { Task { await health.requestAccess() } } label: {
-                        Text(health.isAuthorized ? "ACCESS REQUESTED" : "CONNECT APPLE HEALTH")
+                        Text(health.hasCompletedAuthorizationRequest ? "ACCESS REQUESTED" : "CONNECT APPLE HEALTH")
                             .font(.system(size: 11, weight: .bold)).tracking(1)
                             .frame(maxWidth: .infinity).padding(14)
                             .background(ForgeColors.lime, in: Capsule()).foregroundStyle(.black)
                     }
-                    .disabled(health.isAuthorized)
+                    .disabled(health.hasCompletedAuthorizationRequest)
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
                 Spacer(minLength: 110)
@@ -1790,7 +1790,7 @@ final class HealthDataStore: ObservableObject {
             let heartRateWrite = HKObjectType.quantityType(forIdentifier: .heartRate)
                 .map { store.authorizationStatus(for: $0) }
             let workoutLabel = Self.writeAuthorizationLabel(workoutWrite)
-            let heartRateLabel = heartRateWrite.map(Self.writeAuthorizationLabel) ?? "unavailable"
+            let heartRateLabel = heartRateWrite.map { Self.writeAuthorizationLabel($0) } ?? "unavailable"
             authorizationRequestStatus = "Request processed · Workout write: \(workoutLabel) · HR write: \(heartRateLabel) · Read grants are private to HealthKit"
             startWorkoutObserver()
             refresh()
