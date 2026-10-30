@@ -61,6 +61,40 @@ enum Whoop5RRDecoder {
         return intervals
     }
 
+    /// WHOOP 5/MG Type-40 step tuple from the NOOP/OpenStrap R18 protocol map.
+    /// The selected cumulative counter is u16le@57; hardware counter is u16le@61
+    /// when software override is active (byte 64 == 0x10). Timestamp is Unix u32le@10.
+    /// Cadence/activity are retained as raw diagnostics, never converted to steps.
+    struct RealtimeStepCounter: Equatable {
+        let timestamp: Date
+        let selectedCounter: Int
+        let hardwareCounter: Int
+        let cadenceRaw: Int
+        let activityRaw: Int
+        let softwareOverride: Bool
+    }
+
+    static func decodeRealtimeStepCounter(_ frame: [UInt8]) throws -> RealtimeStepCounter {
+        guard frame.count >= 65, frame[0] == 0xAA, frame[1] == 0x01,
+              Int(frame[8]) == 40 else { throw DecodeError.invalidFrame }
+        let seconds = UInt32(frame[10]) | (UInt32(frame[11]) << 8)
+            | (UInt32(frame[12]) << 16) | (UInt32(frame[13]) << 24)
+        guard seconds >= 1_577_836_800, seconds <= 4_102_444_800 else {
+            throw DecodeError.invalidFrame
+        }
+        let selected = Int(frame[57]) | (Int(frame[58]) << 8)
+        let hardware = Int(frame[61]) | (Int(frame[62]) << 8)
+        let override = frame[64] == 0x10
+        return RealtimeStepCounter(
+            timestamp: Date(timeIntervalSince1970: TimeInterval(seconds)),
+            selectedCounter: selected,
+            hardwareCounter: hardware,
+            cadenceRaw: Int(frame[59]),
+            activityRaw: Int(frame[63]),
+            softwareOverride: override
+        )
+    }
+
     /// Device-correlated WHOOP 5.0 REALTIME_DATA HR byte at absolute offset 16.
     /// Correlated against 19 CRC-valid 32-byte WHOOP 5.0 device frames captured
     /// 2026-10-30; candidate must still pass a conservative physiological bound.
