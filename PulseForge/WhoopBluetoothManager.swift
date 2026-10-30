@@ -163,6 +163,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var workoutDetectionSamples: [LiveHeartRateSample] = []
     private var workoutDetectionCandidateSince: Date?
     private var workoutDetectionCandidateBaselineBPM: Int?
+    private var workoutMotionCandidateSince: Date?
     private var workoutRecoverySince: Date?
     private var workoutSessionBaselineBPM: Int?
     @Published private(set) var whoopIMUFrameCount = 0
@@ -422,6 +423,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         workoutSessionBaselineBPM = nil
         workoutDetectionCandidateSince = nil
         workoutDetectionCandidateBaselineBPM = nil
+        workoutMotionCandidateSince = nil
         workoutRecoverySince = nil
         persistWorkoutSession()
         statusText = "Workout saved on this iPhone · \(workoutHeartRateSamples.count) HR samples"
@@ -450,6 +452,39 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         return true
     }
 
+    /// Returns motion evidence only when a recent, timestamp-aligned WHOOP R21
+    /// window has enough samples. nil means the sensor window is unavailable or stale.
+    /// Acceleration uses magnitude variability (gravity removed statistically);
+    /// gyroscope uses angular-rate RMS. Thresholds are conservative heuristics,
+    /// not WHOOP's proprietary classifier.
+    private func recentMotionIsActive(at timestamp: Date) -> Bool? {
+        let samples = liveWhoopIMUSampleBuffer.filter {
+            $0.timestamp >= timestamp.addingTimeInterval(-35) &&
+            $0.timestamp <= timestamp.addingTimeInterval(5)
+        }.sorted { $0.timestamp < $1.timestamp }
+        guard samples.count >= 20,
+              let first = samples.first,
+              let last = samples.last,
+              last.timestamp.timeIntervalSince(first.timestamp) >= 8,
+              timestamp.timeIntervalSince(last.timestamp) <= 15 else { return nil }
+
+        let accelerationMagnitudes = samples.map {
+            sqrt($0.accelerationXG * $0.accelerationXG +
+                 $0.accelerationYG * $0.accelerationYG +
+                 $0.accelerationZG * $0.accelerationZG)
+        }
+        let meanMagnitude = accelerationMagnitudes.reduce(0, +) / Double(accelerationMagnitudes.count)
+        let accelerationRMS = sqrt(accelerationMagnitudes.reduce(0) {
+            $0 + ($1 - meanMagnitude) * ($1 - meanMagnitude)
+        } / Double(accelerationMagnitudes.count))
+        let gyroRMS = sqrt(samples.reduce(0.0) {
+            $0 + $1.rotationXDPS * $1.rotationXDPS +
+                 $1.rotationYDPS * $1.rotationYDPS +
+                 $1.rotationZDPS * $1.rotationZDPS
+        } / Double(samples.count))
+        return accelerationRMS >= 0.035 || gyroRMS >= 12
+    }
+
     private func evaluateAutomaticWorkoutDetection(bpm: Int, at timestamp: Date) {
         let sample = LiveHeartRateSample(timestamp: timestamp, bpm: bpm)
         workoutDetectionSamples.append(sample)
@@ -461,6 +496,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         guard connectedName != nil else {
             workoutDetectionCandidateSince = nil
             workoutDetectionCandidateBaselineBPM = nil
+            workoutMotionCandidateSince = nil
             workoutRecoverySince = nil
             workoutDetectionStatus = "Waiting for connected-band HR"
             return
@@ -474,6 +510,16 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                   let baseline = workoutSessionBaselineBPM else { return }
             let recoveryThreshold = baseline + 10
             if bpm <= recoveryThreshold {
+                guard let motionActive = recentMotionIsActive(at: timestamp) else {
+                    workoutRecoverySince = nil
+                    workoutDetectionStatus = "HR recovered · waiting for fresh WHOOP motion samples"
+                    return
+                }
+                if motionActive {
+                    workoutRecoverySince = nil
+                    workoutDetectionStatus = "HR low but motion continues · keeping workout open"
+                    return
+                }
                 if workoutRecoverySince == nil { workoutRecoverySince = timestamp }
                 if let recoverySince = workoutRecoverySince,
                    timestamp.timeIntervalSince(recoverySince) >= 8 * 60,
@@ -493,7 +539,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                 }
             } else {
                 workoutRecoverySince = nil
-                workoutDetectionStatus = "Recording · HR remains elevated · HR-only"
+                workoutDetectionStatus = "Recording · elevated HR + motion monitoring"
             }
             return
         }
@@ -530,11 +576,24 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         let baseline = workoutDetectionCandidateBaselineBPM ?? rollingBaseline
         let startThreshold = max(100, baseline + 20)
         if bpm >= startThreshold {
+            guard let motionActive = recentMotionIsActive(at: timestamp) else {
+                workoutMotionCandidateSince = nil
+                workoutDetectionStatus = "Elevated HR · waiting for fresh WHOOP accelerometer + gyroscope samples"
+                return
+            }
+            if motionActive {
+                if workoutMotionCandidateSince == nil { workoutMotionCandidateSince = timestamp }
+            } else {
+                workoutMotionCandidateSince = nil
+                workoutDetectionStatus = "Elevated HR · motion not sustained · validating activity"
+                return
+            }
             let elevatedSamples = workoutDetectionSamples.filter {
                 $0.timestamp >= candidateSince && $0.bpm >= startThreshold
             }.sorted { $0.timestamp < $1.timestamp }
             let elapsed = Int(timestamp.timeIntervalSince(candidateSince))
-            if elapsed >= 5 * 60 &&
+            let motionElapsed = workoutMotionCandidateSince.map { timestamp.timeIntervalSince($0) } ?? 0
+            if elapsed >= 5 * 60 && motionElapsed >= 2 * 60 &&
                 hasContinuousSamples(elevatedSamples, minimumCount: 4,
                                      minimumSpan: 4 * 60, maximumGap: 2 * 60) {
                 let initialSamples = workoutDetectionSamples
@@ -544,12 +603,13 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                                       startedAt: candidateSince,
                                       initialHeartRateSamples: initialSamples)
             } else {
-                workoutDetectionStatus = "Possible workout · validating HR continuity · \(min(elapsed, 300))/300 sec"
+                workoutDetectionStatus = "Possible workout · HR \(min(elapsed, 300))/300 sec · motion \(min(Int(motionElapsed), 120))/120 sec"
             }
         } else {
             workoutDetectionCandidateSince = nil
             workoutDetectionCandidateBaselineBPM = nil
-            workoutDetectionStatus = "Monitoring HR · baseline \(rollingBaseline) bpm · trigger \(max(100, rollingBaseline + 20)) bpm"
+            workoutMotionCandidateSince = nil
+            workoutDetectionStatus = "Monitoring HR + WHOOP motion · baseline \(rollingBaseline) bpm · trigger \(max(100, rollingBaseline + 20)) bpm"
         }
     }
 
