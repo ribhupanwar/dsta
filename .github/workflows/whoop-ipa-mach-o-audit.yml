@@ -121,15 +121,15 @@ jobs:
           functions = set()
           for address, value in hits:
               try:
-                  cmd = subprocess.run(["r2", "-q", "-c", f"axtj @ 0x{address:x}", binary], text=True, capture_output=True, timeout=8)
+                  cmd = subprocess.run(["r2", "-q", "-e", "bin.relocs.apply=true", "-A", "-c", f"axtj @ 0x{address:x}", binary], text=True, capture_output=True, timeout=30)
                   try:
                       refs = json.loads(cmd.stdout.strip() or "[]")
                   except json.JSONDecodeError:
                       refs = []
-                  status = "xref scan completed"
+                  status = "xref scan completed with relocation application and analysis enabled"
               except subprocess.TimeoutExpired:
                   refs = []
-                  status = "xref scan timed out after 8 seconds; continuing with remaining strings"
+                  status = "xref scan timed out after 30 seconds; continuing with remaining strings"
               xrefs.append(f"## 0x{address:x} {value}\n{status}\n{json.dumps(refs, indent=2)}")
               for ref in refs if isinstance(refs, list) else []:
                   origin = ref.get("from") or ref.get("fcn_addr")
