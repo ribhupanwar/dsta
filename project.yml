@@ -15,6 +15,10 @@ targets:
     platform: iOS
     sources:
       - path: PulseForge
+        excludes:
+          - Fonts/**
+    resources:
+      - path: PulseForge/Fonts
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ribhupanwar.pulseforge
@@ -35,6 +39,9 @@ targets:
         UIBackgroundModes:
           - bluetooth-central
           - location
+        UIAppFonts:
+          - ReadexPro.ttf
+          - BarlowCondensed-Bold.ttf
     entitlements:
       path: PulseForge/PulseForge.entitlements
       properties:
