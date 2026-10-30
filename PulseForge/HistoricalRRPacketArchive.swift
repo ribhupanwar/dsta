@@ -19,6 +19,7 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
 }
 
 enum HistoricalRRPacketArchive {
+    /// Retain up to 500 frames for each Type-47 revision independently.
     static let maximumRecords = 500
 
     static func load(from fileURL: URL) -> [HistoricalRRPacketRecord] {
