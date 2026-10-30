@@ -52,11 +52,11 @@ jobs:
             > mach-o-evidence/swift-demangled-symbols.txt 2>&1 || true
           grep -Ei 'Hello(Packet|Response|Sending|Info)|sendGetHelloPacket|RealtimeHRPacket|RealtimeSequenceable|HistoricalSequenceable|FrameEnvelopePacket|RevisionRouter|RealtimeHeartRateData|HistoricalPull|WhoopPacket.*CRC|rrIntervals|RealtimeDataType' \
             mach-o-evidence/swift-demangled-symbols.txt > mach-o-evidence/protocol-symbols.txt || true
-          grep -Ei 'step.?count|stepcounter|pedometer|CMPedometer|CMAltimeter|HKQuantityTypeIdentifierStepCount|walking|stride|cadence|accelerometer|gyroscope|IMUStream|RealtimeIMU|HistoricalIMU|IMUPacket|ActivityDetection|Motion' \
+          grep -Ei 'step.?count|stepcounter|pedometer|CMPedometer|CMAltimeter|HKQuantityTypeIdentifier|walking|stride|cadence|processed.?steps|steps.?packet|historical.*steps|R24|accelerometer|gyroscope|IMUStream|RealtimeIMU|HistoricalIMU|IMUPacket|ActivityDetection|Motion' \
             mach-o-evidence/swift-demangled-symbols.txt > mach-o-evidence/step-motion-symbols.txt || true
           strings -a /tmp/whoop-arm64 | grep -Ei 'HelloPacketRev[34]|sendGetHelloPacket|HelloResponsePacket|RealtimeHRPacket|HistoricalSequenceable|rrIntervals|FD4B|Characteristics Subscribed|HELLO RESPONSE' \
             > mach-o-evidence/protocol-strings.txt || true
-          strings -a /tmp/whoop-arm64 | grep -Ei 'step.?count|stepcounter|pedometer|CMPedometer|CMAltimeter|HKQuantityTypeIdentifierStepCount|walking|stride|cadence|accelerometer|gyroscope|IMUStream|RealtimeIMU|HistoricalIMU|IMUPacket|ActivityDetection|Motion|/.*step' \
+          strings -a /tmp/whoop-arm64 | grep -Ei 'step.?count|stepcounter|pedometer|CMPedometer|CMAltimeter|HKQuantityTypeIdentifierStepCount|walking|stride|cadence|accelerometer|gyroscope|IMUStream|RealtimeIMU|HistoricalIMU|IMUPacket|ActivityDetection|Motion|/.*step|ProcessedSteps|HistoricalProcessedSteps|StepsPacket|R24' \
             | sort -u > mach-o-evidence/step-motion-strings.txt || true
           otool -arch arm64 -l /tmp/whoop-arm64 > mach-o-evidence/load-commands.txt
           otool -arch arm64 -tvV /tmp/whoop-arm64 > /tmp/whoop-disassembly.txt 2>mach-o-evidence/otool-errors.txt || true
@@ -65,7 +65,7 @@ jobs:
           import re
           source = Path("/tmp/whoop-disassembly.txt").read_text(errors="replace")
           lines = source.splitlines()
-          terms = re.compile(r"hello|realtimehr|historical|frameenvelope|revisionrouter|rrinterval|sendgethellopacket|crc|step.?count|stepcounter|pedometer|CMPedometer|HKQuantityTypeIdentifierStepCount|accelerometer|gyroscope|IMUStream|RealtimeIMU|IMUPacket|ActivityDetection|stride|cadence|motion", re.I)
+          terms = re.compile(r"hello|realtimehr|historical|frameenvelope|revisionrouter|rrinterval|sendgethellopacket|crc|step.?count|stepcounter|pedometer|CMPedometer|HKQuantityTypeIdentifier|processed.?steps|steps.?packet|HistoricalProcessedSteps|StepsPacket|R24|accelerometer|gyroscope|IMUStream|RealtimeIMU|IMUPacket|ActivityDetection|stride|cadence|motion", re.I)
           hits = [i for i, line in enumerate(lines) if terms.search(line)]
           keep = set()
           for i in hits:
@@ -95,7 +95,7 @@ jobs:
           import json, re, subprocess
           from pathlib import Path
           binary = "/tmp/whoop-arm64"
-          terms = re.compile(r"currentStepCount|lastStepCount|previousStepCount|delayedStepCountProcessingWorkItem|HealthKitStepCountRequest|HealthKitStepCountSubmissionDTO|step_count_samples|deleted_step_count_samples|HKQuantityTypeIdentifierStepCount|IMUPacket|RealtimeIMUData", re.I)
+          terms = re.compile(r"currentStepCount|lastStepCount|previousStepCount|delayedStepCountProcessingWorkItem|HealthKitStepCountRequest|HealthKitStepCountSubmissionDTO|step_count_samples|deleted_step_count_samples|HKQuantityTypeIdentifier|CMPedometer|pedometer|ProcessedSteps|HistoricalProcessedSteps|StepsPacket|step.?count|steps.?packet|R24|IMUPacket|RealtimeIMUData", re.I)
           raw = Path("/tmp/whoop-strings.json").read_text(errors="replace").strip()
           data = json.loads(raw)
           entries = data if isinstance(data, list) else data.get("strings", [])
