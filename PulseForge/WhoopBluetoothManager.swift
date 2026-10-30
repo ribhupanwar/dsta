@@ -2281,23 +2281,17 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopSessionPhase = "Realtime HR data observed · event 33 not received · generation \(whoopConnectionGeneration)"
             }
 
-            // HR is independently validated and remains usable even when an RR
-            // batch is absent or fails its own interval checks.
-            var rrSummary = "RR unavailable"
+            // Keep RR words as raw candidates only. The observed byte pattern
+            // correlates HR@16 and count@17, but the RR unit/physiological meaning
+            // is not yet independently proven. Never feed candidates to RMSSD/HRV.
             do {
-                let rr = try Whoop5RRDecoder.decodeRealtime(b)
-                whoopRealtimeCandidateRRWords = rr
-                if rr.isEmpty {
-                    whoopRRSource = "WHOOP 5.0 realtime · latest Type-40 packet contained 0 RR intervals · retaining last valid RR batch"
-                } else {
-                    appendRRIntervals(rr, source: "WHOOP 5.0 realtime", receivedAt: receivedAt)
-                    rrSummary = "RR \(rr.map(String.init).joined(separator: ",")) ms"
-                }
-                whoopRealtimeCandidateStatus = "Type-40 device-correlated · HR \(bpm) bpm · RR \(rr.count) interval(s) decoded"
+                let words = try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(b)
+                whoopRealtimeCandidateRRWords = words
+                whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · RR raw candidate words retained · units unverified"
+                whoopRRSource = "WHOOP Type-40 RR raw candidates · units pending verification"
             } catch {
                 whoopRealtimeCandidateRRWords.removeAll(keepingCapacity: true)
-                whoopRRSource = "Realtime RR decode rejected · \(error)"
-                whoopRealtimeCandidateStatus = "Type-40 HR accepted · RR independently rejected · \(error)"
+                whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · RR candidate rejected · \(error)"
             }
             recordHeartRateSample(bpm, source: "WHOOP5 REALTIME_DATA")
             return "REALTIME_DATA · HR \(bpm) bpm · \(rrSummary) · CRC valid"
