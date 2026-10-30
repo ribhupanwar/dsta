@@ -80,6 +80,38 @@ final class OvernightRRMetricsCalculatorTests: XCTestCase {
         ))
     }
 
+    func testDoesNotCreateSyntheticRRDifferenceAcrossPacketBoundary() {
+        let start = Date(timeIntervalSince1970: 20_000)
+        let first = record(at: start, intervals: (0..<16).map { $0.isMultiple(of: 2) ? 800 : 810 })
+        let second = record(at: start.addingTimeInterval(1),
+                            intervals: (0..<16).map { $0.isMultiple(of: 2) ? 1000 : 1010 })
+        let result = OvernightRRMetricsCalculator.calculate(
+            records: [first, second],
+            sleepStart: start.addingTimeInterval(-1),
+            sleepEnd: start.addingTimeInterval(60)
+        )
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.intervalCount, 32)
+        XCTAssertEqual(result?.differenceCount, 30)
+        XCTAssertEqual(result?.packetCount, 2)
+        XCTAssertEqual(result?.rmssdMilliseconds ?? -1, 10, accuracy: 0.001)
+    }
+
+    func testDeduplicatesRepeatedPhysiologicalTimestamp() {
+        let start = Date(timeIntervalSince1970: 30_000)
+        let sample = record(at: start)
+        let duplicate = record(at: start)
+        let result = OvernightRRMetricsCalculator.calculate(
+            records: [sample, duplicate],
+            sleepStart: start.addingTimeInterval(-1),
+            sleepEnd: start.addingTimeInterval(60)
+        )
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.intervalCount, 32)
+        XCTAssertEqual(result?.differenceCount, 31)
+        XCTAssertEqual(result?.packetCount, 1)
+    }
+
     func testRequiresValidSleepWindow() {
         let start = Date(timeIntervalSince1970: 10_000)
         XCTAssertNil(OvernightRRMetricsCalculator.calculate(
