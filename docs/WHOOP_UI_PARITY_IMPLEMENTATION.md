@@ -19,13 +19,13 @@ The decoded archive contains:
 
 ## Current PulseForge baseline (branch feature/export-whoop-rr-raw-archive)
 
-- Main navigation currently exposes Today, Sleep, Strain, Run, WHOOP.
-- Today has a recovery ring, compact metric rows, live HR card/chart, historical RR evidence card.
-- Sleep has a performance placeholder ring, sleep duration, Sleep Need/Debt placeholders, stage breakdown and source disclosure.
-- Strain shows a PulseForge workout cardio-load estimate and recent run details. It explicitly disclaims equivalence to WHOOP's proprietary 0–21 score.
-- Recovery is currently a detail sheet reachable from Today, not a first-class destination.
-- Activity history and Coach are not first-class destinations yet.
-- UI currently uses a custom lime-accented dashboard style; reference assets and nib structures must guide the visual system replacement.
+- Main navigation now exposes the agreed four tabs: Home, Health, Community, More.
+- Home contains Recovery, Sleep and Strain metric dials plus Activity, live HR and insight cards; each dial opens its detail surface.
+- Recovery, Sleep and Strain have dedicated detail views. Recovery remains gated on verified overnight HRV/RHR.
+- Activity history, running, device, Apple Health, Strava and About have reachable destinations from the app.
+- First visual pass replaces the custom lime/blue-grey styling with a WHOOP-derived near-black surface system, neutral typography, and the reference Recovery/Sleep/Strain color families.
+- Home Sleep and Strain dials now remain unavailable until actual Sleep Performance and WHOOP 0–21 Strain inputs exist; workout-only cardio load is displayed separately.
+- This is an initial visual/semantic pass, not pixel-parity completion. Same-device screenshot comparison is still required.
 
 ## Implementation order
 
@@ -49,10 +49,9 @@ The decoded archive contains:
 
 ## Current first-pass gaps confirmed from source
 
-- Tab shell is five destinations and does not yet expose Recovery, Activity or Coach as first-class screens.
-- Sleep dashboard's main score is intentionally empty; sleep duration/stages are Apple Health fallback.
-- Recovery detail remains a sheet and has no verified score yet.
-- Strain ring progress is currently a placeholder (zero trim); the screen is a workout cardio-load summary, not a WHOOP Strain replica.
+- Recovery, Sleep Performance and WHOOP Day Strain values remain unavailable until validated source inputs exist; this is intentional.
+- Apple Health sleep duration/stages and PulseForge workout cardio load must remain visibly source-labelled.
+- Exact geometry, typography, icon, card order, graph surfaces and interaction states have not yet passed same-device screenshot comparison.
 - No screenshot-diff/visual regression target is configured in the inspected workflow.
 
 This document is a parity implementation map, not a claim that the UI is already matched.
