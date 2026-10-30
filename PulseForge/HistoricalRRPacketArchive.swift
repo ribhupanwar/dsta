@@ -92,7 +92,15 @@ enum HistoricalRRPacketArchive {
                        to fileURL: URL,
                        fileManager: FileManager = .default) throws -> Int {
         guard !newRecords.isEmpty else { return load(from: fileURL).count }
-        var records = load(from: fileURL)
+        var records: [HistoricalRRPacketRecord] = []
+        if fileManager.fileExists(atPath: fileURL.path) {
+            // A corrupt existing archive must never be mistaken for an empty
+            // archive and silently overwritten by the next batch.
+            let existingData = try Data(contentsOf: fileURL)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            records = try decoder.decode([HistoricalRRPacketRecord].self, from: existingData)
+        }
         records.append(contentsOf: newRecords)
 
         for revision in Set(newRecords.map { $0.revision }) {
