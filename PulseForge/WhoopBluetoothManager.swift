@@ -208,7 +208,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         static let imuSamples = "pulseforge.history.whoopIMUSamples.v1"
         static let rrSamples = "pulseforge.history.realtimeRRSamples.v1"
         static let standardRRSamples = "pulseforge.history.standardRRSamples.v1"
-        static let whoopSteps = "pulseforge.history.whoopBandSteps.v1"
+        static let whoopSteps = "pulseforge.history.whoopBandSteps.v2"
     }
 
     private var historicalRRArchiveURL: URL? {
@@ -364,29 +364,15 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         // Never restore live BPM/freshness or calculate live RMSSD from old samples.
     }
 
-    /// Restore the compact step ledger. On the first build with this feature,
-    /// migrate from the existing raw Type-47 archive so another strap sync is
-    /// not required when historical v18 frames are already on disk.
+    /// Restore only a previously validated live Type-40 band-counter ledger.
+    /// The old v1 key may contain Type-47/v18 motion-field guesses; it is
+    /// intentionally not migrated into trusted daily steps. Raw history remains
+    /// available in the archive for protocol research.
     private func restoreWhoopStepCounter() {
         let defaults = UserDefaults.standard
         if let data = defaults.data(forKey: DashboardHistoryKey.whoopSteps),
            let snapshot = try? JSONDecoder().decode(WhoopBandStepCounter.Snapshot.self, from: data) {
             whoopBandStepCounter.restore(snapshot)
-        } else if let archiveURL = historicalRRArchiveURL {
-            let records = HistoricalRRPacketArchive.load(from: archiveURL)
-                .filter { $0.recordType == 47 && $0.revision == 18 }
-            let samples = records.compactMap { record -> WhoopBandStepCounter.Sample? in
-                guard let frame = Self.bytes(fromHex: record.rawFrameHex),
-                      let decoded = try? Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame) else {
-                    return nil
-                }
-                return WhoopBandStepCounter.Sample(
-                    timestamp: decoded.timestamp,
-                    counter: decoded.stepMotionCounter
-                )
-            }
-            whoopBandStepCounter.rebuild(from: samples)
-            persistWhoopStepCounterSnapshot()
         }
         publishWhoopStepCount()
     }
