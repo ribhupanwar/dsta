@@ -246,6 +246,13 @@ struct TodayDashboard: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(15).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 17))
+                HistoricalEvidenceCard(
+                    archiveCount: bluetooth.historicalRRArchiveRecordCount,
+                    archiveStatus: bluetooth.historicalRRArchiveReadStatus,
+                    syncStatus: bluetooth.whoopHistorySyncStatus,
+                    rrSource: bluetooth.whoopHistoricalRRSource,
+                    physiologicalTimestamp: bluetooth.whoopHistoricalTimestampLastUpdatedAt
+                )
                 ConnectPrompt()
                 Text("Scores are shown only when supported by available measurements. PulseForge estimates are not WHOOP scores.")
                     .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
@@ -259,6 +266,59 @@ struct TodayDashboard: View {
                 .environmentObject(health)
                 .environmentObject(insights)
                 .preferredColorScheme(.dark)
+        }
+    }
+}
+
+struct HistoricalEvidenceCard: View {
+    let archiveCount: Int
+    let archiveStatus: String
+    let syncStatus: String
+    let rrSource: String
+    let physiologicalTimestamp: Date?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack {
+                Label("WHOOP HISTORICAL EVIDENCE", systemImage: "waveform.path.ecg")
+                    .font(.system(size: 10, weight: .bold)).tracking(0.65)
+                    .foregroundStyle(Color(red: 0.25, green: 0.78, blue: 0.91))
+                Spacer()
+                Text("\(archiveCount.formatted()) FRAMES")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(ForgeColors.muted)
+            }
+            Text(archiveStatus)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(ForgeColors.muted)
+                .lineLimit(2)
+            Divider().overlay(ForgeColors.stroke)
+            evidenceRow("HISTORICAL SYNC", value: syncStatus)
+            evidenceRow("RR DECODE", value: rrSource)
+            evidenceRow(
+                "PHYSIOLOGICAL TIME",
+                value: physiologicalTimestamp?.formatted(date: .abbreviated, time: .shortened) ?? "Not verified"
+            )
+            Text("Raw archive count is forensic evidence, not a sleep score. Overnight HRV remains unavailable until verified physiology timestamps can be aligned to a validated sleep window.")
+                .font(.system(size: 9))
+                .foregroundStyle(ForgeColors.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(15)
+        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 17))
+        .overlay(RoundedRectangle(cornerRadius: 17).stroke(ForgeColors.stroke, lineWidth: 1))
+    }
+
+    private func evidenceRow(_ title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 8, weight: .bold)).tracking(0.7)
+                .foregroundStyle(ForgeColors.muted)
+            Text(value)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+                .lineLimit(2)
         }
     }
 }
@@ -936,8 +996,8 @@ struct SleepDashboard: View {
                 SectionHeader(title: "SLEEP SUMMARY")
                 HStack(spacing: 10) {
                     CompactMetric(title: "TOTAL SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
-                    CompactMetric(title: "DEEP SLEEP", value: "—", unit: "min")
-                    CompactMetric(title: "REM SLEEP", value: "—", unit: "min")
+                    CompactMetric(title: "DEEP SLEEP", value: health.deepSleepMinutes.map { "\($0)" } ?? "—", unit: "min")
+                    CompactMetric(title: "REM SLEEP", value: health.remSleepMinutes.map { "\($0)" } ?? "—", unit: "min")
                 }
                 Text("Sleep duration and stages below are an Apple Health fallback. WHOOP-native sleep, performance, need and debt remain separate and will appear only after the original WHOOP records are validated.")
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
