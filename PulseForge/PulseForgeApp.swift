@@ -1460,25 +1460,50 @@ struct StrainDashboard: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 22) {
                 HeaderView(eyebrow: "CARDIOVASCULAR LOAD", title: "Strain")
-                VStack(alignment: .leading, spacing: 15) {
-                    SectionHeader(title: "DAY STRAIN")
-                    HStack(spacing: 22) {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack {
+                        SectionHeader(title: "DAY STRAIN")
+                        Spacer()
+                        Text("0–21 SCALE")
+                            .font(.system(size: 9, weight: .bold)).tracking(0.8)
+                            .foregroundStyle(ForgeColors.strain.opacity(0.95))
+                    }
+                    HStack(spacing: 20) {
                         ZStack {
-                            Circle().stroke(ForgeColors.track, lineWidth: 9)
-                            Text("—")
-                                .font(.system(size: 43, weight: .light))
-                                .foregroundStyle(.white)
+                            Circle().stroke(ForgeColors.strain.opacity(0.16), lineWidth: 10)
+                            Circle().trim(from: 0, to: 0.72)
+                                .stroke(ForgeColors.strain.opacity(0.45), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                            VStack(spacing: 1) {
+                                Text("—")
+                                    .font(.system(size: 46, weight: .light, design: .rounded))
+                                    .foregroundStyle(.white)
+                                Text("NOT SCORED")
+                                    .font(.system(size: 8, weight: .bold)).tracking(0.7)
+                                    .foregroundStyle(ForgeColors.muted)
+                            }
                         }
-                        .frame(width: 132, height: 132)
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text("WHOOP Strain unavailable")
-                                .font(.system(size: 18, weight: .semibold))
-                            Text("The 0–21 Day Strain score needs validated all-day heart-rate and activity-load history. Workout-only load is shown separately.")
-                                .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                        .frame(width: 126, height: 126)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Full-day Strain")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
+                            Text("WHOOP Strain is not available yet")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(ForgeColors.strain)
+                            Text("A reliable 0–21 score needs validated all-day heart-rate and activity-load history. Workout-only load stays separate.")
+                                .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
-                .padding(20).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                .padding(20)
+                .background(
+                    LinearGradient(colors: [ForgeColors.strain.opacity(0.13), ForgeColors.card, ForgeColors.card],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 24)
+                )
+                .overlay(RoundedRectangle(cornerRadius: 24).stroke(ForgeColors.strain.opacity(0.22), lineWidth: 1))
                 SectionHeader(title: "PULSEFORGE WORKOUT LOAD")
                 HStack(spacing: 10) {
                     CompactMetric(title: "CARDIO LOAD", value: todayCardioLoad.map { String(format: "%.0f", $0) } ?? "—", unit: "load pts")
@@ -3000,13 +3025,28 @@ struct CompactMetric: View {
     let value: String
     let unit: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 8, weight: .bold)).tracking(0.7).foregroundStyle(ForgeColors.muted)
-            Text(value).font(.system(size: 23, weight: .semibold, design: .rounded))
-            Text(unit).font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .font(.system(size: 8, weight: .bold)).tracking(0.75)
+                .foregroundStyle(ForgeColors.muted)
+                .lineLimit(1).minimumScaleFactor(0.8)
+            Text(value)
+                .font(.system(size: 25, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(.white)
+                .lineLimit(1).minimumScaleFactor(0.75)
+            Text(unit)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(ForgeColors.muted)
+                .lineLimit(1)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 15))
+        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
+        .padding(13)
+        .background(
+            LinearGradient(colors: [ForgeColors.card.opacity(0.98), ForgeColors.card.opacity(0.78)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 16)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(ForgeColors.stroke.opacity(0.75), lineWidth: 1))
     }
 }
 
