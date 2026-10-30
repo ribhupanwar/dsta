@@ -1811,7 +1811,7 @@ final class HealthDataStore: ObservableObject {
 
         let predicate = HKQuery.predicateForObjects(
             withMetadataKey: HKMetadataKeySyncIdentifier,
-            allowedValues: ["pulseforge.\\(externalID)"]
+            allowedValues: ["pulseforge.\(externalID)"]
         )
         let duplicateQuery = HKSampleQuery(
             sampleType: HKObjectType.workoutType(),
@@ -1830,7 +1830,7 @@ final class HealthDataStore: ObservableObject {
             }
 
             var metadata: [String: Any] = [
-                HKMetadataKeySyncIdentifier: "pulseforge.\\(externalID)",
+                HKMetadataKeySyncIdentifier: "pulseforge.\(externalID)",
                 HKMetadataKeySyncVersion: 1,
                 HKMetadataKeyWorkoutBrandName: "PulseForge"
             ]
