@@ -122,6 +122,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var stepSignalFrameCount = 0
     private var whoopBandStepCounter = WhoopBandStepCounter()
     private var lastWhoopStepSnapshotPersistedAt: Date?
+    private var lastWhoopStepTimelineAt: Date?
     @Published private(set) var whoopEventPacketCount = 0
     @Published private(set) var whoopLastEventID: Int?
     @Published private(set) var whoopLastEventFrameHex = "none"
@@ -402,13 +403,14 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         return bytes
     }
 
-    private func recordWhoopStepSample(timestamp: Date, counter: Int) {
+    private func recordWhoopStepSample(timestamp: Date, counter: Int, publish: Bool = true) {
         whoopBandStepCounter.ingest(.init(
             timestamp: timestamp,
             counter: counter
         ))
-        whoopStepCounterLastUpdatedAt = timestamp
-        publishWhoopStepCount()
+        if publish {
+            publishWhoopStepCount()
+        }
         if lastWhoopStepSnapshotPersistedAt.map({ Date().timeIntervalSince($0) >= 5 }) ?? true {
             persistWhoopStepCounterSnapshot()
         }
@@ -2388,6 +2390,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             if metadataType == 1 {
                 whoopHistorySyncStatus = "HISTORY_START received · waiting for Type-47 records"
             } else if metadataType == 3 {
+                publishWhoopStepCount()
                 persistWhoopStepCounterSnapshot()
                 if flushHistoricalRRArchive() {
                     whoopHistorySyncStatus = "HISTORY_COMPLETE received · historical archive flushed · step counter snapshot saved"
@@ -2401,8 +2404,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     recordVendorTimeline("HISTORY_END ACK withheld · historical RR archive flush failed")
                     return "METADATA · HISTORY_END · ACK withheld · archive flush failed"
                 }
-                // Persist the decoded step-counter watermark before acknowledging
-                // the trim cursor; the band may discard acknowledged history.
+                // Publish and persist the decoded step-counter watermark before
+                // acknowledging the trim cursor; the band may discard history.
+                publishWhoopStepCount()
                 persistWhoopStepCounterSnapshot()
                 let endData = Array(b[21..<29])
                 let trimCursor = UInt32(endData[0])
@@ -2457,26 +2461,48 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     whoopHistoricalRRSource = "Historical v18 decode rejected · raw frame retained · \(error)"
                 }
 
-                // Gen5 v18 historical records carry the same cumulative on-chip
+                // Gen5 v18 historical records carry the cumulative on-chip
                 // step/motion counter mapped independently by OpenStrap at frame
-                // offsets 57...58. Its step semantics remain experimental until
-                // correlated against a ground-truth walk on this firmware/device.
+                // offsets 57...58. Keep the ingest path lossless, but throttle
+                // SwiftUI publications and diagnostic timeline writes during bulk
+                // history backfill. Step semantics remain experimental.
+                let publishStepDiagnostics = stepSignalLastSeenAt.map {
+                    receivedAt.timeIntervalSince($0) >= 1
+                } ?? true
+                let logStepTimeline = lastWhoopStepTimelineAt.map {
+                    receivedAt.timeIntervalSince($0) >= 30
+                } ?? true
                 do {
                     let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(b)
-                    recordWhoopStepSample(timestamp: step.timestamp, counter: step.stepMotionCounter)
-                    stepSignalLastPacketType = 47
-                    stepSignalLastPacketLength = b.count
-                    stepSignalLastSeenAt = receivedAt
-                    stepSignalSelectedCounter = step.stepMotionCounter
-                    stepSignalHardwareCounter = nil
-                    stepSignalCadence = step.stepCadenceRaw
-                    stepSignalActivity = step.activityClassRaw
-                    stepSignalSoftwareOverride = nil
-                    stepSignalLastOutcome = "Historical v18 cumulative motion counter · experimental step source"
-                    recordVendorTimeline("WHOOP Type-47 v18 motion counter · value=\(step.stepMotionCounter) · cadenceRaw=\(step.stepCadenceRaw) · activityRaw=\(step.activityClassRaw) · timestamp=\(ISO8601DateFormatter().string(from: step.timestamp))")
+                    recordWhoopStepSample(
+                        timestamp: step.timestamp,
+                        counter: step.stepMotionCounter,
+                        publish: publishStepDiagnostics
+                    )
+                    if publishStepDiagnostics {
+                        stepSignalLastPacketType = 47
+                        stepSignalLastPacketLength = b.count
+                        stepSignalLastSeenAt = receivedAt
+                        stepSignalSelectedCounter = step.stepMotionCounter
+                        stepSignalHardwareCounter = nil
+                        stepSignalCadence = step.stepCadenceRaw
+                        stepSignalActivity = step.activityClassRaw
+                        stepSignalSoftwareOverride = nil
+                        stepSignalLastOutcome = "Historical v18 cumulative motion counter · experimental step source"
+                    }
+                    if logStepTimeline {
+                        lastWhoopStepTimelineAt = receivedAt
+                        recordVendorTimeline("WHOOP Type-47 v18 motion counter · value=\(step.stepMotionCounter) · cadenceRaw=\(step.stepCadenceRaw) · activityRaw=\(step.activityClassRaw) · timestamp=\(ISO8601DateFormatter().string(from: step.timestamp))")
+                    }
                 } catch {
-                    stepSignalLastOutcome = "Historical v18 step-counter decode rejected · \(error)"
-                    recordVendorTimeline("WHOOP Type-47 v18 step-counter decode rejected · \(error) · raw frame retained")
+                    if publishStepDiagnostics {
+                        stepSignalLastSeenAt = receivedAt
+                        stepSignalLastOutcome = "Historical v18 step-counter decode rejected · \(error)"
+                    }
+                    if logStepTimeline {
+                        lastWhoopStepTimelineAt = receivedAt
+                        recordVendorTimeline("WHOOP Type-47 v18 step-counter decode rejected · \(error) · raw frame retained")
+                    }
                 }
 
                 let record = HistoricalRRPacketRecord(
