@@ -610,10 +610,24 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                                  end: sample.timestamp)
             }
 
-        healthKitExportStatus = "Exporting workout and \(heartRateSamples.count) HR samples to Apple Health…"
-        builder.beginCollection(withStart: record.startedAt) { [weak self] began, beginError in
+        healthKitExportStatus = "Checking Apple Health write access…"
+        // Request write access at export time too; the user may have skipped
+        // or previously denied the separate Settings-screen request.
+        let writeTypes: Set<HKSampleType> = [HKObjectType.workoutType(), heartRateType]
+        healthKitStore.requestAuthorization(toShare: writeTypes, read: []) { [weak self] _, authorizationError in
             guard let self else { return }
-            guard began else {
+            if let authorizationError {
+                DispatchQueue.main.async {
+                    self.healthKitExportStatus = "Apple Health permission request failed · \(authorizationError.localizedDescription)"
+                }
+                return
+            }
+            DispatchQueue.main.async {
+                self.healthKitExportStatus = "Exporting workout and \(heartRateSamples.count) HR samples to Apple Health…"
+            }
+            builder.beginCollection(withStart: record.startedAt) { [weak self] began, beginError in
+                guard let self else { return }
+                guard began else {
                 DispatchQueue.main.async {
                     self.healthKitExportStatus = "Apple Health export failed · \(beginError?.localizedDescription ?? "collection could not start")"
                 }
@@ -644,14 +658,15 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
                 finishCollection()
                 return
             }
-            builder.add(heartRateSamples) { added, addError in
-                guard added else {
-                    DispatchQueue.main.async {
-                        self.healthKitExportStatus = "Workout HR export failed · \(addError?.localizedDescription ?? "samples could not be added")"
+                builder.add(heartRateSamples) { added, addError in
+                    guard added else {
+                        DispatchQueue.main.async {
+                            self.healthKitExportStatus = "Workout HR export failed · \(addError?.localizedDescription ?? "samples could not be added")"
+                        }
+                        return
                     }
-                    return
+                    finishCollection()
                 }
-                finishCollection()
             }
         }
     }
