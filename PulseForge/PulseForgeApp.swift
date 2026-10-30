@@ -2586,11 +2586,6 @@ final class HealthDataStore: ObservableObject {
             ], within: latest)
             let awake = mergedMinutes(for: [HKCategoryValueSleepAnalysis.awake.rawValue], within: latest)
 
-            Task { @MainActor in
-                self?.deepSleepMinutes = deep
-                self?.remSleepMinutes = rem
-                self?.coreSleepMinutes = core
-                self?.awakeMinutes = awake
             let stageSegments: [SleepStageSegment] = latest.map { night in
                 entries.compactMap { sample in
                     guard sample.startDate < night.endDate && sample.endDate > night.startDate else { return nil }
