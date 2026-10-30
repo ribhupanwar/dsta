@@ -2250,7 +2250,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopIMUStatus = "Historical WHOOP 5 frame retained · \(b.count) bytes · inner revision \(b.count > 9 ? Int(b[9]) : -1) · R21 decode not matched"
             return "HISTORICAL_DATA(0x2F) · \(b.count) bytes · raw retained"
 
-        case 40: // REALTIME_DATA · raw capture only until inner field offsets/units are verified
+        case 40: // WHOOP 5.0 REALTIME_DATA · offsets correlated against 19 live device frames
             whoopRealtimePacketCount += 1
             let receivedAt = Date()
             let capturedAt = ISO8601DateFormatter().string(from: receivedAt)
@@ -2261,16 +2261,46 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             whoop5Type40FrameObserved = true
 
-            // The current device capture contradicts the previously assumed layout:
-            // byte[12] produces 227 while adjacent candidate RR words include 17039 ms
-            // and 1 ms. CRC validity proves frame integrity, not inner-field semantics.
-            // Keep every frame for offline analysis, but publish neither HR nor RR.
-            whoopRealtimeCandidateByteAt16 = nil
-            whoopRealtimeCandidateRRWords.removeAll(keepingCapacity: true)
-            whoopRealtimeCandidateStatus = "Type-40 raw frame captured · inner HR/RR layout unverified · values withheld"
-            whoopSessionPhase = "WHOOP Type-40 raw capture only · HR/RR validation pending · generation \(whoopConnectionGeneration)"
-            recordVendorTimeline("WHOOP Type-40 raw frame retained · inner HR/RR offsets/units unverified · \(b.count) bytes · received \(capturedAt)")
-            return "REALTIME_DATA · raw retained · HR/RR withheld pending verified field map · CRC valid"
+            // Device-captured 32-byte frames show a stable HR progression at byte[16]
+            // (87, 87, 88, 89 ... 77 bpm); byte[12] is a sequence/header field, not HR.
+            // RR count is byte[17], followed by little-endian 1/1024-second tick words.
+            guard let bpm = try? Whoop5RRDecoder.decodeRealtimeHeartRate(b) else {
+                whoopRealtimeCandidateByteAt16 = b.count > 16 ? Int(b[16]) : nil
+                whoopRealtimeCandidateRRWords.removeAll(keepingCapacity: true)
+                whoopRealtimeCandidateStatus = "Type-40 frame retained · HR candidate rejected by range/frame validation"
+                return "REALTIME_DATA · raw retained · HR candidate rejected · CRC valid"
+            }
+
+            whoopRealtimeCandidateByteAt16 = bpm
+            lastWhoopRealtimeHRAt = receivedAt
+            if !whoop5HRDataObserved {
+                whoop5HRDataObserved = true
+                recordVendorTimeline("WHOOP Type-40 realtime HR data observed · event 33 confirmation \(whoop5HRStreamConfirmed ? "present" : "not yet received")")
+            }
+            if !whoop5HRStreamConfirmed {
+                whoopSessionPhase = "Realtime HR data observed · event 33 not received · generation \(whoopConnectionGeneration)"
+            }
+
+            // HR is independently validated and remains usable even when an RR
+            // batch is absent or fails its own interval checks.
+            var rrSummary = "RR unavailable"
+            do {
+                let rr = try Whoop5RRDecoder.decodeRealtime(b)
+                whoopRealtimeCandidateRRWords = rr
+                if rr.isEmpty {
+                    whoopRRSource = "WHOOP 5.0 realtime · latest Type-40 packet contained 0 RR intervals · retaining last valid RR batch"
+                } else {
+                    appendRRIntervals(rr, source: "WHOOP 5.0 realtime", receivedAt: receivedAt)
+                    rrSummary = "RR \(rr.map(String.init).joined(separator: ",")) ms"
+                }
+                whoopRealtimeCandidateStatus = "Type-40 device-correlated · HR \(bpm) bpm · RR \(rr.count) interval(s) decoded"
+            } catch {
+                whoopRealtimeCandidateRRWords.removeAll(keepingCapacity: true)
+                whoopRRSource = "Realtime RR decode rejected · \(error)"
+                whoopRealtimeCandidateStatus = "Type-40 HR accepted · RR independently rejected · \(error)"
+            }
+            recordHeartRateSample(bpm, source: "WHOOP5 REALTIME_DATA")
+            return "REALTIME_DATA · HR \(bpm) bpm · \(rrSummary) · CRC valid"
 
         case 53, 54: // PUFFIN event transports; preserve raw until their payload schemas are independently verified.
             whoopPuffinEventTypeCounts[type, default: 0] += 1
