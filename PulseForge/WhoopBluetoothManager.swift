@@ -221,7 +221,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         static let imuSamples = "pulseforge.history.whoopIMUSamples.v1"
         static let rrSamples = "pulseforge.history.realtimeRRSamples.v1"
         static let standardRRSamples = "pulseforge.history.standardRRSamples.v1"
-        static let whoopSteps = "pulseforge.history.whoopBandSteps.v2"
+        static let whoopSteps = "pulseforge.history.whoopBandSteps.v3"
     }
 
     private var historicalRRArchiveURL: URL? {
@@ -404,10 +404,12 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         return bytes
     }
 
-    private func recordWhoopStepSample(timestamp: Date, counter: Int, publish: Bool = true) {
+    private func recordWhoopStepSample(timestamp: Date, counter: Int,
+                                        softwareOverride: Bool? = nil, publish: Bool = true) {
         whoopBandStepCounter.ingest(.init(
             timestamp: timestamp,
-            counter: counter
+            counter: counter,
+            softwareOverride: softwareOverride
         ))
         if publish {
             publishWhoopStepCount()
@@ -2475,11 +2477,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 } ?? true
                 do {
                     let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(b)
-                    recordWhoopStepSample(
-                        timestamp: step.timestamp,
-                        counter: step.stepMotionCounter,
-                        publish: publishStepDiagnostics
-                    )
+                    // Type-47 v18 offsets 57...58 remain a motion-field
+                    // hypothesis. Keep them diagnostic-only; they must not
+                    // feed the user-visible daily step ledger.
                     if publishStepDiagnostics {
                         lastHistoricalStepDiagnosticsAt = receivedAt
                         stepSignalLastPacketType = 47
@@ -2490,7 +2490,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         stepSignalCadence = step.stepCadenceRaw
                         stepSignalActivity = step.activityClassRaw
                         stepSignalSoftwareOverride = nil
-                        stepSignalLastOutcome = "Historical v18 cumulative motion counter · experimental step source"
+                        stepSignalLastOutcome = "Type-47 v18 motion field observed · diagnostic only; not counted as steps"
                     }
                     if logStepTimeline {
                         lastWhoopStepTimelineAt = receivedAt
@@ -2602,12 +2602,20 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             // Only the extended candidate layout can currently expose step counters.
             do {
                 let step = try Whoop5RRDecoder.decodeRealtimeStepCounter(b)
+                // Type-40 is the live pedometer tuple. Feed only this realtime
+                // source into the step ledger; preserve the source-mode bit so
+                // hardware/software counter handoffs are safely re-anchored.
+                recordWhoopStepSample(
+                    timestamp: step.timestamp,
+                    counter: step.selectedCounter,
+                    softwareOverride: step.softwareOverride
+                )
                 stepSignalSelectedCounter = step.selectedCounter
                 stepSignalHardwareCounter = step.hardwareCounter
                 stepSignalCadence = step.cadenceRaw
                 stepSignalActivity = step.activityRaw
                 stepSignalSoftwareOverride = step.softwareOverride
-                stepSignalLastOutcome = "Extended Type-40 candidate decoded · awaiting counter movement / source validation"
+                stepSignalLastOutcome = "Type-40 realtime counter ingested · experimental; compare against WHOOP app total"
                 recordVendorTimeline("WHOOP Type-40 step candidate · selected=\(step.selectedCounter) · hardware=\(step.hardwareCounter) · cadenceRaw=\(step.cadenceRaw) · activity=\(step.activityRaw) · softwareOverride=\(step.softwareOverride)")
             } catch {
                 stepSignalLastOutcome = b.count < 65
