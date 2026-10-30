@@ -1318,7 +1318,7 @@ struct SleepDashboard: View {
                             .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
                             .multilineTextAlignment(.trailing).frame(maxWidth: 130)
                     }
-                    Text("WHOOP Sleep Need and Sleep Debt from your original export are the reference values. Any independently calculated PulseForge estimate will be labelled separately until its formula matches the reference history.")
+                    Text("PulseForge estimates here use Apple Health sleep history: a personal median from 14+ nights in 28 days and debt from at least 5 of the latest 7 nights. Nap and strain adjustments are not included yet; this is not the WHOOP proprietary score.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
