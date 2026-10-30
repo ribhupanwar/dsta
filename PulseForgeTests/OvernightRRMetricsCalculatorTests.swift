@@ -3,7 +3,7 @@ import XCTest
 
 final class OvernightRRMetricsCalculatorTests: XCTestCase {
     private func record(at timestamp: Date,
-                        intervals: [Int] = Array(repeating: 800, count: 32),
+                        intervals: [Int] = (0..<32).map { $0.isMultiple(of: 2) ? 800 : 810 },
                         verified: Bool = true,
                         recordType: Int = 47,
                         revision: Int = 18) -> HistoricalRRPacketRecord {
@@ -32,7 +32,7 @@ final class OvernightRRMetricsCalculatorTests: XCTestCase {
         XCTAssertNotNil(result)
         XCTAssertEqual(result?.intervalCount, 32)
         XCTAssertEqual(result?.packetCount, 1)
-        XCTAssertEqual(result?.rmssdMilliseconds ?? -1, 0, accuracy: 0.001)
+        XCTAssertEqual(result?.rmssdMilliseconds ?? -1, 10, accuracy: 0.001)
     }
 
     func testRejectsUnverifiedOrWrongPacketTypes() {
