@@ -19,6 +19,19 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame), [603, 587])
     }
 
+    func testDecodesWHOOPDeviceCorrelatedRealtimeHRAndRR() throws {
+        // Exact 32-byte CRC-valid frame from the user's WHOOP 5.0 capture.
+        let frame = bytes("AA011800010022E12802ECFFE36A8F4257016F04000000000000010023BAA03D")
+        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeHeartRate(frame), 87)
+        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtime(frame), [1108])
+    }
+
+    func testRealtimeHRRejectsWrongCandidateByteRange() {
+        var frame = bytes("AA011800010022E12802ECFFE36A8F4257016F04000000000000010023BAA03D")
+        frame[16] = 0xF3
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtimeHeartRate(frame))
+    }
+
     func testExtractsCandidateHistoricalV18RRWordsWithoutUnitClaim() throws {
         // NOOP-sourced type-47 fixture only; offsets and units are not WHOOP-verified.
         let frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
