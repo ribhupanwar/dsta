@@ -185,6 +185,36 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         static let standardRRSamples = "pulseforge.history.standardRRSamples.v1"
     }
 
+    private var historicalRRArchiveURL: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("PulseForge", isDirectory: true)
+            .appendingPathComponent("historical-whoop-rr-v1.json")
+    }
+
+    /// Flush queued CRC-valid historical frames to durable storage.
+    /// The queue is cleared only after the atomic archive write succeeds.
+    @discardableResult
+    private func flushHistoricalRRArchive() -> Bool {
+        guard !pendingHistoricalRRArchiveRecords.isEmpty else { return true }
+        guard let archiveURL = historicalRRArchiveURL else {
+            whoopHistoricalRRSource = "Historical RR archive unavailable · \(pendingHistoricalRRArchiveRecords.count) frames remain queued"
+            return false
+        }
+        do {
+            let count = try HistoricalRRPacketArchive.append(
+                contentsOf: pendingHistoricalRRArchiveRecords,
+                to: archiveURL
+            )
+            let flushed = pendingHistoricalRRArchiveRecords.count
+            pendingHistoricalRRArchiveRecords.removeAll(keepingCapacity: true)
+            whoopHistoricalRRSource = "Historical RR archive durably flushed · \(flushed) frames · \(count) retained"
+            return true
+        } catch {
+            whoopHistoricalRRSource = "Historical RR archive write failed · \(error.localizedDescription) · \(pendingHistoricalRRArchiveRecords.count) frames retained in memory"
+            return false
+        }
+    }
+
     private func persistDashboardIMUHistoryIfNeeded(force: Bool = false) {
         guard force || whoopIMUHistorySamples.count - lastDashboardIMUPersistedSampleCount >= 500 else { return }
         let retained = Array(whoopIMUHistorySamples.suffix(20_000))
@@ -648,6 +678,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5HistoryClockSequence: UInt8?
     private var whoop5HistoryRangeSequence: UInt8?
     private var whoop5HistoryRequestSequence: UInt8?
+    /// Buffer historical frames and write them in batches; HISTORY_END forces a durable flush before ACK.
+    private var pendingHistoricalRRArchiveRecords: [HistoricalRRPacketRecord] = []
+    private let historicalRRArchiveBatchSize = 25
     private var whoop5HelloRevision: Int?
     private var whoop5HelloTimestampSeconds: UInt32?
     private var whoop5HelloTimestampSubseconds: UInt32?
@@ -1298,6 +1331,10 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
     }
 
     private func clearConnectionState() {
+        // Preserve any partial historical transfer before resetting BLE state.
+        if !flushHistoricalRRArchive() {
+            recordVendorTimeline("Disconnect with historical RR archive flush failure · queued frames remain in memory until process exit")
+        }
         // A disconnect breaks detector continuity; discard the rolling baseline.
         workoutDetectionSamples.removeAll()
         connectionTimeoutWorkItem?.cancel()
@@ -2061,9 +2098,18 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             if metadataType == 1 {
                 whoopHistorySyncStatus = "HISTORY_START received · waiting for Type-47 records"
             } else if metadataType == 3 {
-                whoopHistorySyncStatus = "HISTORY_COMPLETE received · historical transfer finished"
+                if flushHistoricalRRArchive() {
+                    whoopHistorySyncStatus = "HISTORY_COMPLETE received · historical archive flushed"
+                } else {
+                    whoopHistorySyncStatus = "HISTORY_COMPLETE received · archive flush failed · inspect diagnostics"
+                }
             }
             if metadataType == 2 { // HISTORY_END
+                // Never ACK a trim cursor until all preceding RR frames are durably archived.
+                guard flushHistoricalRRArchive() else {
+                    recordVendorTimeline("HISTORY_END ACK withheld · historical RR archive flush failed")
+                    return "METADATA · HISTORY_END · ACK withheld · archive flush failed"
+                }
                 let endData = Array(b[21..<29])
                 let trimCursor = UInt32(endData[0])
                     | (UInt32(endData[1]) << 8)
@@ -2129,24 +2175,13 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     physiologicalTimestamp: physiologicalTimestamp,
                     decodeError: decodeError
                 )
-                if let support = FileManager.default.urls(
-                    for: .applicationSupportDirectory, in: .userDomainMask
-                ).first {
-                    let archiveURL = support
-                        .appendingPathComponent("PulseForge", isDirectory: true)
-                        .appendingPathComponent("historical-whoop-rr-v1.json")
-                    do {
-                        let count = try HistoricalRRPacketArchive.append(record, to: archiveURL)
-                        if let decodeError {
-                            whoopHistoricalRRSource = "Type-47 v18 raw frame archived · candidate RR decode rejected · \(decodeError) · packets \(count)"
-                        } else {
-                            whoopHistoricalRRSource = "Type-47 v18 archived · \(rr.count) RR intervals · HR \(historicalHeartRateBPM.map(String.init) ?? "unavailable") bpm · band timestamp \(physiologicalTimestamp.map { ISO8601DateFormatter().string(from: $0) } ?? "unverified") · packets \(count)"
-                        }
-                    } catch {
-                        whoopHistoricalRRSource = "Historical v18 raw frame captured · archive failed · \(error.localizedDescription)"
-                    }
+                pendingHistoricalRRArchiveRecords.append(record)
+                if pendingHistoricalRRArchiveRecords.count >= historicalRRArchiveBatchSize {
+                    _ = flushHistoricalRRArchive()
+                } else if let decodeError {
+                    whoopHistoricalRRSource = "Type-47 v18 raw frame queued · candidate RR decode rejected · \(decodeError) · pending \(pendingHistoricalRRArchiveRecords.count)"
                 } else {
-                    whoopHistoricalRRSource = "Historical v18 raw frame captured · local archive unavailable"
+                    whoopHistoricalRRSource = "Type-47 v18 raw frame queued · \(rr.count) candidate RR words · units unverified · pending \(pendingHistoricalRRArchiveRecords.count)"
                 }
 
                 if let decodeError {
