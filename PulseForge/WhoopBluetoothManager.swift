@@ -105,6 +105,12 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopLastPacketType = "None"
     @Published private(set) var whoopBatteryPercent: Double?
     @Published private(set) var whoopBatteryLastUpdatedAt: Date?
+    /// WHOOP Gen5 v18 on-band cumulative counter converted to today's counter delta.
+    @Published private(set) var whoopStepsToday: Int?
+    @Published private(set) var whoopStepsSourceStatus = "Waiting for WHOOP 5.0 step history"
+    @Published private(set) var whoopStepCounterLastUpdatedAt: Date?
+    private var whoopBandStepCounter = WhoopBandStepCounter()
+    private var lastWhoopStepSnapshotPersistedAt: Date?
     @Published private(set) var whoopEventPacketCount = 0
     @Published private(set) var whoopLastEventID: Int?
     @Published private(set) var whoopLastEventFrameHex = "none"
@@ -202,6 +208,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         static let imuSamples = "pulseforge.history.whoopIMUSamples.v1"
         static let rrSamples = "pulseforge.history.realtimeRRSamples.v1"
         static let standardRRSamples = "pulseforge.history.standardRRSamples.v1"
+        static let whoopSteps = "pulseforge.history.whoopBandSteps.v1"
     }
 
     private var historicalRRArchiveURL: URL? {
@@ -353,7 +360,73 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             whoopIMUHistorySamples = Array(samples.suffix(20_000))
             lastDashboardIMUPersistedSampleCount = whoopIMUHistorySamples.count
         }
+        restoreWhoopStepCounter()
         // Never restore live BPM/freshness or calculate live RMSSD from old samples.
+    }
+
+    /// Restore the compact step ledger. On the first build with this feature,
+    /// migrate from the existing raw Type-47 archive so another strap sync is
+    /// not required when historical v18 frames are already on disk.
+    private func restoreWhoopStepCounter() {
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: DashboardHistoryKey.whoopSteps),
+           let snapshot = try? JSONDecoder().decode(WhoopBandStepCounter.Snapshot.self, from: data) {
+            whoopBandStepCounter.restore(snapshot)
+        } else if let archiveURL = historicalRRArchiveURL {
+            let records = HistoricalRRPacketArchive.load(from: archiveURL)
+                .filter { $0.recordType == 47 && $0.revision == 18 }
+            let samples = records.compactMap { record -> WhoopBandStepCounter.Sample? in
+                guard let frame = Self.bytes(fromHex: record.rawFrameHex),
+                      let decoded = try? Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame) else {
+                    return nil
+                }
+                return WhoopBandStepCounter.Sample(
+                    timestamp: decoded.timestamp,
+                    counter: decoded.stepMotionCounter
+                )
+            }
+            whoopBandStepCounter.rebuild(from: samples)
+            persistWhoopStepCounterSnapshot()
+        }
+        publishWhoopStepCount()
+    }
+
+    private static func bytes(fromHex hex: String) -> [UInt8]? {
+        let characters = Array(hex.utf8)
+        guard !characters.isEmpty, characters.count.isMultiple(of: 2) else { return nil }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(characters.count / 2)
+        for index in stride(from: 0, to: characters.count, by: 2) {
+            guard let value = UInt8(String(decoding: characters[index..<(index + 2)], as: UTF8.self), radix: 16) else {
+                return nil
+            }
+            bytes.append(value)
+        }
+        return bytes
+    }
+
+    private func recordWhoopStepSample(_ decoded: Whoop5RRDecoder.HistoricalV18Biometrics) {
+        whoopBandStepCounter.ingest(.init(
+            timestamp: decoded.timestamp,
+            counter: decoded.stepMotionCounter
+        ))
+        whoopStepCounterLastUpdatedAt = decoded.timestamp
+        publishWhoopStepCount()
+        if lastWhoopStepSnapshotPersistedAt.map({ Date().timeIntervalSince($0) >= 5 }) ?? true {
+            persistWhoopStepCounterSnapshot()
+        }
+    }
+
+    private func publishWhoopStepCount() {
+        whoopStepsToday = whoopBandStepCounter.steps(for: Date())
+        whoopStepsSourceStatus = whoopBandStepCounter.sourceStatus(for: Date())
+        whoopStepCounterLastUpdatedAt = whoopBandStepCounter.latestSample?.timestamp
+    }
+
+    private func persistWhoopStepCounterSnapshot() {
+        guard let data = try? JSONEncoder().encode(whoopBandStepCounter.snapshot()) else { return }
+        UserDefaults.standard.set(data, forKey: DashboardHistoryKey.whoopSteps)
+        lastWhoopStepSnapshotPersistedAt = Date()
     }
 
     var freshHeartRateBPM: Int? {
@@ -2381,6 +2454,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     whoopHistoricalHeartRateBPM = nil
                     whoopHistoricalTimestampLastUpdatedAt = nil
                     whoopHistoricalRRSource = "Historical v18 decode rejected · raw frame retained · \(error)"
+                }
+
+                if let decoded {
+                    recordWhoopStepSample(decoded)
                 }
 
                 let record = HistoricalRRPacketRecord(
