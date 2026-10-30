@@ -42,14 +42,18 @@ jobs:
             fi
           fi
           if [ -z "$APP" ]; then
-            echo "No .app bundle found in Whoop.zip. Top-level archive inventory follows:"
-            find "$RUNNER_TEMP/whoop-unpacked" -maxdepth 4 -print | head -300
-            exit 2
+            # Whoop.zip is a flattened export of the .app resource tree, not a nested .app.
+            APP="$RUNNER_TEMP/whoop-unpacked"
+            echo "WHOOP archive format: flattened app-resource tree (no .app wrapper)."
           fi
           echo "$APP" > "$RUNNER_TEMP/whoop-app-path.txt"
-          echo "WHOOP app bundle: $APP"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" > reference-report/bundle-id.txt
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" >> reference-report/bundle-id.txt || true
+          echo "WHOOP resource root: $APP"
+          if [ -f "$APP/Info.plist" ]; then
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" > reference-report/bundle-id.txt
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" >> reference-report/bundle-id.txt || true
+          else
+            printf '%s\n' "Whoop.zip contains flattened app resources; app identity is in the separately inspected WHOOP IPA." > reference-report/bundle-id.txt
+          fi
           find "$APP" -type f | sed "s#^$APP/##" | sort > reference-report/full-resource-inventory.txt
           find "$APP" \( -name '*.nib' -o -name '*.storyboardc' -o -name '*.car' -o -name '*.strings' -o -name '*.stringsdict' -o -name '*.json' \) -print | sed "s#^$APP/##" | sort > reference-report/ui-resource-inventory.txt
           echo "App bundle and UI resource inventories generated."
