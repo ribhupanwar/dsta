@@ -1664,18 +1664,17 @@ struct DeviceDashboard: View {
                     HStack {
                         Label("Health data access", systemImage: "heart.text.square")
                         Spacer()
-                        Text(health.hasCompletedAuthorizationRequest ? "REQUESTED" : "NOT SET UP")
+                        Text(health.hasCompletedAuthorizationRequest ? "REQUEST PROCESSED" : "NOT REQUESTED")
                             .font(.system(size: 9, weight: .bold)).foregroundStyle(health.hasCompletedAuthorizationRequest ? ForgeColors.lime : ForgeColors.muted)
                     }
                     Text("\(health.authorizationRequestStatus). HealthKit does not disclose read-permission choices to apps; check Apple Health settings if data is missing.")
                         .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
                     Button { Task { await health.requestAccess() } } label: {
-                        Text(health.hasCompletedAuthorizationRequest ? "ACCESS REQUESTED" : "CONNECT APPLE HEALTH")
+                        Text(health.hasCompletedAuthorizationRequest ? "RECHECK APPLE HEALTH" : "CONNECT APPLE HEALTH")
                             .font(.system(size: 11, weight: .bold)).tracking(1)
                             .frame(maxWidth: .infinity).padding(14)
                             .background(ForgeColors.lime, in: Capsule()).foregroundStyle(.black)
                     }
-                    .disabled(health.hasCompletedAuthorizationRequest)
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
                 Spacer(minLength: 110)
