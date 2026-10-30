@@ -17,14 +17,15 @@ enum Whoop5RRDecoder {
     }
 
     /// WHOOP 5.0 Type-47 / revision-18 historical biometric fields.
-    /// Offsets and RR units are hardware-verified: unix@15, HR@22,
-    /// rr_count@23, and UInt16 RR milliseconds at 24+2*i.
+    /// Timestamp/HR/RR fields are independently validated. Step-motion offsets
+    /// below remain provisional pending original WHOOP binary cross-reference
+    /// and device-correlated counter captures.
     struct HistoricalV18Biometrics: Equatable {
         let timestamp: Date
         let heartRateBPM: Int?
         let rawRRWords: [Int]
         let rrIntervalsMilliseconds: [Int]
-        /// Gen5 v18 band-native cumulative motion counter, UInt16 LE at frame offsets 57...58.
+        /// Candidate motion counter, UInt16 LE at frame offsets 57...58; not yet verified against WHOOP.
         let stepMotionCounter: Int
         /// Raw companion fields retained for diagnostics; their exact semantics remain provisional.
         let stepCadenceRaw: Int
@@ -97,7 +98,7 @@ enum Whoop5RRDecoder {
         return try decodeRawWords(frame, countOffset: 23, wordsOffset: 24)
     }
 
-    /// The Gen5 v18 band-native counter is decoded independently from RR.
+    /// Candidate v18 motion field is decoded independently from RR. Its meaning and offset remain unverified.
     /// A malformed RR word must not discard an otherwise valid step-counter sample.
     struct HistoricalV18StepCounter: Equatable {
         let timestamp: Date
