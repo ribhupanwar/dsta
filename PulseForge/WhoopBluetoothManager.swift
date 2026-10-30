@@ -2244,57 +2244,57 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return "METADATA · \(metadataName) · CRC valid"
 
         case 47: // HISTORICAL_DATA; contains several Gen5 layouts, not all of them IMU.
-            // Preserve every CRC-valid v18 frame before trusting the candidate RR offsets.
-            // Receipt time is forensic metadata only; physiological time remains nil.
+            // WHOOP 5.0 v18 biometric offsets are hardware-verified:
+            // unix@15, HR@22, rr_count@23, RR UInt16 milliseconds @24+2*i.
+            // Preserve every CRC-valid frame while publishing only validated fields.
             if b.count > 9, b[9] == 18 {
                 whoopHistorySyncStatus = "Type-47 v18 historical frame received · decoding/archive in progress"
                 let receivedAt = Date()
                 let rawHex = b.map { String(format: "%02X", $0) }.joined()
-                var rr: [Int] = []
-                // Preserve the complete frame, but withhold candidate HR/time fields:
-                // the WHOOP IPA symbols do not establish these v18 wire offsets.
-                whoopHistoricalTimestampLastUpdatedAt = nil
-                whoopHistoricalHeartRateBPM = nil
+                var decoded: Whoop5RRDecoder.HistoricalV18Biometrics?
                 var decodeError: String?
 
                 do {
-                    rr = try Whoop5RRDecoder.decodeHistoricalV18CandidateRRWords(b)
-                    // A zero RR count is a successfully decoded empty interval list,
-                    // not a packet/layout failure. Preserve the raw frame and keep
-                    // the diagnostic distinct from genuine decode errors.
-                    // The v18 words are not yet verified as milliseconds.
-                    // Never publish them through an ms-labelled property or HRV input.
-                    whoopHistoricalRRIntervalsMilliseconds = []
-                    whoopHistoricalRRLastUpdatedAt = nil
+                    decoded = try Whoop5RRDecoder.decodeHistoricalV18Biometrics(b)
+                    if let decoded {
+                        whoopHistoricalRRIntervalsMilliseconds = decoded.rrIntervalsMilliseconds
+                        whoopHistoricalRRLastUpdatedAt = decoded.rrIntervalsMilliseconds.isEmpty ? nil : decoded.timestamp
+                        whoopHistoricalHeartRateBPM = decoded.heartRateBPM
+                        whoopHistoricalTimestampLastUpdatedAt = decoded.timestamp
+                        whoopHistoricalRRSource = "WHOOP Type-47 v18 · \(decoded.rrIntervalsMilliseconds.count) verified RR interval(s) · RR unit ms · physiological timestamp verified"
+                    }
                 } catch {
                     decodeError = String(describing: error)
-                    whoopRRSource = "Historical v18 RR candidate rejected · \(error)"
+                    whoopHistoricalRRIntervalsMilliseconds = []
+                    whoopHistoricalRRLastUpdatedAt = nil
+                    whoopHistoricalHeartRateBPM = nil
+                    whoopHistoricalTimestampLastUpdatedAt = nil
+                    whoopHistoricalRRSource = "Historical v18 decode rejected · raw frame retained · \(error)"
                 }
 
                 let record = HistoricalRRPacketRecord(
                     receivedAt: receivedAt,
                     recordType: 47,
                     revision: 18,
-                    intervalsMilliseconds: [],
-                    rawRRWords: rr,
+                    intervalsMilliseconds: decoded?.rrIntervalsMilliseconds ?? [],
+                    rawRRWords: decoded?.rawRRWords,
                     rawFrameHex: rawHex,
-                    heartRateBPM: nil,
-                    physiologicalTimestamp: nil,
+                    heartRateBPM: decoded?.heartRateBPM,
+                    physiologicalTimestamp: decoded?.timestamp,
                     decodeError: decodeError
                 )
                 pendingHistoricalRRArchiveRecords.append(record)
                 if pendingHistoricalRRArchiveRecords.count >= historicalRRArchiveBatchSize {
                     _ = flushHistoricalRRArchive()
-                } else if let decodeError {
-                    whoopHistoricalRRSource = "Type-47 v18 raw frame queued · candidate RR decode rejected · \(decodeError) · pending \(pendingHistoricalRRArchiveRecords.count)"
-                } else {
-                    whoopHistoricalRRSource = "Type-47 v18 raw frame queued · \(rr.count) candidate RR words · offsets/units unverified · HR/time withheld · pending \(pendingHistoricalRRArchiveRecords.count)"
                 }
 
-                if let decodeError {
-                    return "HISTORICAL_DATA v18 · raw frame retained · RR candidate rejected · \(decodeError) · CRC valid"
+                if let decoded {
+                    let hrText = decoded.heartRateBPM.map { "\($0) bpm" } ?? "HR unavailable/off-wrist"
+                    let rrText = decoded.rrIntervalsMilliseconds.map(String.init).joined(separator: ",")
+                    whoopHistorySyncStatus = "Type-47 v18 decoded · \(decoded.rrIntervalsMilliseconds.count) RR interval(s) · physiology timestamp \(ISO8601DateFormatter().string(from: decoded.timestamp))"
+                    return "HISTORICAL_DATA v18 · HR \(hrText) · RR [\(rrText)] ms · unix \(ISO8601DateFormatter().string(from: decoded.timestamp)) · CRC valid"
                 }
-                return "HISTORICAL_DATA v18 · candidate RR words \(rr.map(String.init).joined(separator: ",")) · offsets/units unverified · HR/time withheld · CRC valid"
+                return "HISTORICAL_DATA v18 · raw frame retained · decode rejected · \(decodeError ?? "unknown error") · CRC valid"
             }
 
             // WHOOP 5 R22 can carry the same 1,244-byte R21 IMU body inside
