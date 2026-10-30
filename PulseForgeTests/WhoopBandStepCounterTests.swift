@@ -17,9 +17,9 @@ final class WhoopBandStepCounterTests: XCTestCase {
         let start = Date(timeIntervalSince1970: 1_800_000_000)
         let calendar = Calendar(identifier: .gregorian)
         counter.ingest(.init(timestamp: start, counter: 65_530), calendar: calendar)
-        counter.ingest(.init(timestamp: start.addingTimeInterval(1), counter: 3), calendar: calendar)
-        counter.ingest(.init(timestamp: start.addingTimeInterval(2), counter: 6), calendar: calendar)
-        XCTAssertEqual(counter.steps(for: start, calendar: calendar), 9)
+        counter.ingest(.init(timestamp: start.addingTimeInterval(2), counter: 3), calendar: calendar)
+        counter.ingest(.init(timestamp: start.addingTimeInterval(3), counter: 6), calendar: calendar)
+        XCTAssertEqual(counter.steps(for: start, calendar: calendar), 12)
     }
 
     func testRejectsCounterResetAndContinuesAfterReanchor() {
