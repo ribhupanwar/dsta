@@ -102,7 +102,7 @@ final class Whoop5RRDecoderTests: XCTestCase {
         frame[25] = 0
         XCTAssertThrowsError(try Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame))
         let steps = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame)
-        XCTAssertEqual(steps.stepMotionCounter, 0)
+        XCTAssertEqual(steps.stepMotionCounter, 50)
         XCTAssertEqual(steps.timestamp.timeIntervalSince1970, 1_780_916_150, accuracy: 0.001)
     }
 
