@@ -65,7 +65,16 @@ jobs:
           strings -a /tmp/whoop-arm64 | grep -Ei 'step.?count|stepcounter|pedometer|CMPedometer|CMAltimeter|HKQuantityTypeIdentifierStepCount|walking|stride|cadence|accelerometer|gyroscope|IMUStream|RealtimeIMU|HistoricalIMU|IMUPacket|ActivityDetection|Motion|/.*step|ProcessedSteps|HistoricalProcessedSteps|StepsPacket|R24' \
             | sort -u > mach-o-evidence/step-motion-strings.txt || true
           otool -arch arm64 -l /tmp/whoop-arm64 > mach-o-evidence/load-commands.txt
-          otool -arch arm64 -tvV /tmp/whoop-arm64 > /tmp/whoop-disassembly.txt 2>mach-o-evidence/otool-errors.txt || true
+          OBJDUMP="$(xcrun --find llvm-objdump)"
+          "$OBJDUMP" --help > mach-o-evidence/llvm-objdump-help.txt
+          grep -q -- '--start-address' mach-o-evidence/llvm-objdump-help.txt
+          : > /tmp/whoop-disassembly.txt
+          for RANGE in "0x10036d000:0x100370000" "0x100802000:0x100804000" "0x10088e000:0x100892000" "0x105ce7000:0x105ce9000" "0x105cf6000:0x105cf7000"; do
+            START="${RANGE%%:*}"
+            STOP="${RANGE##*:}"
+            echo "### RANGE ${START} ${STOP}" >> /tmp/whoop-disassembly.txt
+            "$OBJDUMP" --arch=arm64 --disassemble --no-show-raw-insn --start-address="${START}" --stop-address="${STOP}" /tmp/whoop-arm64 >> /tmp/whoop-disassembly.txt 2>>mach-o-evidence/otool-errors.txt
+          done
           python3 - <<'PY'
           from pathlib import Path
           import re
