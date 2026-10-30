@@ -1394,7 +1394,21 @@ struct SleepDashboard: View {
                     Text("PulseForge estimates here use Apple Health sleep history: a personal median from 14+ nights in 28 days and debt from at least 5 of the latest 7 nights. Nap and strain adjustments are not included yet; this is not the WHOOP proprietary score.")
                         .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 }
-                .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                .padding(20)
+                .background {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(red: 0.105, green: 0.135, blue: 0.165), ForgeColors.card],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .stroke(ForgeColors.sleep.opacity(0.22), lineWidth: 1)
+                        }
+                }
                 SectionHeader(title: "SLEEP STAGES")
                 SleepStageTimelineCard(segments: health.sleepStageSegments)
                 SleepStageBreakdown(deep: health.deepSleepMinutes, rem: health.remSleepMinutes, core: health.coreSleepMinutes, awake: health.awakeMinutes)
@@ -3413,8 +3427,22 @@ struct RecoveryDashboard: View {
                         .padding(.horizontal, 8)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(20)
-                .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
+                .padding(.vertical, 25)
+                .padding(.horizontal, 20)
+                .background {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(red: 0.105, green: 0.145, blue: 0.135), ForgeColors.card, ForgeColors.card],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .stroke(recoveryTint.opacity(0.20), lineWidth: 1)
+                        }
+                }
                 HStack(spacing: 10) {
                     CompactMetric(title: "OVERNIGHT HRV", value: "—", unit: "ms · validating")
                     CompactMetric(title: "RESTING HR", value: "—", unit: "bpm · validating")
