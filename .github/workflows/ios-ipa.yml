@@ -77,6 +77,21 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             | tee "$RUNNER_TEMP/pulseforge-archive.log"
 
+      - name: Verify bundled fonts before IPA packaging
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/PulseForge.xcarchive/Products/Applications/PulseForge.app"
+          for asset in ReadexPro.ttf BarlowCondensed-Bold.ttf ReadexPro-OFL.txt BarlowCondensed-OFL.txt; do
+            test -s "$APP/$asset" || {
+              echo "::error::Required app resource missing from archive: $asset"
+              find "$APP" -maxdepth 3 -type f -print | sort
+              exit 1
+            }
+          done
+          /usr/libexec/PlistBuddy -c "Print :UIAppFonts" "$APP/Info.plist"
+          echo "Verified both font binaries and OFL licence files in PulseForge.app."
+
       - name: Package installable IPA container
         shell: bash
         run: |
