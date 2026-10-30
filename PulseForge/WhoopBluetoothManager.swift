@@ -178,10 +178,12 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var liveWhoopIMUSampleBuffer: [WhoopIMUSample] = []
     private var lastLiveIMUSnapshotPublishedAt: Date?
     /// Persisted decoded WHOOP motion history; never treated as a live stream.
-    @Published private(set) var whoopIMUHistorySamples: [WhoopIMUSample] = []
+    private var whoopIMUHistorySamples: [WhoopIMUSample] = []
     @Published private(set) var workoutWhoopIMUSamples: [WhoopIMUSample] = []
     private var lastWhoopIMUPersistedSampleCount = 0
     private var lastDashboardIMUPersistedSampleCount = 0
+    private var lastDashboardIMUPersistedAt: Date?
+    private var lastDashboardHistoryPersistedAt: Date?
 
     private enum DashboardHistoryKey {
         static let heartRate = "pulseforge.history.liveHeartRate.v1"
@@ -224,11 +226,12 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     }
 
     private func persistDashboardIMUHistoryIfNeeded(force: Bool = false) {
-        guard force || whoopIMUHistorySamples.count - lastDashboardIMUPersistedSampleCount >= 500 else { return }
+        guard force || whoopIMUHistorySamples.count - lastDashboardIMUPersistedSampleCount >= 5_000 || lastDashboardIMUPersistedAt.map({ Date().timeIntervalSince($0) >= 30 }) == true else { return }
         let retained = Array(whoopIMUHistorySamples.suffix(20_000))
         guard let data = try? JSONEncoder().encode(retained) else { return }
         UserDefaults.standard.set(data, forKey: DashboardHistoryKey.imuSamples)
         lastDashboardIMUPersistedSampleCount = whoopIMUHistorySamples.count
+        lastDashboardIMUPersistedAt = Date()
     }
 
     /// Keep 100 Hz sensor ingestion independent from SwiftUI observation.
@@ -258,6 +261,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     }
 
     private func persistDashboardHistory() {
+        let now = Date()
+        guard lastDashboardHistoryPersistedAt.map({ now.timeIntervalSince($0) >= 5 }) ?? true else { return }
+        lastDashboardHistoryPersistedAt = now
         let defaults = UserDefaults.standard
         let cutoff = Date().addingTimeInterval(-7 * 24 * 60 * 60)
         let retainedHR = Array(dashboardHeartRateHistory.filter { $0.timestamp >= cutoff }.suffix(20_000))
