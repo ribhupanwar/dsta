@@ -10,6 +10,9 @@ struct WhoopBandStepCounter {
     struct Sample: Codable, Equatable {
         let timestamp: Date
         let counter: Int
+        /// Type-40 byte 64 selects software override vs. hardware pedometer.
+        /// A source transition is re-anchored, never counted as a step delta.
+        let softwareOverride: Bool? = nil
     }
 
     struct Snapshot: Codable {
@@ -41,8 +44,26 @@ struct WhoopBandStepCounter {
 
         // Historical sync can replay frames. Reject older samples and exact
         // duplicates, but accept a higher cumulative counter at the same
-        // second: Type-47 physiological timestamps have one-second resolution.
+        // second: device timestamps may have one-second resolution.
         guard sample.timestamp >= previous.timestamp else { return }
+
+        // Type-40 byte 57 can represent either hardware or software steps.
+        // Re-anchor when byte 64 changes source mode; otherwise the source
+        // handoff itself could be mistaken for thousands of steps.
+        if let oldMode = previous.softwareOverride,
+           let newMode = sample.softwareOverride,
+           oldMode != newMode {
+            let key = Self.dayKey(sample.timestamp, calendar: calendar)
+            if Self.dayKey(previous.timestamp, calendar: calendar) != key {
+                coverageStarts[key] = sample.timestamp
+                dailyTotals[key] = dailyTotals[key] ?? 0
+            }
+            latestSample = sample
+            droppedBoundaries += 1
+            prune(keepingSince: calendar.date(byAdding: .day, value: -Self.retentionDays, to: sample.timestamp) ?? sample.timestamp, calendar: calendar)
+            return
+        }
+
         if sample.timestamp == previous.timestamp {
             guard sample.counter > previous.counter else { return }
             let sameSecondDelta = sample.counter - previous.counter
