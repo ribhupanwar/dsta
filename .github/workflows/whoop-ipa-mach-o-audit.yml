@@ -266,7 +266,8 @@ jobs:
                   matches = [i for i, line in enumerate(lines) if target in line.lower()]
                   out = ["# Exact disassembly target: 0x" + target, "Matching lines: " + str(len(matches))]
                   for i in matches[:20]:
-                      out += ["", "--- context around line " + str(i+1) + " ---"] + lines[max(0,i-80):min(len(lines),i+260)]
+                      window_end = i + (2400 if target == "10036e5a4" else 260)
+                      out += ["", "--- context around line " + str(i+1) + " ---"] + lines[max(0,i-80):min(len(lines),window_end)]
               else:
                   terms = ("currentStepCount", "lastStepCount", "previousStepCount", "delayedStepCountProcessingWorkItem")
                   hits = [i for i,line in enumerate(lines) if any(term.lower() in line.lower() for term in terms)]
