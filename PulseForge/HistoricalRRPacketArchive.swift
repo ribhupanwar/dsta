@@ -11,7 +11,7 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
     /// Only populated after RR units have been independently verified.
     let intervalsMilliseconds: [Int]
     /// Candidate v18 little-endian words, retained without claiming milliseconds.
-    let rawRRWords: [Int]?
+    var rawRRWords: [Int]? = nil
     let rawFrameHex: String
     /// Historical v18 heart rate from the band, if the frame validates.
     let heartRateBPM: Int?
@@ -19,6 +19,33 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
     let physiologicalTimestamp: Date?
     /// Present when a CRC-valid v18 frame could not be decoded as RR.
     let decodeError: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case receivedAt, recordType, revision, intervalsMilliseconds
+        case rawRRWords, rawFrameHex, heartRateBPM, physiologicalTimestamp, decodeError
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        receivedAt = try values.decode(Date.self, forKey: .receivedAt)
+        recordType = try values.decode(Int.self, forKey: .recordType)
+        revision = try values.decode(Int.self, forKey: .revision)
+        let storedMilliseconds = try values.decodeIfPresent([Int].self, forKey: .intervalsMilliseconds) ?? []
+        let storedRawWords = try values.decodeIfPresent([Int].self, forKey: .rawRRWords)
+        // Migrate old v18 archives: their candidate words were previously
+        // stored under an ms-labelled field despite unverified units.
+        if revision == 18, storedRawWords == nil {
+            intervalsMilliseconds = []
+            rawRRWords = storedMilliseconds
+        } else {
+            intervalsMilliseconds = storedMilliseconds
+            rawRRWords = storedRawWords
+        }
+        rawFrameHex = try values.decode(String.self, forKey: .rawFrameHex)
+        heartRateBPM = try values.decodeIfPresent(Int.self, forKey: .heartRateBPM)
+        physiologicalTimestamp = try values.decodeIfPresent(Date.self, forKey: .physiologicalTimestamp)
+        decodeError = try values.decodeIfPresent(String.self, forKey: .decodeError)
+    }
 }
 
 enum HistoricalRRPacketArchive {
