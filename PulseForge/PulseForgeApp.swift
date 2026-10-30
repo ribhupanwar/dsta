@@ -560,7 +560,11 @@ struct TodayDashboard: View {
                     }
                     HStack(spacing: 10) {
                         CompactMetric(title: "LIVE HEART RATE", value: bluetooth.liveHeartRateBPM.map(String.init) ?? "—", unit: "bpm · WHOOP")
-                        CompactMetric(title: "STEPS", value: health.stepsToday.map { $0.formatted() } ?? "—", unit: "Apple Health")
+                        CompactMetric(
+                            title: "STEPS",
+                            value: bluetooth.whoopStepsToday.map { $0.formatted() } ?? "—",
+                            unit: bluetooth.whoopStepsToday == nil ? "WHOOP · sync history" : "WHOOP 5.0 band"
+                        )
                     }
                     Divider().overlay(ForgeColors.stroke)
                     HStack(alignment: .center) {
