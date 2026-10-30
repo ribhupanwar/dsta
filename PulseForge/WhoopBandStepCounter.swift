@@ -84,7 +84,14 @@ struct WhoopBandStepCounter {
 
     mutating func rebuild(from samples: [Sample], calendar: Calendar = .current) {
         self = WhoopBandStepCounter()
-        for sample in samples.sorted(by: { $0.timestamp < $1.timestamp }) {
+        // Type-47 timestamps have one-second resolution, so several
+        // cumulative counter values can share the same timestamp. Sort those
+        // samples by counter as a deterministic tie-breaker; otherwise an
+        // unstable equal-date ordering can discard valid same-second deltas.
+        for sample in samples.sorted(by: {
+            if $0.timestamp != $1.timestamp { return $0.timestamp < $1.timestamp }
+            return $0.counter < $1.counter
+        }) {
             ingest(sample, calendar: calendar)
         }
     }
