@@ -290,7 +290,7 @@ struct RecoveryDetailSheet: View {
                         Spacer()
                     }
                     HStack(spacing: 10) {
-                        CompactMetric(title: "2A37 RR", value: String(bluetooth.whoopRRIntervalsMilliseconds.count), unit: "verified ms")
+                        CompactMetric(title: "WHOOP RR", value: String(bluetooth.whoopRRIntervalsMilliseconds.count), unit: "live ms")
                         CompactMetric(title: "WHOOP BATTERY", value: bluetooth.whoopBatteryPercent.map { String(format: "%.0f", $0) } ?? "—", unit: "%")
                         CompactMetric(title: "SLEEP", value: insights.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
                     }
@@ -456,7 +456,7 @@ struct WhoopRRCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("STANDARD 2A37 RR", systemImage: "waveform.path")
+                Label("WHOOP TYPE-40 RR", systemImage: "waveform.path")
                     .font(.system(size: 9, weight: .bold)).tracking(0.9)
                     .foregroundStyle(ForgeColors.muted)
                 Spacer()
@@ -487,7 +487,7 @@ struct WhoopRRCard: View {
                     .foregroundStyle(shortWindowRMSSD == nil || !isRRFresh ? ForgeColors.muted : ForgeColors.lime)
             }
             Text(intervals.isEmpty
-                 ? "No validated standard 2A37 RR values received yet."
+                 ? "Waiting for a valid WHOOP Type-40 RR batch."
                  : intervals.map { "\($0) ms" }.joined(separator: "  ·  "))
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white)
@@ -498,7 +498,7 @@ struct WhoopRRCard: View {
                 .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
             Text(bluetooth.whoopRealtimeCandidateStatus)
                 .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
-            Text("Type-40 candidate words stay raw until WHOOP offsets and units are verified. No Type-40 RMSSD or Recovery input is produced.")
+            Text("Type-40 RR values are decoded as milliseconds using the NOOP Gen5 layout. Live RMSSD is diagnostic only; it is never used as overnight HRV or Recovery input.")
                 .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
         }
         .padding(16)
@@ -629,6 +629,20 @@ struct WhoopMotionCard: View {
 struct WorkoutRecordingCard: View {
     @ObservedObject var bluetooth: WhoopBluetoothManager
     @State private var expandedWorkoutID: UUID?
+
+    // Swift Charts becomes expensive when handed an entire multi-hour 1 Hz
+    // workout (up to 14,400 points). Keep the full-resolution samples for
+    // storage/statistics, but render a bounded, evenly sampled display series.
+    private var chartSamples: [LiveHeartRateSample] {
+        let recent = Array(bluetooth.workoutHeartRateSamples.suffix(240))
+        guard recent.count > 120 else { return recent }
+        let step = max(1, Int(ceil(Double(recent.count) / 120.0)))
+        var reduced = Swift.stride(from: 0, to: recent.count, by: step).map { recent[$0] }
+        if let last = recent.last, reduced.last?.timestamp != last.timestamp {
+            reduced.append(last)
+        }
+        return reduced
+    }
 
     private var averageBPM: Int? {
         guard !bluetooth.workoutHeartRateSamples.isEmpty else { return nil }
@@ -774,11 +788,10 @@ struct WorkoutRecordingCard: View {
                     workoutStat("MAX", value: maxBPM)
                     workoutStat("LATEST", value: bluetooth.workoutHeartRateSamples.last?.bpm)
                 }
-                if bluetooth.workoutHeartRateSamples.count >= 2 {
-                    Chart(bluetooth.workoutHeartRateSamples) { sample in
+                if chartSamples.count >= 2 {
+                    Chart(chartSamples) { sample in
                         LineMark(x: .value("Time", sample.timestamp), y: .value("BPM", sample.bpm))
                             .foregroundStyle(ForgeColors.lime)
-                            .interpolationMethod(.catmullRom)
                         AreaMark(x: .value("Time", sample.timestamp), y: .value("BPM", sample.bpm))
                             .foregroundStyle(ForgeColors.lime.opacity(0.10))
                     }
