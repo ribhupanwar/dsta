@@ -2021,9 +2021,14 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoop5HelloTimestampSubseconds = UInt32(b[23])
                     | (UInt32(b[24]) << 8) | (UInt32(b[25]) << 16) | (UInt32(b[26]) << 24)
                 whoop5HistorySyncRequested = true
-                whoopSessionPhase = "GET_HELLO response parsed · requesting realtime HR and historical sync"
-                sendRealtimeHrEnable(to: peripheral)
-                return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR and history setup requested"
+                whoopSessionPhase = "GET_HELLO response parsed · resetting realtime HR stream before history sync"
+                // WHOOP 5.75.0's RealtimeStreamService logs an OFF→ON lifecycle.
+                // Mirror one bounded reset after HELLO so a stale band-side stream
+                // cannot leave PulseForge attached to an old HR session.
+                if !runWhoopEventProbe() {
+                    sendRealtimeHrEnable(to: peripheral)
+                }
+                return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR OFF→ON reset and history setup requested"
             }
             if command == 10, let sequence = whoop5HistoryClockSequence,
                echoedHostSequence == Int(sequence) {
@@ -2609,9 +2614,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         peripheral.writeValue(frame, for: command, type: .withResponse)
     }
 
-    /// User-triggered, bounded OFF→ON test to elicit both Gen5 realtime-HR events.
-    /// It briefly pauses live HR, then automatically restores the stream.
-    func runWhoopEventProbe() {
+    /// Bounded OFF→ON reset to elicit both Gen5 realtime-HR events.
+    /// Mirrors WHOOP's RealtimeStreamService lifecycle and restores HR automatically.
+    @discardableResult
+    func runWhoopEventProbe() -> Bool {
         guard let peripheral = connectedPeripheral,
               peripheral.state == .connected,
               let command = whoop5CommandCharacteristic,
@@ -2620,8 +2626,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
               !whoopEventProbeActive,
               !whoop5PendingWrites.contains("REALTIME_HR_ON"),
               !whoop5PendingWrites.contains("REALTIME_HR_OFF_PROBE") else {
-            whoopEventProbeStatus = "Probe unavailable · connect WHOOP 5.0 and wait until handshake is ready"
-            return
+            whoopEventProbeStatus = "OFF→ON reset unavailable · connect WHOOP 5.0 and wait until handshake is ready"
+            return false
         }
         whoopEventProbeActive = true
         whoopEventProbeOffSequence = whoop5NextCommandSequence
@@ -2640,6 +2646,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         peripheral.writeValue(frame, for: command, type: .withResponse)
         // Independent failsafe: restore HR even if the write/response callback is delayed or absent.
         scheduleWhoopEventProbeRearm(after: 2.0)
+        return true
     }
 
     private func scheduleWhoopEventProbeRearm(after delay: TimeInterval) {
