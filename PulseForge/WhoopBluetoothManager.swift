@@ -963,13 +963,16 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP latest CRC-valid raw IMU frame hex (outer type 43 · inner 0x2B/R21): \(whoopIMULastRawFrameHex)",
             "WHOOP RR state: \(whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · source: \(whoopRRSource) · last RR update: \(whoopRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
-            "WHOOP standard 2A37 raw notifications: \(whoopStandardHeartRateRawFrameHistory.count) retained · latest: \(whoopStandardHeartRateRawFrameHistory.last ?? \"none\")",
+            "WHOOP standard 2A37 raw notifications: \(whoopStandardHeartRateRawFrameHistory.count) retained · latest: \(whoopStandardHeartRateRawFrameHistory.last ?? "none")",
             "WHOOP standard 2A37 RR: \(whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · last update: \(whoopStandardRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP historical sync: \(whoopHistorySyncStatus)",
             "WHOOP historical Type-47 v18 archive: \(historicalRRArchiveRecordCount) raw frames · latest HR: \(whoopHistoricalHeartRateBPM.map(String.init) ?? "none") bpm · physiological timestamp: \(whoopHistoricalTimestampLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none") · source: \(whoopHistoricalRRSource)",
             "WHOOP IMU recent CRC-valid raw frames (oldest first):",
         ]
         lines.append(contentsOf: whoopIMURawFrameHistory.isEmpty ? ["  none"] : whoopIMURawFrameHistory.map { "  \($0)" })
+        lines.append("")
+        lines.append("WHOOP standard 2A37 raw notifications (oldest first):")
+        lines.append(contentsOf: whoopStandardHeartRateRawFrameHistory.isEmpty ? ["  No 2A37 notifications captured"] : whoopStandardHeartRateRawFrameHistory.map { "  \\($0)" })
         lines.append("")
         lines.append("WHOOP realtime Type-40 raw frames (oldest first):")
         lines.append(contentsOf: whoopRealtimeRRRawFrameHistory.isEmpty ? ["  No Type-40 raw frames captured"] : whoopRealtimeRRRawFrameHistory.map { "  \($0)" })
