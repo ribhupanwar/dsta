@@ -69,7 +69,7 @@ jobs:
           "$OBJDUMP" --help > mach-o-evidence/llvm-objdump-help.txt
           grep -q -- '--start-address' mach-o-evidence/llvm-objdump-help.txt
           : > /tmp/whoop-disassembly.txt
-          for RANGE in "0x10036d000:0x100370000" "0x100802000:0x100804000" "0x10088e000:0x100892000" "0x105ce7000:0x105ce9000" "0x105cf6000:0x105cf7000" "0x100248000:0x10024a000" "0x100a4d000:0x100a4f000" "0x105d03c000:0x105d041000"; do
+          for RANGE in "0x10036d000:0x100370000" "0x100802000:0x100804000" "0x10088e000:0x100892000" "0x105ce7000:0x105ce9000" "0x105cf6000:0x105cf7000" "0x100248000:0x10024a000" "0x100a4d000:0x100a4f000" "0x105d03c00:0x105d04100"; do
             START="${RANGE%%:*}"
             STOP="${RANGE##*:}"
             echo "### RANGE ${START} ${STOP}" >> /tmp/whoop-disassembly.txt
