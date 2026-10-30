@@ -2355,13 +2355,22 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
             // Device-captured 32-byte frames correlate HR at byte[16]. Independent
             // WHOOP 5 protocol references map Type-40 RR ticks at byte[18+] in 1/1024 s.
-            guard let bpm = try? Whoop5RRDecoder.decodeRealtimeHeartRate(b) else {
-                whoopRealtimeCandidateByteAt16 = b.count > 16 ? Int(b[16]) : nil
+            // Match the proven Build-195 HR path: the outer frame has already
+            // passed length + CRC validation above. Read the correlated HR byte
+            // directly, without the newer decoder's extra 22-byte / 25-bpm gates.
+            guard b.count > 16 else {
+                whoopRealtimeCandidateByteAt16 = nil
                 whoopRealtimeCandidateRRWords.removeAll(keepingCapacity: true)
-                whoopRealtimeCandidateStatus = "Type-40 frame retained · HR candidate rejected by range/frame validation"
+                whoopRealtimeCandidateStatus = "Type-40 frame retained · too short for HR byte"
+                return "REALTIME_DATA · raw retained · HR field unavailable · CRC valid"
+            }
+            let bpm = Int(b[16])
+            guard (1...250).contains(bpm) else {
+                whoopRealtimeCandidateByteAt16 = bpm
+                whoopRealtimeCandidateRRWords.removeAll(keepingCapacity: true)
+                whoopRealtimeCandidateStatus = "Type-40 frame retained · HR byte outside Build-195 accepted range"
                 return "REALTIME_DATA · raw retained · HR candidate rejected · CRC valid"
             }
-
             whoopRealtimeCandidateByteAt16 = bpm
             // Firmware 50.42.1.0: retain Type-40 RR words as diagnostic candidates
             // until this firmware's live values are cross-validated against an independent
