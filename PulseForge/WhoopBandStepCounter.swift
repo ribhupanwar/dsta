@@ -1,10 +1,11 @@
 import Foundation
 
-/// Daily steps from the WHOOP 5.0 Gen5 v18 on-band cumulative counter.
-/// The wire field is a UInt16 motion counter; its interpretation as steps is
-/// supported by independent NOOP/OpenStrap implementations, but remains an
-/// on-device validation item. Counter deltas are wrap-aware and fail closed on
-/// implausible resets/jumps. No phone or Apple Health step source is used here.
+/// Experimental daily step estimate from the WHOOP 5.0 Gen5 v18 on-band
+/// cumulative motion counter. OpenStrap maps the same field in CRC-valid
+/// historical v18 captures; interpreting every counter increment as a step
+/// still needs ground-truth validation on this device/firmware. Counter deltas
+/// are wrap-aware and fail closed on implausible resets/jumps. No phone or
+/// Apple Health step source is used here.
 struct WhoopBandStepCounter {
     struct Sample: Codable, Equatable {
         let timestamp: Date
@@ -87,7 +88,7 @@ struct WhoopBandStepCounter {
         let start = calendar.startOfDay(for: date)
         let complete = coverage <= start.addingTimeInterval(60)
         if complete {
-            return "WHOOP 5.0 band · native counter · day boundary covered"
+            return "WHOOP 5.0 band · experimental motion counter · day boundary covered"
         }
         return "WHOOP 5.0 band · partial history since \(coverage.formatted(date: .omitted, time: .shortened))"
     }
