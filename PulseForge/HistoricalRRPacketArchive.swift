@@ -19,11 +19,15 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
     let physiologicalTimestamp: Date?
     /// Present when a CRC-valid v18 frame could not be decoded as RR.
     let decodeError: String?
+    /// Explicit migration guard: only records written by the verified v18 decoder
+    /// may retain HR, RR milliseconds and physiological timestamps on reload.
+    let physiologyLayoutVerified: Bool
 
     init(receivedAt: Date, recordType: Int, revision: Int,
          intervalsMilliseconds: [Int], rawRRWords: [Int]? = nil,
          rawFrameHex: String, heartRateBPM: Int?,
-         physiologicalTimestamp: Date?, decodeError: String?) {
+         physiologicalTimestamp: Date?, decodeError: String?,
+         physiologyLayoutVerified: Bool = false) {
         self.receivedAt = receivedAt
         self.recordType = recordType
         self.revision = revision
@@ -33,11 +37,13 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
         self.heartRateBPM = heartRateBPM
         self.physiologicalTimestamp = physiologicalTimestamp
         self.decodeError = decodeError
+        self.physiologyLayoutVerified = physiologyLayoutVerified
     }
 
     private enum CodingKeys: String, CodingKey {
         case receivedAt, recordType, revision, intervalsMilliseconds
         case rawRRWords, rawFrameHex, heartRateBPM, physiologicalTimestamp, decodeError
+        case physiologyLayoutVerified
     }
 
     init(from decoder: Decoder) throws {
@@ -49,13 +55,11 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
         let storedRawWords = try values.decodeIfPresent([Int].self, forKey: .rawRRWords)
         let storedHeartRate = try values.decodeIfPresent(Int.self, forKey: .heartRateBPM)
         let storedTimestamp = try values.decodeIfPresent(Date.self, forKey: .physiologicalTimestamp)
-        // All current v18 offsets are still NOOP-fixture candidates. Migrate the
-        // old ms-labelled words to rawRRWords and discard candidate HR/time fields.
-        if revision == 18 && storedTimestamp == nil {
-            // Legacy v18 archives may contain NOOP-derived candidate offsets that
-            // were previously labelled as milliseconds/HR/time. Keep those only
-            // as raw words until the hardware-verified decoder has populated a
-            // physiological timestamp on the record.
+        let verifiedLayout = try values.decodeIfPresent(Bool.self, forKey: .physiologyLayoutVerified) ?? false
+        // Legacy v18 archives may contain candidate offsets previously labelled
+        // as milliseconds/HR/time. A non-nil timestamp alone is not proof; require
+        // the explicit verification marker written by the hardware-verified decoder.
+        if revision == 18 && !verifiedLayout {
             intervalsMilliseconds = []
             rawRRWords = storedRawWords ?? (storedMilliseconds.isEmpty ? nil : storedMilliseconds)
             heartRateBPM = nil
@@ -68,6 +72,7 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
             heartRateBPM = storedHeartRate
             physiologicalTimestamp = storedTimestamp
         }
+        physiologyLayoutVerified = verifiedLayout
         rawFrameHex = try values.decode(String.self, forKey: .rawFrameHex)
         decodeError = try values.decodeIfPresent(String.self, forKey: .decodeError)
     }
