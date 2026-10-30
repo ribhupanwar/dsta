@@ -223,7 +223,7 @@ jobs:
               table_text = [f"Could not decode R24 jump table JSON: {exc}", Path("/tmp/r24-jump-table.json").read_text(errors="replace")]
           Path("mach-o-evidence/r24-enum-jump-table.txt").write_text("\n".join(table_text) + "\n")
 
-          # IMUPacket parser switch: its packet-kind byte is read from [x20,#0x29].
+          # IMUPacketParsingError enum switch: the error enum discriminator is read from [x20,#0x29]. This is NOT the wire packet's type byte.
           try:
               imu_raw = json.loads(Path("/tmp/imu-packet-jump-table.json").read_text())
               if isinstance(imu_raw, dict):
@@ -232,8 +232,8 @@ jobs:
                   imu_table = imu_raw
               imu_table = [int(value) for value in imu_table if isinstance(value, (int, float))]
               imu_text = [
-                  "# WHOOP IMUPacket parser jump table at 0x108add8f0",
-                  "Parser reads discriminator byte from [packet,#0x29], then loads a 16-bit relative branch entry.",
+                  "# WHOOP IMUPacketParsingError enum jump table at 0x108add8f0",
+                  "Error enum discriminator is read from [error,#0x29] and indexes 16-bit relative branch entries; this is not the R24 wire-payload schema.",
                   f"Bytes recovered: {len(imu_table)}",
                   "Table hex: " + " ".join(f"{value:02x}" for value in imu_table),
               ]
