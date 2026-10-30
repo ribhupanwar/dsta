@@ -66,7 +66,7 @@ enum SleepNeedCalculator {
 
 /// Learns a personal sleep baseline from real, dated sleep sessions.
 /// Requires at least 14 distinct wake-days in the trailing 28 days; debt is
-/// reported only with at least 5 of the most recent 7 nights present.
+/// reported only with at least 5 of the most recent 7 distinct nights.
 enum SleepNeedHistoryCalculator {
     struct Result: Equatable {
         let baselineHours: Double?
@@ -76,16 +76,42 @@ enum SleepNeedHistoryCalculator {
         let debtNightCount: Int
     }
 
+    /// HealthKit may return more than one session for a wake day (for example,
+    /// a main sleep plus a nap or duplicate source). Match SleepNightCalculator:
+    /// count only the longest valid session for each local calendar wake-day.
+    private static func oneMainSessionPerWakeDay(
+        _ nights: [SleepNightCalculator.Night],
+        calendar: Calendar
+    ) -> [SleepNightCalculator.Night] {
+        let valid = nights.filter {
+            $0.durationMinutes.isFinite && $0.durationMinutes > 0 &&
+            $0.wakeDate.timeIntervalSince1970.isFinite
+        }
+        return Dictionary(grouping: valid, by: { calendar.startOfDay(for: $0.wakeDate) })
+            .compactMap { entry in
+                entry.value.max { lhs, rhs in
+                    if lhs.durationMinutes == rhs.durationMinutes {
+                        return lhs.endDate < rhs.endDate
+                    }
+                    return lhs.durationMinutes < rhs.durationMinutes
+                }
+            }
+            .sorted { $0.wakeDate > $1.wakeDate }
+    }
+
     static func calculate(nights: [SleepNightCalculator.Night],
                           now: Date,
                           calendar: Calendar = .current) -> Result {
         let today = calendar.startOfDay(for: now)
         let baselineStart = calendar.date(byAdding: .day, value: -28, to: today)
             ?? today.addingTimeInterval(-28 * 86_400)
-        let baselineNights = nights.filter {
-            $0.wakeDate >= baselineStart && $0.wakeDate <= today &&
-            $0.durationMinutes.isFinite && $0.durationMinutes > 0
-        }.sorted { $0.wakeDate > $1.wakeDate }
+        let debtStart = calendar.date(byAdding: .day, value: -8, to: today)
+            ?? today.addingTimeInterval(-8 * 86_400)
+
+        let uniqueNights = oneMainSessionPerWakeDay(nights, calendar: calendar)
+        let baselineNights = uniqueNights.filter {
+            $0.wakeDate >= baselineStart && $0.wakeDate <= today
+        }
 
         let baseline: Double?
         if baselineNights.count >= 14 {
@@ -98,12 +124,9 @@ enum SleepNeedHistoryCalculator {
             baseline = nil
         }
 
-        let debtStart = calendar.date(byAdding: .day, value: -8, to: today)
-            ?? today.addingTimeInterval(-8 * 86_400)
-        let recentNights = nights.filter {
-            $0.wakeDate >= debtStart && $0.wakeDate <= today &&
-            $0.durationMinutes.isFinite && $0.durationMinutes > 0
-        }.sorted { $0.wakeDate > $1.wakeDate }.prefix(7)
+        let recentNights = uniqueNights.filter {
+            $0.wakeDate >= debtStart && $0.wakeDate <= today
+        }.prefix(7)
 
         let debt: Double?
         if let baseline, recentNights.count >= 5 {
