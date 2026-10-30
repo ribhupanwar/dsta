@@ -1,12 +1,11 @@
 import Foundation
 
-/// Candidate WHOOP 5.0 RR interval decoder; field offsets are not yet IPA-verified.
+/// WHOOP 5.0 RR interval decoder. Type-40 layout is cross-checked against
+/// independent Gen5 protocol references and retained CRC-valid device captures.
 ///
-/// Current offsets/units come from NOOP's captured type-40 and v18 type-47 fixtures.
-/// Static inspection of WHOOP 5.75.0 confirms related packet abstractions and RR
-/// symbols, but does not expose enough field-level layout to independently verify
-/// these offsets. Keep this provenance explicit until matched to WHOOP device captures.
-/// The caller must validate the outer WHOOP frame CRC before calling.
+/// Type-40: HR @16, count @17, RR UInt16 ticks @18+, unit 1/1024 second.
+/// The caller must validate the outer WHOOP frame CRC before calling. Historical
+/// v18 remains a separate candidate path and is not promoted by this decoder.
 enum Whoop5RRDecoder {
     enum DecodeError: Error, Equatable {
         case invalidFrame
@@ -17,9 +16,7 @@ enum Whoop5RRDecoder {
         case truncatedIntervals(expectedBytes: Int, availableBytes: Int)
     }
 
-    /// Type-40 extraction using the NOOP Gen5 REALTIME_DATA layout:
-    /// count @17 and little-endian UInt16 RR milliseconds @18+.
-    /// The frame must already have passed the outer WHOOP CRC validation.
+    /// Type-40 raw RR words (ticks @18+, 1/1024 second). CRC must be validated first.
     static func decodeRealtimeCandidateRRWords(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 22, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
@@ -28,6 +25,24 @@ enum Whoop5RRDecoder {
             throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
         }
         return try decodeRawWords(frame, countOffset: 17, wordsOffset: 18)
+    }
+
+    /// Decode WHOOP 5.0 Type-40 RR ticks into integer milliseconds.
+    /// Zero is padding; incomplete words and out-of-range intervals are rejected.
+    /// Formula rounds to nearest ms: (ticks * 1000 + 512) / 1024.
+    static func decodeRealtimeRRIntervalsMilliseconds(_ frame: [UInt8]) throws -> [Int] {
+        let ticks = try decodeRealtimeCandidateRRWords(frame)
+        var intervals: [Int] = []
+        intervals.reserveCapacity(ticks.count)
+        for value in ticks {
+            if value == 0 { continue }
+            let milliseconds = (value * 1000 + 512) / 1024
+            guard (250...3000).contains(milliseconds) else {
+                throw DecodeError.invalidIntervalValue(milliseconds)
+            }
+            intervals.append(milliseconds)
+        }
+        return intervals
     }
 
     /// Device-correlated WHOOP 5.0 REALTIME_DATA HR byte at absolute offset 16.
