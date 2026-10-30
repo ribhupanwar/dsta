@@ -51,12 +51,18 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
         let storedTimestamp = try values.decodeIfPresent(Date.self, forKey: .physiologicalTimestamp)
         // All current v18 offsets are still NOOP-fixture candidates. Migrate the
         // old ms-labelled words to rawRRWords and discard candidate HR/time fields.
-        if revision == 18 {
+        if revision == 18 && storedTimestamp == nil {
+            // Legacy v18 archives may contain NOOP-derived candidate offsets that
+            // were previously labelled as milliseconds/HR/time. Keep those only
+            // as raw words until the hardware-verified decoder has populated a
+            // physiological timestamp on the record.
             intervalsMilliseconds = []
             rawRRWords = storedRawWords ?? (storedMilliseconds.isEmpty ? nil : storedMilliseconds)
             heartRateBPM = nil
             physiologicalTimestamp = nil
         } else {
+            // A v18 record with its verified embedded timestamp was decoded using
+            // the hardware-verified layout: RR words are direct milliseconds.
             intervalsMilliseconds = storedMilliseconds
             rawRRWords = storedRawWords
             heartRateBPM = storedHeartRate
