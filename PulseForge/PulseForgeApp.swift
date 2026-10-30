@@ -443,8 +443,7 @@ struct WhoopRRCard: View {
         return Double(intervals.reduce(0, +)) / Double(intervals.count)
     }
     private var isRRFresh: Bool {
-        guard let updatedAt = bluetooth.whoopRRLastUpdatedAt else { return false }
-        return Date().timeIntervalSince(updatedAt) <= 30
+        WhoopRealtimeFreshness.isFresh(lastPacketAt: bluetooth.whoopRRLastUpdatedAt, now: Date())
     }
     private var shortWindowRMSSD: Double? {
         // Keep the last calculated window visible when packets pause, but label
@@ -454,7 +453,10 @@ struct WhoopRRCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // Tick independently of BLE traffic so LIVE becomes STALE even when
+        // both RR and HR notifications go quiet.
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Label("WHOOP TYPE-40 RR", systemImage: "waveform.path")
                     .font(.system(size: 9, weight: .bold)).tracking(0.9)
@@ -504,6 +506,7 @@ struct WhoopRRCard: View {
         .padding(16)
         .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
+            }
     }
 }
 
