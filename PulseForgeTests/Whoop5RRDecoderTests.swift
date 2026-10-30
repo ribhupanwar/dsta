@@ -23,7 +23,7 @@ final class Whoop5RRDecoderTests: XCTestCase {
         // Exact 32-byte CRC-valid frame from the user's WHOOP 5.0 capture.
         let frame = bytes("AA011800010022E12802ECFFE36A8F4257016F04000000000000010023BAA03D")
         XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeHeartRate(frame), 87)
-        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtime(frame), [1108])
+        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame), [1135])
     }
 
     func testRealtimeHRRejectsWrongCandidateByteRange() {
