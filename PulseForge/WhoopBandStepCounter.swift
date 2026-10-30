@@ -81,7 +81,7 @@ struct WhoopBandStepCounter {
 
     func sourceStatus(for date: Date = Date(), calendar: Calendar = .current) -> String {
         let key = Self.dayKey(date, calendar: calendar)
-        guard let count = dailyTotals[key], let coverage = coverageStarts[key] else {
+        guard dailyTotals[key] != nil, let coverage = coverageStarts[key] else {
             return "WHOOP 5.0 band · waiting for step history"
         }
         let start = calendar.startOfDay(for: date)
