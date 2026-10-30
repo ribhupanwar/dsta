@@ -80,6 +80,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopRRIntervalsMilliseconds: [Int] = []
     @Published private(set) var whoopStandardRRIntervalsMilliseconds: [Int] = []
     @Published private(set) var whoopStandardRRLastUpdatedAt: Date?
+    /// Recent raw 2A37 Heart Rate Measurement notifications, captured before parsing.
+    @Published private(set) var whoopStandardHeartRateRawFrameHistory: [String] = []
     /// Recent CRC-valid Type-40 frames, retained verbatim for independent layout verification.
     @Published private(set) var whoopRealtimeRRRawFrameHistory: [String] = []
     /// Rolling realtime RR window for live diagnostics; never used as overnight HRV.
@@ -961,6 +963,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU last frame: \(whoopIMULastFrameAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP latest CRC-valid raw IMU frame hex (outer type 43 · inner 0x2B/R21): \(whoopIMULastRawFrameHex)",
             "WHOOP RR state: \(whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · source: \(whoopRRSource) · last RR update: \(whoopRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
+            "WHOOP standard 2A37 raw notifications: \(whoopStandardHeartRateRawFrameHistory.count) retained · latest: \(whoopStandardHeartRateRawFrameHistory.last ?? \"none\")",
             "WHOOP standard 2A37 RR: \(whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",").isEmpty ? "none" : whoopStandardRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms · last update: \(whoopStandardRRLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none")",
             "WHOOP historical sync: \(whoopHistorySyncStatus)",
             "WHOOP historical Type-47 v18 archive: \(historicalRRArchiveRecordCount) raw frames · latest HR: \(whoopHistoricalHeartRateBPM.map(String.init) ?? "none") bpm · physiological timestamp: \(whoopHistoricalTimestampLastUpdatedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "none") · source: \(whoopHistoricalRRSource)",
@@ -1655,10 +1658,24 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             lastBLEEvent = "BLE value received · \(characteristic.uuid.uuidString) · \(byteCount) bytes · unclassified payload · \(timestamp)"
             return
         }
-        guard let data = characteristic.value,
-              let bpm = parseStandardHeartRateMeasurement(data),
+        guard let data = characteristic.value else {
+            lastBLEEvent = "Standard HR notification received · payload missing"
+            return
+        }
+        // Preserve exact 2A37 bytes before interpreting flags, offsets or RR values.
+        let rawTimestamp = ISO8601DateFormatter().string(from: Date())
+        let rawHex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
+        whoopStandardHeartRateRawFrameHistory.append(
+            "\(rawTimestamp) · 2A37 · \(data.count) bytes · HEX: \(rawHex)"
+        )
+        if whoopStandardHeartRateRawFrameHistory.count > 100 {
+            whoopStandardHeartRateRawFrameHistory.removeFirst(
+                whoopStandardHeartRateRawFrameHistory.count - 100
+            )
+        }
+        guard let bpm = parseStandardHeartRateMeasurement(data),
               (1...300).contains(bpm) else {
-            lastBLEEvent = "Standard HR notification received · payload could not be parsed"
+            lastBLEEvent = "Standard HR notification received · raw bytes retained · payload could not be parsed"
             return
         }
         // Capture standard BLE RR independently even while WHOOP Type-40 HR is
