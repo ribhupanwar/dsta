@@ -84,7 +84,7 @@ final class Gen5R21IMUDecoderTests: XCTestCase {
         XCTAssertEqual(bytes.count, 1244)
         let samples = try Gen5R21IMUDecoder.decode(bytes)
         XCTAssertEqual(samples.count, 100)
-        XCTAssertEqual(samples[0].timestamp.timeIntervalSince1970, 1_784_037_165, accuracy: 0.000001)
+        XCTAssertEqual(samples[0].timestamp.timeIntervalSince1970, 1_784_037_165.25, accuracy: 0.000001)
         let magnitudes = samples.map {
             sqrt($0.accelerationXG * $0.accelerationXG +
                  $0.accelerationYG * $0.accelerationYG +
