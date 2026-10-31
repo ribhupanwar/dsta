@@ -79,6 +79,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopHistoricalRRIntervalsMilliseconds: [Int] = []
     @Published private(set) var whoopHistoricalRRLastUpdatedAt: Date?
     @Published private(set) var whoopHistoricalRRSource = "No historical WHOOP RR intervals decoded yet"
+    /// Latest decoded Type-47 v18 step-counter fields; raw ticks are not official daily steps.
+    @Published private(set) var whoopStepCounterDiagnostics = "No Type-47 v18 step-counter frame decoded yet"
+    @Published private(set) var whoopStepCounterFrameCount = 0
     @Published private(set) var whoopRRLastUpdatedAt: Date?
     @Published private(set) var whoopRRSource = "No WHOOP RR intervals decoded yet"
     @Published private(set) var whoopCommandResponseCount = 0
@@ -1743,6 +1746,15 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             // Receipt time is forensic metadata only; physiological time remains nil.
             if b.count > 9, b[9] == 18 {
                 let receivedAt = Date()
+                do {
+                    let stepSample = try Whoop5StepFrameDecoder.decodeHistoricalV18(b, timestamp: receivedAt)
+                    whoopStepCounterFrameCount += 1
+                    let hardwareText = stepSample.hardwareCounter.map(String.init) ?? "not-present"
+                    let classText = stepSample.activityClass.map(String.init) ?? "unknown"
+                    whoopStepCounterDiagnostics = "Type-47 v18 · frames \\(whoopStepCounterFrameCount) · selected@57 \\(stepSample.selectedCounter) · source \\(stepSample.source.rawValue) · hardware@61 \\(hardwareText) · cadence@59 \\(stepSample.cadenceRaw) · activity@63 \\(classText) · override@64 \\(stepSample.softwareOverrideActive ? "on" : "off") · receipt time only; not a daily step total"
+                } catch {
+                    whoopStepCounterDiagnostics = "Type-47 v18 step fields unavailable · \\(error)"
+                }
                 let rawHex = b.map { String(format: "%02X", $0) }.joined()
                 var rr: [Int] = []
                 var decodeError: String?
