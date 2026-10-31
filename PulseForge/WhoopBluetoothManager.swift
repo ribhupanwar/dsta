@@ -89,6 +89,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopStepCounterActivity = "unknown"
     private var previousWhoopStepCounterSample: Whoop5StepSample?
     private var whoopStepCounterWindowSamples: [Whoop5StepSample] = []
+    /// Bounded step-debug history for user-exportable walking experiments.
+    private var whoopStepCounterExportSamples: [Whoop5StepSample] = []
+    private var whoopStepCounterRawFrameExport: [(timestamp: Date, hex: String)] = []
 
     @Published private(set) var whoopRRLastUpdatedAt: Date?
     @Published private(set) var whoopRRSource = "No WHOOP RR intervals decoded yet"
@@ -776,6 +779,71 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             let payload = vendorNotificationPayloads[uuid] ?? "no payload received"
             return "\(uuid): \(state) · \(payload)"
         }
+    }
+
+    /// CSV/text export for the step-counter A/B experiment. Raw Type-47 frames are
+    /// retained only after the existing CRC-valid packet assembler has accepted them.
+    var stepCounterExportSnapshot: String {
+        let formatter = ISO8601DateFormatter()
+        let imuCutoff = Date().addingTimeInterval(-300)
+        let imu = liveWhoopIMUSamples.filter { $0.timestamp >= imuCutoff }
+        var lines = [
+            "PulseForge step experiment export",
+            "Captured,\(formatter.string(from: Date()))",
+            "Device,\(connectedName ?? "Not connected")",
+            "WHOOP Type-47 decoded frames,\(whoopStepCounterFrameCount)",
+            "WHOOP selected cumulative @57,\(whoopStepCounterLatestValue.map(String.init) ?? "none")",
+            "WHOOP latest packet delta,\(whoopStepCounterPacketDelta.map(String.init) ?? "none")",
+            "WHOOP accepted raw ticks in rolling 20s,\(whoopStepCounterWindowTicks20s)",
+            "WHOOP activity class,\(whoopStepCounterActivity)",
+            "WHOOP decoder status,\(whoopStepCounterDiagnostics)",
+            "",
+            "TYPE47_V18_DECODED",
+            "received_at,selected_counter_at57,cadence_raw_at59,hardware_counter_at61,activity_class_at63,software_override_active,source"
+        ]
+        lines += whoopStepCounterExportSamples.map { sample in
+            [
+                formatter.string(from: sample.timestamp),
+                String(sample.selectedCounter),
+                String(sample.cadenceRaw),
+                sample.hardwareCounter.map(String.init) ?? "",
+                sample.activityClass.map(String.init) ?? "",
+                sample.softwareOverrideActive ? "true" : "false",
+                sample.source.rawValue
+            ].joined(separator: ",")
+        }
+        lines += ["", "TYPE47_V18_RAW_FRAME_HEX", "received_at,raw_frame_hex"]
+        lines += whoopStepCounterRawFrameExport.map {
+            "\(formatter.string(from: $0.timestamp)),\($0.hex)"
+        }
+        lines += [
+            "",
+            "GEN5_R21_IMU_LAST_5_MINUTES",
+            "received_at,accel_x_g,accel_y_g,accel_z_g,gyro_x_dps,gyro_y_dps,gyro_z_dps",
+            "IMU sample count,\(imu.count)",
+            "IMU frames this connection,\(whoopIMUFrameCount)",
+            "IMU status,\(whoopIMUStatus)"
+        ]
+        lines += imu.map { sample in
+            [
+                formatter.string(from: sample.timestamp),
+                String(sample.accelerationXG),
+                String(sample.accelerationYG),
+                String(sample.accelerationZG),
+                String(sample.rotationXDPS),
+                String(sample.rotationYDPS),
+                String(sample.rotationZDPS)
+            ].joined(separator: ",")
+        }
+        lines += [
+            "",
+            "NOTES",
+            "Type-47 @57 values are decoded cumulative motion-counter values, not verified official WHOOP daily steps.",
+            "Timestamps are packet receipt times, not confirmed physiological timestamps.",
+            "IMU values are decoded Gen5 R21 samples; B/C/D peak and cadence estimates are experimental and uncalibrated.",
+            "A blank Type-47 section means no Type-47 v18 frame was received in the retained session history."
+        ]
+        return lines.joined(separator: "\n")
     }
 
     var diagnosticSnapshot: String {
@@ -1765,6 +1833,15 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         $0 == 0 ? "still" : ($0 == 1 ? "walk" : "run")
                     } ?? "unknown"
                     previousWhoopStepCounterSample = stepSample
+                    whoopStepCounterExportSamples.append(stepSample)
+                    if whoopStepCounterExportSamples.count > 5000 {
+                        whoopStepCounterExportSamples.removeFirst(whoopStepCounterExportSamples.count - 5000)
+                    }
+                    let rawStepHex = b.map { String(format: "%02X", $0) }.joined()
+                    whoopStepCounterRawFrameExport.append((receivedAt, rawStepHex))
+                    if whoopStepCounterRawFrameExport.count > 5000 {
+                        whoopStepCounterRawFrameExport.removeFirst(whoopStepCounterRawFrameExport.count - 5000)
+                    }
                     whoopStepCounterWindowSamples.append(stepSample)
                     let stepWindowCutoff = receivedAt.addingTimeInterval(-20)
                     whoopStepCounterWindowSamples.removeAll { $0.timestamp < stepWindowCutoff }
