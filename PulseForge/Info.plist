@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>PulseForge uses Bluetooth to connect to your WHOOP-compatible wearable and receive live heart-rate and motion data.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>PulseForge uses GPS during an outdoor run to measure distance, pace and kilometre splits.</string>
     <key>UIBackgroundModes</key>
