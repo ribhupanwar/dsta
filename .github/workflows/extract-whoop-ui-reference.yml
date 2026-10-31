@@ -182,3 +182,5 @@ jobs:
           name: whoop-ui-reference-decoded
           path: reference-report/
           retention-days: 14
+
+# Trigger a fresh in-app WHOOP resource/UI extraction after the full IPA audit.
