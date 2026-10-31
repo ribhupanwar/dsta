@@ -6,7 +6,7 @@ import Foundation
 enum WhoopIMUGyroStepCounter {
     static func estimate(
         samples: [WhoopIMUSample],
-        thresholdDPS: Double = 18.0,
+        thresholdDPS: Double = 6.0,
         minimumInterval: TimeInterval = 0.30,
         smoothingRadius: Int = 12
     ) -> Int {
