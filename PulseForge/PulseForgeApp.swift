@@ -1297,6 +1297,90 @@ struct WhoopBatteryInline: View {
     }
 }
 
+
+struct StepComparisonCard: View {
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+
+    private var recentIMUSamples: [WhoopIMUSample] {
+        let cutoff = Date().addingTimeInterval(-20)
+        return bluetooth.liveWhoopIMUSamples.filter { $0.timestamp >= cutoff }
+    }
+
+    private var imuPeakEstimate: Int {
+        WhoopIMUStepPeakCounter.estimate(samples: recentIMUSamples)
+    }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label("STEP COUNTER A/B TEST", systemImage: "figure.walk")
+                        .font(.system(size: 9, weight: .bold)).tracking(0.9)
+                        .foregroundStyle(ForgeColors.muted)
+                    Spacer()
+                    Text("LIVE EXPERIMENT")
+                        .font(.system(size: 8, weight: .bold)).foregroundStyle(ForgeColors.lime)
+                }
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("A · WHOOP COUNTER")
+                            .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                            .foregroundStyle(ForgeColors.muted)
+                        Text(bluetooth.whoopStepCounterLatestValue.map(String.init) ?? "—")
+                            .font(.system(size: 30, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                        Text("raw @57 ticks")
+                            .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                        Text("Packet Δ: " + (bluetooth.whoopStepCounterPacketDelta.map(String.init) ?? "—"))
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(ForgeColors.lime)
+                        Text("Activity: " + bluetooth.whoopStepCounterActivity.uppercased())
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundStyle(ForgeColors.muted)
+                        Text("\(bluetooth.whoopStepCounterFrameCount) frames")
+                            .font(.system(size: 8, design: .monospaced))
+                            .foregroundStyle(ForgeColors.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 13))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("B · IMU PEAKS")
+                            .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                            .foregroundStyle(ForgeColors.muted)
+                        Text(recentIMUSamples.isEmpty ? "—" : String(imuPeakEstimate))
+                            .font(.system(size: 30, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                        Text("estimated peaks")
+                            .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                        Text("\(recentIMUSamples.count) samples / 20s")
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(ForgeColors.lime)
+                        Text(bluetooth.whoopIMULastFrameAt.map {
+                            context.date.timeIntervalSince($0) < 10 ? "IMU: LIVE" : "IMU: STALE"
+                        } ?? "IMU: WAITING")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundStyle(ForgeColors.muted)
+                        Text("100 Hz · peak threshold 0.10g")
+                            .font(.system(size: 8))
+                            .foregroundStyle(ForgeColors.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 13))
+                }
+                Text("A shows the raw cumulative counter and packet-to-packet change, not confirmed steps. B counts experimental acceleration peaks in the rolling 20-second IMU window. Compare while walking; neither is official WHOOP daily steps yet.")
+                    .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+            }
+            .padding(14)
+            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
+        }
+    }
+}
+
 struct DeviceDashboard: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
@@ -1349,6 +1433,7 @@ struct DeviceDashboard: View {
                     LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE · LAST 60 SECONDS")
                     WhoopRRCard()
                     WhoopMotionCard()
+                    StepComparisonCard()
                     if bluetooth.connectedName != nil {
                         Button { bluetooth.disconnect() } label: {
                             Label("DISCONNECT BAND", systemImage: "xmark.circle")
