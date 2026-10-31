@@ -1310,6 +1310,10 @@ struct StepComparisonCard: View {
         WhoopIMUStepPeakCounter.estimate(samples: recentIMUSamples)
     }
 
+    private var gyroPeakEstimate: Int {
+        WhoopIMUGyroStepCounter.estimate(samples: recentIMUSamples)
+    }
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
@@ -1321,7 +1325,7 @@ struct StepComparisonCard: View {
                     Text("LIVE EXPERIMENT")
                         .font(.system(size: 8, weight: .bold)).foregroundStyle(ForgeColors.lime)
                 }
-                HStack(alignment: .top, spacing: 10) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("A · WHOOP COUNTER")
                             .font(.system(size: 9, weight: .bold)).tracking(0.5)
@@ -1370,8 +1374,33 @@ struct StepComparisonCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
                     .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 13))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("C · GYRO SWING")
+                            .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                            .foregroundStyle(ForgeColors.muted)
+                        Text(recentIMUSamples.isEmpty ? "—" : String(gyroPeakEstimate))
+                            .font(.system(size: 30, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                        Text("rotation peaks")
+                            .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                        Text("\(recentIMUSamples.count) samples / 20s")
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(ForgeColors.lime)
+                        Text(bluetooth.whoopIMULastFrameAt.map {
+                            context.date.timeIntervalSince($0) < 10 ? "IMU: LIVE" : "IMU: STALE"
+                        } ?? "IMU: WAITING")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundStyle(ForgeColors.muted)
+                        Text("100 Hz · gyro threshold 18°/s")
+                            .font(.system(size: 8))
+                            .foregroundStyle(ForgeColors.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 13))
                 }
-                Text("A shows the raw cumulative counter and packet-to-packet change, not confirmed steps. B counts experimental acceleration peaks in the rolling 20-second IMU window. Compare while walking; neither is official WHOOP daily steps yet.")
+                Text("A is raw Type-47 @57 counter ticks, not confirmed steps. B counts acceleration-magnitude peaks; C counts gyroscope-magnitude swing peaks over the same rolling 20-second IMU window. B and C are experimental signals; their peak-to-step mapping is uncalibrated. Compare all three against your manual count.")
                     .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
             }
             .padding(14)
