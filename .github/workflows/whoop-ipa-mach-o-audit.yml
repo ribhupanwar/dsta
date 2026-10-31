@@ -94,8 +94,27 @@ jobs:
               out.append(lines[i])
               previous = i
           Path("mach-o-evidence/protocol-disassembly-context.txt").write_text("\n".join(out) + "\n")
-          print(f"Disassembly lines: {len(lines)}; matching context lines: {len(selected)}")
-          Path("mach-o-evidence/step-motion-disassembly-context.txt").write_text("\n".join(out) + "\n")
+          step_terms = re.compile(
+              r"step.?count|stepcounter|pedometer|CMPedometer|HKQuantityTypeIdentifier|"
+              r"processed.?steps|steps.?packet|HistoricalProcessedSteps|StepsPacket|R24|"
+              r"accelerometer|gyroscope|IMUStream|RealtimeIMU|IMUPacket|ActivityDetection|"
+              r"stride|cadence|motion|currentStepCount|lastStepCount|previousStepCount",
+              re.I,
+          )
+          step_hits = [i for i, line in enumerate(lines) if step_terms.search(line)]
+          step_keep = set()
+          for i in step_hits:
+              step_keep.update(range(max(0, i-28), min(len(lines), i+70)))
+          step_selected = sorted(step_keep)
+          step_out = []
+          previous = -2
+          for i in step_selected:
+              if i != previous + 1:
+                  step_out.append("\\n--- step/motion disassembly context ---")
+              step_out.append(lines[i])
+              previous = i
+          Path("mach-o-evidence/step-motion-disassembly-context.txt").write_text("\\n".join(step_out) + "\\n")
+          print(f"Disassembly lines: {len(lines)}; protocol context: {len(selected)}; step/motion context: {len(step_selected)}")
           PY
           echo "Targeted Swift symbols and disassembly context are static evidence only; they do not prove runtime BLE behaviour." >> mach-o-evidence/README.txt
           echo "No protocol payloads were modified or sent." >> mach-o-evidence/README.txt
@@ -283,6 +302,7 @@ jobs:
           from pathlib import Path
           lines = Path("/tmp/whoop-disassembly.txt").read_text(errors="replace").splitlines()
           targets = {
+              "historical-r24-dispatch-0x105ce7fb8.txt": "105ce7fb8",
               "step-sample-model-callee-0x10036e4a4.txt": "10036e4a4",
               "step-sample-field-parser-0x10030b8c0.txt": "10030b8c0",
               "step-sample-next-parser-0x10036e5a4.txt": "10036e5a4",
