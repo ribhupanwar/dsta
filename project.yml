@@ -15,12 +15,20 @@ targets:
     platform: iOS
     sources:
       - path: PulseForge
+        excludes:
+          - Fonts/**
+    resources:
+      - path: PulseForge/Fonts/ReadexPro.ttf
+      - path: PulseForge/Fonts/BarlowCondensed-Bold.ttf
+      - path: PulseForge/Fonts/ReadexPro-OFL.txt
+      - path: PulseForge/Fonts/BarlowCondensed-OFL.txt
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ribhupanwar.pulseforge
         PRODUCT_NAME: PulseForge
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "114"
+        CURRENT_PROJECT_VERSION: "115"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_CFBundleDisplayName: PulseForge
@@ -35,6 +43,9 @@ targets:
         UIBackgroundModes:
           - bluetooth-central
           - location
+        UIAppFonts:
+          - ReadexPro.ttf
+          - BarlowCondensed-Bold.ttf
     entitlements:
       path: PulseForge/PulseForge.entitlements
       properties:

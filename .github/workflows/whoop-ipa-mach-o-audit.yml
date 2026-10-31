@@ -3,7 +3,7 @@ name: WHOOP IPA Mach-O protocol symbol audit
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feature/export-whoop-rr-raw-archive]
     paths:
       - ".github/workflows/whoop-ipa-mach-o-audit.yml"
 
@@ -50,10 +50,20 @@ jobs:
           nm -arch arm64 -nm /tmp/whoop-arm64 > mach-o-evidence/nm-arm64.txt 2>&1 || true
           xcrun swift-demangle < <(awk '{print $NF}' mach-o-evidence/nm-arm64.txt | grep '^_' | sort -u) \
             > mach-o-evidence/swift-demangled-symbols.txt 2>&1 || true
+          if REFLECTION_TOOL="$(xcrun --find swift-reflection-dump 2>/dev/null)"; then
+            "$REFLECTION_TOOL" --binary-filename /tmp/whoop-arm64 --arch arm64 \
+              > mach-o-evidence/swift-reflection.txt 2>mach-o-evidence/swift-reflection-errors.txt || true
+          else
+            echo "swift-reflection-dump unavailable in this Xcode image" > mach-o-evidence/swift-reflection.txt
+          fi
           grep -Ei 'Hello(Packet|Response|Sending|Info)|sendGetHelloPacket|RealtimeHRPacket|RealtimeSequenceable|HistoricalSequenceable|FrameEnvelopePacket|RevisionRouter|RealtimeHeartRateData|HistoricalPull|WhoopPacket.*CRC|rrIntervals|RealtimeDataType' \
             mach-o-evidence/swift-demangled-symbols.txt > mach-o-evidence/protocol-symbols.txt || true
+          grep -Ei 'step.?count|stepcounter|pedometer|CMPedometer|CMAltimeter|HKQuantityTypeIdentifier|walking|stride|cadence|processed.?steps|steps.?packet|historical.*steps|R24|accelerometer|gyroscope|IMUStream|RealtimeIMU|HistoricalIMU|IMUPacket|ActivityDetection|Motion' \
+            mach-o-evidence/swift-demangled-symbols.txt > mach-o-evidence/step-motion-symbols.txt || true
           strings -a /tmp/whoop-arm64 | grep -Ei 'HelloPacketRev[34]|sendGetHelloPacket|HelloResponsePacket|RealtimeHRPacket|HistoricalSequenceable|rrIntervals|FD4B|Characteristics Subscribed|HELLO RESPONSE' \
             > mach-o-evidence/protocol-strings.txt || true
+          strings -a /tmp/whoop-arm64 | grep -Ei 'step.?count|stepcounter|pedometer|CMPedometer|CMAltimeter|HKQuantityTypeIdentifierStepCount|walking|stride|cadence|accelerometer|gyroscope|IMUStream|RealtimeIMU|HistoricalIMU|IMUPacket|ActivityDetection|Motion|/.*step|ProcessedSteps|HistoricalProcessedSteps|StepsPacket|R24' \
+            | sort -u > mach-o-evidence/step-motion-strings.txt || true
           otool -arch arm64 -l /tmp/whoop-arm64 > mach-o-evidence/load-commands.txt
           otool -arch arm64 -tvV /tmp/whoop-arm64 > /tmp/whoop-disassembly.txt 2>mach-o-evidence/otool-errors.txt || true
           python3 - <<'PY'
@@ -61,7 +71,7 @@ jobs:
           import re
           source = Path("/tmp/whoop-disassembly.txt").read_text(errors="replace")
           lines = source.splitlines()
-          terms = re.compile(r"hello|realtimehr|historical|frameenvelope|revisionrouter|rrinterval|sendgethellopacket|crc", re.I)
+          terms = re.compile(r"hello|realtimehr|historical|frameenvelope|revisionrouter|rrinterval|sendgethellopacket|crc|step.?count|stepcounter|pedometer|CMPedometer|HKQuantityTypeIdentifier|processed.?steps|steps.?packet|HistoricalProcessedSteps|StepsPacket|R24|accelerometer|gyroscope|IMUStream|RealtimeIMU|IMUPacket|ActivityDetection|stride|cadence|motion", re.I)
           hits = [i for i, line in enumerate(lines) if terms.search(line)]
           keep = set()
           for i in hits:
@@ -76,9 +86,166 @@ jobs:
               previous = i
           Path("mach-o-evidence/protocol-disassembly-context.txt").write_text("\n".join(out) + "\n")
           print(f"Disassembly lines: {len(lines)}; matching context lines: {len(selected)}")
+          Path("mach-o-evidence/step-motion-disassembly-context.txt").write_text("\n".join(out) + "\n")
           PY
           echo "Targeted Swift symbols and disassembly context are static evidence only; they do not prove runtime BLE behaviour." >> mach-o-evidence/README.txt
           echo "No protocol payloads were modified or sent." >> mach-o-evidence/README.txt
+
+      - name: Resolve WHOOP R24 and step-count references from ARM64 disassembly
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install radare2
+          r2 -q -c 'izzj' /tmp/whoop-arm64 > /tmp/whoop-strings.json 2>mach-o-evidence/radare2-strings-errors.txt
+          r2 -q -c 'pxj 256 @ 0x108acfdee' /tmp/whoop-arm64 > /tmp/r24-jump-table.json 2>mach-o-evidence/r24-jump-table-errors.txt || echo '[]' > /tmp/r24-jump-table.json
+          r2 -q -c 'pxj 256 @ 0x108ebdb70' /tmp/whoop-arm64 > /tmp/historical-r24-jump-table.json 2>mach-o-evidence/historical-r24-jump-table-errors.txt || echo '[]' > /tmp/historical-r24-jump-table.json
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+
+          terms = re.compile(
+              r"Historical Processed Steps Packet \(R24\)|Processed Steps Data \(R24\)|"
+              r"R24q|currentStepCount|lastStepCount|previousStepCount|delayedStepCountProcessingWorkItem|"
+              r"HealthKitStepCountRequest|HealthKitStepCountSubmissionDTO|step_count_samples|"
+              r"deleted_step_count_samples|HKQuantityTypeIdentifierStepCount|IMUPacket|RealtimeIMUData",
+              re.I,
+          )
+          raw = Path("/tmp/whoop-strings.json").read_text(errors="replace").strip()
+          data = json.loads(raw)
+          entries = data if isinstance(data, list) else data.get("strings", [])
+          hits = []
+          for item in entries:
+              value = str(item.get("string", item.get("name", "")))
+              if not terms.search(value):
+                  continue
+              addr = item.get("vaddr", item.get("paddr", item.get("offset")))
+              if addr is None:
+                  continue
+              address = int(addr, 0) if isinstance(addr, str) else int(addr)
+              hits.append((address, value))
+
+          def priority(item):
+              value = item[1]
+              if "Historical Processed Steps Packet (R24)" in value: return 0
+              if "Processed Steps Data (R24)" in value: return 1
+              if value == "R24q": return 2
+              if "IMUPacket" in value: return 3
+              if "RealtimeIMUData" in value: return 4
+              if "HealthKitStepCount" in value: return 5
+              if value == "step_count_samples": return 6
+              if value == "deleted_step_count_samples": return 7
+              return 8
+
+          hits = sorted(set(hits), key=lambda item: (priority(item), item[0]))[:120]
+          locations = [
+              "# WHOOP step/R24 string locations (Mach-O virtual addresses)",
+              "Static analysis only; prioritized R24, IMU, and HealthKit step-count strings.",
+          ]
+          for address, value in hits:
+              locations.append(f"0x{address:x}  {value}")
+          Path("mach-o-evidence/step-count-string-locations.txt").write_text("\n".join(locations) + "\n")
+
+          # Resolve direct ARM64 ADRP + ADD references without whole-binary
+          # function analysis. The full otool disassembly was generated above.
+          by_page = {}
+          for address, value in hits:
+              by_page.setdefault(address & ~0xfff, []).append((address, value))
+          lines = Path("/tmp/whoop-disassembly.txt").read_text(errors="replace").splitlines()
+          adrp_re = re.compile(r"^\s*([0-9a-f]+)\s+adrp\s+(x\d+),.*?;\s*0x([0-9a-f]+)", re.I)
+          add_re = re.compile(r"^\s*([0-9a-f]+)\s+add\s+(x\d+),\s*(x\d+),\s*#0x([0-9a-f]+)", re.I)
+          refs = []
+          for i, line in enumerate(lines):
+              m = adrp_re.match(line)
+              if not m:
+                  continue
+              register = m.group(2)
+              page = int(m.group(3), 16)
+              page_targets = by_page.get(page)
+              if not page_targets:
+                  continue
+              for j in range(i + 1, min(i + 9, len(lines))):
+                  a = add_re.match(lines[j])
+                  if not a or a.group(2) != register or a.group(3) != register:
+                      continue
+                  low = int(a.group(4), 16)
+                  for address, value in page_targets:
+                      if (address & 0xfff) == low:
+                          refs.append((i, j, address, value, register))
+
+          refs.sort(key=lambda x: (priority((x[2], x[3])), x[0]))
+          xref_lines = [
+              "# Direct ARM64 string references",
+              "A reference is an ADRP page load followed by ADD of the exact string low-12-bit offset.",
+              "No whole-program function analysis or runtime behaviour is implied.",
+          ]
+          for i, j, address, value, register in refs:
+              xref_lines.append(
+                  f"\n## 0x{address:x} {value} · instruction 0x{lines[i].split()[0]} · register {register}\n"
+                  f"{lines[i].strip()}\n{lines[j].strip()}"
+              )
+          if not refs:
+              xref_lines.append("No direct ADRP+ADD references matched the selected strings.")
+          Path("mach-o-evidence/step-count-xrefs.txt").write_text("\n".join(xref_lines) + "\n")
+
+          context_indices = set()
+          for i, j, address, value, register in refs:
+              context_indices.update(range(max(0, i - 35), min(len(lines), j + 90)))
+          context = []
+          previous = -2
+          for i in sorted(context_indices):
+              if i != previous + 1:
+                  context.append("\n--- reference-site context ---")
+              context.append(lines[i])
+              previous = i
+          Path("mach-o-evidence/step-count-xref-functions.txt").write_text(
+              "\n".join(context) if context else "No reference-site context resolved.\n"
+          )
+
+          # The R24 case in the observed switch is branch target 0x100802748;
+          # the table base is 0x10080273c, so its byte value is 3.
+          try:
+              table_raw = json.loads(Path("/tmp/r24-jump-table.json").read_text())
+              if isinstance(table_raw, dict):
+                  table = table_raw.get("bytes", table_raw.get("data", []))
+              else:
+                  table = table_raw
+              table = [int(value) for value in table if isinstance(value, (int, float))]
+              indexes = [i for i, value in enumerate(table) if value == 3]
+              table_text = [
+                  "# WHOOP R24 enum switch table at 0x108acfdee",
+                  f"Bytes recovered: {len(table)}",
+                  "Observed R24 branch delta: (0x100802748 - 0x10080273c) / 4 = 3",
+                  "Input-byte indexes selecting that branch: " + (", ".join(map(str, indexes)) if indexes else "none found"),
+                  "Table hex: " + " ".join(f"{value:02x}" for value in table),
+              ]
+          except Exception as exc:
+              table_text = [f"Could not decode R24 jump table JSON: {exc}", Path("/tmp/r24-jump-table.json").read_text(errors="replace")]
+          Path("mach-o-evidence/r24-enum-jump-table.txt").write_text("\n".join(table_text) + "\n")
+
+          # Historical packet enum: switch input byte indexes this table. The
+          # R24 branch is 0x105ce8038 relative to branch base 0x105ce7ff8,
+          # i.e. a byte offset of 16 in the one-byte relative jump table.
+          try:
+              historical_raw = json.loads(Path("/tmp/historical-r24-jump-table.json").read_text())
+              if isinstance(historical_raw, dict):
+                  historical_table = historical_raw.get("bytes", historical_raw.get("data", []))
+              else:
+                  historical_table = historical_raw
+              historical_table = [int(value) for value in historical_table if isinstance(value, (int, float))]
+              historical_indexes = [i for i, value in enumerate(historical_table) if value == 16]
+              historical_text = [
+                  "# WHOOP historical packet enum switch table at 0x108ebdb70",
+                  f"Bytes recovered: {len(historical_table)}",
+                  "Observed R24 branch delta: (0x105ce8038 - 0x105ce7ff8) / 4 = 16",
+                  "Input-byte indexes selecting the R24 branch: " + (", ".join(map(str, historical_indexes)) if historical_indexes else "none found"),
+                  "Table hex: " + " ".join(f"{value:02x}" for value in historical_table),
+              ]
+          except Exception as exc:
+              historical_text = [f"Could not decode historical R24 jump table JSON: {exc}", Path("/tmp/historical-r24-jump-table.json").read_text(errors="replace")]
+          Path("mach-o-evidence/historical-r24-packet-jump-table.txt").write_text("\n".join(historical_text) + "\n")
+          print(f"Selected strings: {len(hits)}; direct ARM64 references: {len(refs)}; disassembly lines: {len(lines)}")
+          PY
+          echo "R24 string references and switch-table bytes are static evidence only; they do not prove runtime BLE behaviour." >> mach-o-evidence/README.txt
 
       - name: Upload Mach-O evidence
         uses: actions/upload-artifact@v4

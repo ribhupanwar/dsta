@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feature/export-whoop-rr-raw-archive
     paths:
       - "PulseForge/**"
       - "project.yml"
@@ -15,7 +16,7 @@ permissions:
 
 concurrency:
   group: pulseforge-ipa-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   export-unsigned-ipa:
@@ -25,6 +26,74 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Fetch licensed Google Fonts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p PulseForge/Fonts
+          curl -fL --retry 3 "https://raw.githubusercontent.com/google/fonts/main/ofl/readexpro/ReadexPro%5BHEXP%2Cwght%5D.ttf" -o PulseForge/Fonts/ReadexPro.ttf
+          curl -fL --retry 3 "https://raw.githubusercontent.com/google/fonts/main/ofl/barlowcondensed/BarlowCondensed-Bold.ttf" -o PulseForge/Fonts/BarlowCondensed-Bold.ttf
+          curl -fL --retry 3 "https://raw.githubusercontent.com/google/fonts/main/ofl/readexpro/OFL.txt" -o PulseForge/Fonts/ReadexPro-OFL.txt
+          curl -fL --retry 3 "https://raw.githubusercontent.com/google/fonts/main/ofl/barlowcondensed/OFL.txt" -o PulseForge/Fonts/BarlowCondensed-OFL.txt
+          test -s PulseForge/Fonts/ReadexPro.ttf
+          test -s PulseForge/Fonts/BarlowCondensed-Bold.ttf
+          echo "Bundled Google Fonts:"
+          ls -lh PulseForge/Fonts
+
+      - name: Generate PulseForge app icon asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/icon-venv"
+          "$RUNNER_TEMP/icon-venv/bin/python" -m pip install --quiet Pillow
+          ICON_DIR="PulseForge/Assets.xcassets/AppIcon.appiconset"
+          mkdir -p "$ICON_DIR"
+          cat > "PulseForge/Assets.xcassets/Contents.json" <<'JSON'
+          {
+            "info" : {
+              "author" : "xcode",
+              "version" : 1
+            }
+          }
+          JSON
+          ICON_DIR="$ICON_DIR" "$RUNNER_TEMP/icon-venv/bin/python" - <<'PY'
+          from PIL import Image, ImageDraw
+          ICON_DIR = "PulseForge/Assets.xcassets/AppIcon.appiconset"
+          S = 1024
+          im = Image.new("RGB", (S, S), (0, 0, 0))
+          d = ImageDraw.Draw(im)
+          white, black = (248, 249, 247), (5, 8, 10)
+          d.ellipse((160, 160, 864, 864), fill=white)
+          # Original PulseForge P + pulse mark, not a reproduction of WHOOP's logo.
+          d.rounded_rectangle((360, 300, 440, 724), radius=24, fill=black)
+          d.rounded_rectangle((400, 300, 690, 535), radius=110, fill=black)
+          d.rounded_rectangle((480, 378, 610, 457), radius=38, fill=white)
+          d.polygon([(320,570),(435,570),(485,510),(535,640),(585,555),
+                     (704,555),(704,610),(620,610),(530,760),(470,625),
+                     (450,625),(420,620),(320,620)], fill=white)
+          d.line([(345,595),(435,595),(485,545),(530,660),(575,585),(680,585)],
+                 fill=black, width=22, joint="curve")
+          im.save(f"{ICON_DIR}/PulseForgeIcon.png", format="PNG", optimize=True)
+          PY
+          cat > "$ICON_DIR/Contents.json" <<'JSON'
+          {
+            "images" : [
+              {
+                "filename" : "PulseForgeIcon.png",
+                "idiom" : "universal",
+                "platform" : "ios",
+                "size" : "1024x1024"
+              }
+            ],
+            "info" : {
+              "author" : "xcode",
+              "version" : 1
+            }
+          }
+          JSON
+          test -s "$ICON_DIR/PulseForgeIcon.png"
+          echo "Generated 1024x1024 black/white PulseForge app icon."
 
       - name: Install XcodeGen
         run: |
@@ -62,6 +131,39 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             | tee "$RUNNER_TEMP/pulseforge-archive.log"
 
+      - name: Stage licensed fonts into app bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/PulseForge.xcarchive/Products/Applications/PulseForge.app"
+          mkdir -p "$APP"
+          cp PulseForge/Fonts/ReadexPro.ttf "$APP/ReadexPro.ttf"
+          cp PulseForge/Fonts/BarlowCondensed-Bold.ttf "$APP/BarlowCondensed-Bold.ttf"
+          cp PulseForge/Fonts/ReadexPro-OFL.txt "$APP/ReadexPro-OFL.txt"
+          cp PulseForge/Fonts/BarlowCondensed-OFL.txt "$APP/BarlowCondensed-OFL.txt"
+          ls -lh "$APP"/*Pro* "$APP"/*Condensed*
+
+      - name: Verify fonts and app icon in archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/PulseForge.xcarchive/Products/Applications/PulseForge.app"
+          for asset in ReadexPro.ttf BarlowCondensed-Bold.ttf ReadexPro-OFL.txt BarlowCondensed-OFL.txt; do
+            test -s "$APP/$asset" || {
+              echo "::error::Required app resource missing from archive: $asset"
+              find "$APP" -maxdepth 3 -type f -print | sort
+              exit 1
+            }
+          done
+          test -s "$APP/Assets.car" || {
+            echo "::error::Assets.car missing; app icon asset catalog was not compiled."
+            find "$APP" -maxdepth 2 -print | sort
+            exit 1
+          }
+          /usr/libexec/PlistBuddy -c "Print :UIAppFonts" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$APP/Info.plist"
+          echo "Verified licensed fonts and compiled asset catalog."
+
       - name: Package installable IPA container
         shell: bash
         run: |
@@ -79,12 +181,14 @@ jobs:
             /usr/bin/zip -qry "$GITHUB_WORKSPACE/PulseForge-unsigned.ipa" Payload
           )
           test -s PulseForge-unsigned.ipa
+          unzip -l PulseForge-unsigned.ipa | grep -E 'Payload/PulseForge.app/(Assets.car|Info.plist|ReadexPro.ttf|BarlowCondensed-Bold.ttf)'
           shasum -a 256 PulseForge-unsigned.ipa | tee PulseForge-unsigned.ipa.sha256
           {
             echo "## Unsigned IPA created"
             echo "- File: PulseForge-unsigned.ipa"
             echo "- SHA-256: $(cut -d ' ' -f 1 PulseForge-unsigned.ipa.sha256)"
             echo "- Bundle ID: com.ribhupanwar.pulseforge"
+            echo "- Display name: PulseForge"
             echo "- Signing: unsigned; install through SideStore/AltStore signing flow."
           } >> "$GITHUB_STEP_SUMMARY"
 

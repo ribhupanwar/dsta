@@ -1,232 +1,94 @@
 import Foundation
-import HealthKit
 import Combine
 
-/// Transparent, HealthKit-backed training insights. No score is emitted when its
-/// required inputs or a usable baseline are missing.
+/// Keeps WHOOP-native Recovery separate from clearly labelled Apple Health sleep fallback metrics.
 @MainActor
 final class TrainingInsightsStore: ObservableObject {
     @Published private(set) var sleepHours: Double?
     @Published private(set) var sleepDebtHours: Double?
     @Published private(set) var typicalSleepHours: Double?
-    @Published private(set) var sleepNeedHours: Double = 8
+    @Published private(set) var sleepNeedHours: Double?
     @Published private(set) var recoveryScore: Int?
-    @Published private(set) var recoveryStatus = "Waiting for HRV and resting-HR baseline"
+    @Published private(set) var recoveryStatus = "Waiting for verified WHOOP overnight HRV + resting HR"
     @Published private(set) var cardioLoadPoints: Double?
     @Published private(set) var workoutCountToday = 0
     @Published private(set) var workoutMinutesToday: Double?
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var isRefreshing = false
 
-    private let healthStore = HKHealthStore()
-    private let calendar = Calendar.current
-    private let sleepTargetMinutes = 8.0 * 60.0
+    @Published private(set) var sleepSourceStatus = "Waiting for dated sleep history"
+    @Published private(set) var recoverySourceStatus = "WHOOP overnight RR/RHR validation pending"
+    @Published private(set) var strainSourceStatus = "WHOOP HR + verified motion load pending"
 
+    /// Refresh WHOOP-only sleep/recovery placeholders without discarding an
+    /// independently calculated workout load already derived from saved strap HR.
     func refresh() {
-        guard HKHealthStore.isHealthDataAvailable(), !isRefreshing else { return }
-        isRefreshing = true
-        let group = DispatchGroup()
+        sleepHours = nil
+        sleepDebtHours = nil
+        typicalSleepHours = nil
+        sleepNeedHours = nil
+        recoveryScore = nil
+        recoveryStatus = "Unavailable · WHOOP overnight HRV/RHR not yet validated"
+        sleepSourceStatus = "No verified WHOOP sleep session yet"
+        recoverySourceStatus = "No verified WHOOP overnight HRV + resting HR baseline yet"
+        lastUpdated = Date()
+        isRefreshing = false
+    }
 
-        group.enter()
-        loadSleep { [weak self] hours, debt, typical in
-            self?.sleepHours = hours
-            self?.sleepDebtHours = debt
-            self?.typicalSleepHours = typical
-            self?.sleepNeedHours = SleepNeedCalculator.calculate(sleepDebtHours: debt)
-            group.leave()
-        }
+    /// Latest Apple Health sleep duration is a separately labelled fallback.
+    func updateHealthKitSleep(_ hours: Double?) {
+        guard let hours, hours.isFinite, (0.1...24).contains(hours) else { return }
+        sleepHours = hours
+        sleepSourceStatus = "Apple Health sleep duration · WHOOP-native sleep not yet validated"
+    }
 
-        group.enter()
-        loadRecovery { [weak self] score, status in
-            self?.recoveryScore = score
-            self?.recoveryStatus = status
-            group.leave()
-        }
+    /// Builds a personal sleep baseline and rolling debt from dated Apple Health
+    /// sleep sessions. These estimates are never presented as WHOOP-native values
+    /// and never feed Recovery. Baseline requires 14 nights in 28 days.
+    func updateHealthKitSleepHistory(_ nights: [SleepNightCalculator.Night],
+                                     now: Date = Date(),
+                                     calendar: Calendar = .current) {
+        let result = SleepNeedHistoryCalculator.calculate(nights: nights, now: now, calendar: calendar)
+        typicalSleepHours = result.baselineHours
+        sleepDebtHours = result.sleepDebtHours
+        sleepNeedHours = result.sleepNeedHours
 
-        group.enter()
-        loadTodayWorkouts { [weak self] count, minutes, load in
-            self?.workoutCountToday = count
-            self?.workoutMinutesToday = minutes
-            self?.cardioLoadPoints = load
-            group.leave()
-        }
-
-        group.notify(queue: .main) { [weak self] in
-            self?.lastUpdated = Date()
-            self?.isRefreshing = false
+        if let baseline = result.baselineHours {
+            let debtText = result.sleepDebtHours.map { String(format: "%.1f h debt", $0) }
+                ?? "building 7-night debt history · \(result.debtNightCount)/5 nights"
+            sleepSourceStatus = String(format: "Apple Health estimate · personal baseline %.1f h · %@ · WHOOP sleep pending", baseline, debtText)
+        } else {
+            sleepSourceStatus = "Apple Health estimate · learning personal baseline · \(result.baselineNightCount)/14 nights in 28 days"
         }
     }
 
-    private func loadSleep(completion: @escaping (Double?, Double?, Double?) -> Void) {
-        guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
-            completion(nil, nil, nil)
-            return
+    /// Computes a transparent PulseForge cardio-load estimate from saved WHOOP
+    /// workout HR recordings. It is not WHOOP's proprietary 0–21 Strain score.
+    func refreshWorkoutLoad(sessions: [WorkoutSessionRecord],
+                            measuredMaxHeartRate: Int,
+                            now: Date = Date(),
+                            calendar: Calendar = .current) {
+        let start = calendar.startOfDay(for: now)
+        guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { return }
+        let todays = sessions.filter { $0.startedAt >= start && $0.startedAt < end }
+        workoutCountToday = todays.count
+        workoutMinutesToday = todays.isEmpty ? nil :
+            todays.reduce(0) { $0 + max(0, $1.durationSeconds) / 60 }
+        cardioLoadPoints = CardioLoadCalculator.dailyWorkoutLoad(
+            sessions: todays,
+            dayStart: start,
+            nextDay: end,
+            measuredMaxHeartRate: measuredMaxHeartRate
+        )
+        if cardioLoadPoints != nil {
+            strainSourceStatus = "PulseForge cardio-load estimate · saved WHOOP workout HR · not WHOOP Strain"
+        } else if todays.isEmpty {
+            strainSourceStatus = "No saved WHOOP workout HR session today"
+        } else if measuredMaxHeartRate == 0 {
+            strainSourceStatus = "Set measured maximum HR to calculate cardio load"
+        } else {
+            strainSourceStatus = "No valid timestamped WHOOP workout HR samples for today's load"
         }
-        let end = Date()
-        // WHOOP documents a 28-day typical-sleep-pattern factor. We expose
-        // a measured 28-day median separately; it is not used as personal need.
-        let start = calendar.date(byAdding: .day, value: -29, to: end) ?? end.addingTimeInterval(-29 * 86400)
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
-        let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit,
-                                  sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) {
-            [weak self] _, samples, _ in
-            guard let self else { completion(nil, nil, nil); return }
-            let asleepValues: Set<Int> = [
-                HKCategoryValueSleepAnalysis.asleep.rawValue, // Legacy HealthKit sleep samples.
-                HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
-                HKCategoryValueSleepAnalysis.asleepCore.rawValue,
-                HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
-                HKCategoryValueSleepAnalysis.asleepREM.rawValue
-            ]
-            let intervals = (samples as? [HKCategorySample] ?? [])
-                .filter { asleepValues.contains($0.value) }
-                .map { DateInterval(start: $0.startDate, end: $0.endDate) }
-            let summary = SleepNightCalculator.summarize(
-                intervals: intervals,
-                now: end,
-                calendar: self.calendar,
-                targetMinutes: self.sleepTargetMinutes,
-                debtWindowNights: 7,
-                sessionGapMinutes: 90
-            )
-            let latestHours = summary.latestNight.map { $0.durationMinutes / 60 }
-            DispatchQueue.main.async {
-                completion(latestHours, summary.sleepDebtHours, summary.typicalSleepHours)
-            }
-        }
-        healthStore.execute(query)
-    }
-
-    private func loadRecovery(completion: @escaping (Int?, String) -> Void) {
-        let group = DispatchGroup()
-        var hrvSamples: [HKQuantitySample] = []
-        var rhrSamples: [HKQuantitySample] = []
-        group.enter()
-        loadQuantity(.heartRateVariabilitySDNN, days: 8) { hrvSamples = $0; group.leave() }
-        group.enter()
-        loadQuantity(.restingHeartRate, days: 8) { rhrSamples = $0; group.leave() }
-        group.notify(queue: .main) {
-            let today = self.calendar.startOfDay(for: Date())
-            let currentHRV = hrvSamples.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
-            let currentRHR = rhrSamples.filter { $0.endDate >= today }.max { $0.endDate < $1.endDate }
-            let hrvByDay = Dictionary(grouping: hrvSamples.filter { $0.endDate < today }) {
-                self.calendar.startOfDay(for: $0.endDate)
-            }.values.map { samples in
-                samples.map { $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli)) }
-                    .reduce(0, +) / Double(samples.count)
-            }
-            let rhrByDay = Dictionary(grouping: rhrSamples.filter { $0.endDate < today }) {
-                self.calendar.startOfDay(for: $0.endDate)
-            }.values.map { samples in
-                samples.map { $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute())) }
-                    .reduce(0, +) / Double(samples.count)
-            }
-            guard let currentHRV, let currentRHR else {
-                completion(nil, "Need today's HRV + resting HR")
-                return
-            }
-            let hrvNow = currentHRV.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
-            let rhrNow = currentRHR.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
-            guard let result = RecoveryScoreCalculator.calculate(
-                currentHRV: hrvNow,
-                currentRestingHeartRate: rhrNow,
-                baselineHRV: hrvByDay,
-                baselineRestingHeartRate: rhrByDay,
-                minimumBaselineDays: 3
-            ) else {
-                completion(nil, "Building baseline · need 3 prior days of HRV + resting HR")
-                return
-            }
-            completion(result.score, "PulseForge estimate · Apple Health SDNN (not WHOOP RMSSD) 60% + resting HR 40% · 3+ day median baseline")
-        }
-    }
-
-    private func loadQuantity(_ identifier: HKQuantityTypeIdentifier, days: Int,
-                              completion: @escaping ([HKQuantitySample]) -> Void) {
-        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else {
-            completion([])
-            return
-        }
-        let end = Date()
-        let start = calendar.date(byAdding: .day, value: -days, to: end) ?? end.addingTimeInterval(-Double(days) * 86400)
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
-        let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit,
-                                  sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)]) {
-            _, samples, _ in
-            DispatchQueue.main.async {
-                completion(samples as? [HKQuantitySample] ?? [])
-            }
-        }
-        healthStore.execute(query)
-    }
-
-    private func loadTodayWorkouts(completion: @escaping (Int, Double?, Double?) -> Void) {
-        let start = calendar.startOfDay(for: Date())
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: [])
-        let query = HKSampleQuery(sampleType: HKObjectType.workoutType(), predicate: predicate,
-                                  limit: HKObjectQueryNoLimit,
-                                  sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)]) {
-            [weak self] _, samples, _ in
-            let workouts = samples as? [HKWorkout] ?? []
-            let minutes = workouts.reduce(0.0) { $0 + $1.duration / 60 }
-            // A defensible cardiovascular load needs workout HR samples and a
-            // user-measured max HR. Until both are available, leave it blank.
-            guard let self else {
-                completion(workouts.count, minutes > 0 ? minutes : nil, nil)
-                return
-            }
-            let maxHR = UserDefaults.standard.integer(forKey: "pulseforge.running.maxHeartRate")
-            guard maxHR > 0 else {
-                completion(workouts.count, minutes > 0 ? minutes : nil, nil)
-                return
-            }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else {
-                    completion(workouts.count, minutes > 0 ? minutes : nil, nil)
-                    return
-                }
-                self.loadWorkoutHeartRate(workouts, maxHR: maxHR) { load in
-                    completion(workouts.count, minutes > 0 ? minutes : nil, load)
-                }
-            }
-        }
-        healthStore.execute(query)
-    }
-
-    private func loadWorkoutHeartRate(_ workouts: [HKWorkout], maxHR: Int,
-                                      completion: @escaping (Double?) -> Void) {
-        guard !workouts.isEmpty,
-              let type = HKObjectType.quantityType(forIdentifier: .heartRate) else {
-            completion(nil)
-            return
-        }
-        let group = DispatchGroup()
-        let lock = NSLock()
-        var totalLoad = 0.0
-        for workout in workouts {
-            group.enter()
-            let predicate = HKQuery.predicateForObjects(from: workout)
-            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit,
-                                      sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) {
-                _, samples, _ in
-                let values = (samples as? [HKQuantitySample] ?? []).map { sample in
-                    CardioLoadCalculator.Sample(
-                        timestamp: sample.startDate,
-                        endDate: sample.endDate,
-                        bpm: sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
-                    )
-                }
-                let workoutLoad = CardioLoadCalculator.calculate(
-                    samples: values,
-                    measuredMaxHeartRate: maxHR
-                ) ?? 0
-                lock.lock()
-                totalLoad += workoutLoad
-                lock.unlock()
-                group.leave()
-            }
-            self.healthStore.execute(query)
-        }
-        group.notify(queue: .main) { completion(totalLoad > 0 ? totalLoad : nil) }
+        lastUpdated = now
     }
 }

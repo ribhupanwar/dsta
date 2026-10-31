@@ -9,6 +9,33 @@ enum CardioLoadCalculator {
         let bpm: Double
     }
 
+    /// Sums HR-derived load from saved WHOOP workout recordings on a local calendar day.
+    /// This is a PulseForge cardio-load estimate, not WHOOP's proprietary 0–21 Strain.
+    static func dailyWorkoutLoad(sessions: [WorkoutSessionRecord],
+                                  dayStart: Date,
+                                  nextDay: Date,
+                                  measuredMaxHeartRate: Int) -> Double? {
+        guard dayStart < nextDay, (100...240).contains(measuredMaxHeartRate) else { return nil }
+        let todaysSessions = sessions.filter {
+            $0.startedAt >= dayStart && $0.startedAt < nextDay && !$0.heartRateSamples.isEmpty
+        }
+        guard !todaysSessions.isEmpty else { return nil }
+
+        let loads = todaysSessions.compactMap { session -> Double? in
+            let samples = session.heartRateSamples.sorted { $0.timestamp < $1.timestamp }
+            let sessionEnd = session.startedAt.addingTimeInterval(max(0, session.durationSeconds))
+            let points = samples.enumerated().map { index, sample -> Sample in
+                let nextTimestamp = index + 1 < samples.count ? samples[index + 1].timestamp : sessionEnd
+                let end = min(sessionEnd, max(sample.timestamp, min(nextTimestamp, sample.timestamp.addingTimeInterval(60))))
+                return Sample(timestamp: sample.timestamp, endDate: end, bpm: Double(sample.bpm))
+            }
+            return calculate(samples: points, measuredMaxHeartRate: measuredMaxHeartRate)
+        }
+        guard !loads.isEmpty else { return nil }
+        let total = loads.reduce(0, +)
+        return total.isFinite && total > 0 ? total : nil
+    }
+
     static func calculate(samples: [Sample], measuredMaxHeartRate: Int,
                           maximumCreditedGapSeconds: TimeInterval = 60) -> Double? {
         guard (100...240).contains(measuredMaxHeartRate),
