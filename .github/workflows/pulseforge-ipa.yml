@@ -1,0 +1,58 @@
+name: PulseForge unsigned IPA
+
+on:
+  push:
+    branches:
+      - test/24-hour-local-test-mode
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer || xcode-select -p
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          xcodegen generate
+
+      - name: Build device app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project PulseForge.xcodeproj \
+            -scheme PulseForge \
+            -sdk iphoneos \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee build.log
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="build/Build/Products/Release-iphoneos/PulseForge.app"
+          test -d "$APP_PATH"
+          mkdir -p package/Payload
+          cp -R "$APP_PATH" package/Payload/PulseForge.app
+          (cd package && /usr/bin/zip -qry ../PulseForge-unsigned.ipa Payload)
+          test -s PulseForge-unsigned.ipa
+
+      - name: Upload IPA and build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: PulseForge-unsigned-IPA
+          path: |
+            PulseForge-unsigned.ipa
+            build.log
+          if-no-files-found: error
+          retention-days: 14
