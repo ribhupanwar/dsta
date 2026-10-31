@@ -90,8 +90,18 @@ final class GPSRunStore: NSObject, ObservableObject, CLLocationManagerDelegate {
         // CoreLocation rejects this setting in the iOS Simulator test host, so
         // keep simulator launches deterministic without changing device behavior.
         #if !targetEnvironment(simulator)
-        manager.allowsBackgroundLocationUpdates = true
-        manager.showsBackgroundLocationIndicator = true
+        // CoreLocation asserts if background location updates are enabled
+        // but the *packaged* Info.plist does not contain "location" in
+        // UIBackgroundModes. Check the built app bundle, not the source plist,
+        // because generated Info.plist settings can omit custom array keys.
+        let backgroundModes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
+        if backgroundModes.contains("location") {
+            manager.allowsBackgroundLocationUpdates = true
+            manager.showsBackgroundLocationIndicator = true
+        } else {
+            manager.allowsBackgroundLocationUpdates = false
+            manager.showsBackgroundLocationIndicator = false
+        }
         #endif
         recentRuns = loadHistory()
     }
