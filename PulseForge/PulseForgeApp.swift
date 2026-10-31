@@ -1314,6 +1314,10 @@ struct StepComparisonCard: View {
         WhoopIMUGyroStepCounter.estimate(samples: recentIMUSamples)
     }
 
+    private var cadenceEstimate: Int {
+        WhoopIMUCadenceAutocorrelation.estimate(samples: recentIMUSamples)
+    }
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
@@ -1399,8 +1403,28 @@ struct StepComparisonCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
                     .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 13))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("D · GAIT PERIODICITY")
+                            .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                            .foregroundStyle(ForgeColors.muted)
+                        Text(recentIMUSamples.count < 200 ? "—" : String(cadenceEstimate))
+                            .font(.system(size: 30, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                        Text("autocorrelation cycles")
+                            .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                        Text("\(recentIMUSamples.count) samples / 20s")
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(ForgeColors.lime)
+                        Text("periodic cadence · 0.65–2.8 Hz")
+                            .font(.system(size: 8))
+                            .foregroundStyle(ForgeColors.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 13))
                 }
-                Text("A is raw Type-47 @57 counter ticks, not confirmed steps. B counts acceleration-magnitude peaks; C counts gyroscope-magnitude swing peaks over the same rolling 20-second IMU window. B and C are experimental signals; their peak-to-step mapping is uncalibrated. Compare all three against your manual count.")
+                Text("A is raw Type-47 @57 counter ticks. B counts acceleration peaks; C counts gyroscope swing peaks; D estimates repeating gait cycles from acceleration autocorrelation. B–D are experimental and uncalibrated. D may return zero when motion is weak or irregular. Compare all four with your manual count; none is official WHOOP daily steps yet.")
                     .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
             }
             .padding(14)
