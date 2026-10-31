@@ -93,6 +93,14 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoopStepCounterExportSamples: [Whoop5StepSample] = []
     private var whoopStepCounterRawFrameExport: [(timestamp: Date, hex: String)] = []
 
+    // WHOOP 5 historical offload state. Raw records are durably archived before a
+    // HISTORY_END trim ACK is sent; otherwise the strap may discard unpersisted data.
+    private var whoop5HistoricalSyncStarted = false
+    private var whoop5HistoricalArchiveHealthy = true
+    private var whoop5HistoricalFramesArchived = 0
+    private var whoop5HistoricalChunksAcked = 0
+    private var whoop5HistoricalComplete = false
+
     @Published private(set) var whoopRRLastUpdatedAt: Date?
     @Published private(set) var whoopRRSource = "No WHOOP RR intervals decoded yet"
     @Published private(set) var whoopCommandResponseCount = 0
@@ -1670,6 +1678,91 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             : diagnostics.joined(separator: " · ")
     }
 
+    /// Append a CRC-valid historical frame to a durable JSONL archive before the strap
+    /// is allowed to trim its chunk. A failed archive blocks HISTORY_END acknowledgement.
+    private func archiveWhoop5HistoricalFrame(_ bytes: [UInt8]) -> Bool {
+        guard let support = FileManager.default.urls(for: .applicationSupportDirectory,
+                                                      in: .userDomainMask).first else { return false }
+        let directory = support.appendingPathComponent("PulseForge", isDirectory: true)
+        let url = directory.appendingPathComponent("whoop5-historical-raw-v1.jsonl")
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            if !FileManager.default.fileExists(atPath: url.path) {
+                guard FileManager.default.createFile(atPath: url.path, contents: nil) else { return false }
+            }
+            let object: [String: Any] = [
+                "capturedAt": ISO8601DateFormatter().string(from: Date()),
+                "packetType": bytes.count > 8 ? Int(bytes[8]) : -1,
+                "revisionOrSequence": bytes.count > 9 ? Int(bytes[9]) : -1,
+                "hex": bytes.map { String(format: "%02X", $0) }.joined()
+            ]
+            var line = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+            line.append(0x0A)
+            let handle = try FileHandle(forWritingTo: url)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: line)
+            whoop5HistoricalFramesArchived += 1
+            return true
+        } catch {
+            whoop5HistoricalArchiveHealthy = false
+            recordVendorTimeline("Historical archive write failed · \(error.localizedDescription) · ACKs blocked")
+            return false
+        }
+    }
+
+    /// Send the read-only Gen5 historical range request, then start the actual offload
+    /// after the write callback. This path is deliberately separate from persistent R22 flags.
+    private func startWhoop5HistoricalSync(to peripheral: CBPeripheral) {
+        guard !whoop5HistoricalSyncStarted,
+              peripheral.state == .connected,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        whoop5HistoricalSyncStarted = true
+        whoop5HistoricalArchiveHealthy = true
+        whoop5HistoricalComplete = false
+        whoop5HistoricalFramesArchived = 0
+        whoop5HistoricalChunksAcked = 0
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x22, payload: [0x00])
+        whoop5PendingWrites.append("GET_DATA_RANGE")
+        recordVendorTimeline("GET_DATA_RANGE requested · cmd=0x22 · seq=\(sequence) · read-only historical discovery")
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    private func sendWhoop5HistoricalDataRequest(to peripheral: CBPeripheral) {
+        guard peripheral.state == .connected,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x16, payload: [0x00])
+        whoop5PendingWrites.append("SEND_HISTORICAL_DATA")
+        recordVendorTimeline("SEND_HISTORICAL_DATA requested · cmd=0x16 · payload=00 · seq=\(sequence)")
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    private func acknowledgeWhoop5HistoryEnd(_ frame: [UInt8], peripheral: CBPeripheral) {
+        guard whoop5HistoricalArchiveHealthy,
+              frame.count >= 29,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else {
+            recordVendorTimeline("HISTORY_END ACK withheld · archive unhealthy or end_data missing")
+            return
+        }
+        // PUFFIN_METADATA(56) aliases METADATA(49). The exact eight-byte trim block
+        // is echoed unchanged: frame[21..<29] → HISTORICAL_DATA_RESULT(23), payload [01]+end_data.
+        let endData = Array(frame[21..<29])
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let ack = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x17,
+                                          payload: [0x01] + endData)
+        whoop5PendingWrites.append("HISTORY_END_ACK")
+        recordVendorTimeline("HISTORY_END ACK requested · metadataType=\(frame[8]) · trim=\(endData[0...3].map { String(format: "%02X", $0) }.joined()) · seq=\(sequence)")
+        peripheral.writeValue(ack, for: command, type: .withResponse)
+    }
+
     /// WHOOP 5.0 frame validation and packet routing.
     /// The frame header uses CRC16-Modbus; the padded inner payload uses CRC32.
     private func diagnoseWhoop5Frame(_ data: Data, channel: String, peripheral: CBPeripheral) -> String {
@@ -1818,6 +1911,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return "REALTIME_IMU_DATA_STREAM(51) · \(b.count) bytes · CRC valid · raw frame retained"
 
         case 47: // HISTORICAL_DATA; contains several Gen5 layouts, not all of them IMU.
+            // Persist the raw record before any later HISTORY_END can trim it from the strap.
+            if !archiveWhoop5HistoricalFrame(b) {
+                whoopStepCounterDiagnostics = "Historical raw archive failed · strap ACKs will be withheld"
+            }
             // Preserve every CRC-valid v18 frame before trusting the candidate RR offsets.
             // Receipt time is forensic metadata only; physiological time remains nil.
             if b.count > 9, b[9] == 18 {
@@ -1985,6 +2082,35 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 ? "RR unavailable"
                 : "RR \(whoopRRIntervalsMilliseconds.map(String.init).joined(separator: ",")) ms"
             return "REALTIME_DATA · HR \(bpm) bpm · \(rrSummary) · CRC valid"
+
+        case 49, 56: // METADATA / PUFFIN_METADATA (56 aliases the same historical metadata schema).
+            guard b.count > 10 else { return "HISTORICAL_METADATA(\(type)) · truncated · CRC valid" }
+            guard archiveWhoop5HistoricalFrame(b) else {
+                whoop5HistoricalArchiveHealthy = false
+                return "HISTORICAL_METADATA(\(type)) · raw archive failed · ACK withheld"
+            }
+            let metaType = Int(b[10])
+            switch metaType {
+            case 1: // HISTORY_START
+                whoop5HistoricalArchiveHealthy = true
+                whoop5HistoricalComplete = false
+                recordVendorTimeline("HISTORY_START received · metadata packet type=\(type) · raw archived")
+                return "HISTORY_START · PUFFIN_METADATA \(type) · CRC valid"
+            case 2: // HISTORY_END
+                guard b.count >= 29 else {
+                    whoop5HistoricalArchiveHealthy = false
+                    return "HISTORY_END · metadata truncated · ACK withheld"
+                }
+                recordVendorTimeline("HISTORY_END received · packet type=\(type) · raw archived · archiveHealthy=\(whoop5HistoricalArchiveHealthy)")
+                acknowledgeWhoop5HistoryEnd(b, peripheral: peripheral)
+                return "HISTORY_END · trim block captured · ACK \(whoop5HistoricalArchiveHealthy ? "queued" : "withheld")"
+            case 3: // HISTORY_COMPLETE
+                whoop5HistoricalComplete = true
+                recordVendorTimeline("HISTORY_COMPLETE received · archivedFrames=\(whoop5HistoricalFramesArchived) · chunksAcked=\(whoop5HistoricalChunksAcked)")
+                return "HISTORY_COMPLETE · archived \(whoop5HistoricalFramesArchived) frames · acked \(whoop5HistoricalChunksAcked) chunks"
+            default:
+                return "HISTORICAL_METADATA(\(type)) · meta_type=\(metaType) · raw archived · CRC valid"
+            }
 
         case 53, 54: // PUFFIN event transports; preserve raw until their payload schemas are independently verified.
             whoopPuffinEventTypeCounts[type, default: 0] += 1
@@ -2541,6 +2667,35 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             }
             return
         }
+        if kind == "GET_DATA_RANGE" {
+            if let error {
+                whoop5HistoricalSyncStarted = false
+                recordVendorTimeline("GET_DATA_RANGE write failed · \(error.localizedDescription)")
+            } else {
+                recordVendorTimeline("GET_DATA_RANGE write acknowledged · starting historical offload")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self, weak peripheral] in
+                    guard let self, let peripheral,
+                          self.connectedPeripheral?.identifier == peripheral.identifier else { return }
+                    self.sendWhoop5HistoricalDataRequest(to: peripheral)
+                }
+            }
+            return
+        }
+        if kind == "SEND_HISTORICAL_DATA" {
+            recordVendorTimeline(error.map { "SEND_HISTORICAL_DATA write failed · \($0.localizedDescription)" }
+                                 ?? "SEND_HISTORICAL_DATA write acknowledged · awaiting HISTORY_START / records")
+            return
+        }
+        if kind == "HISTORY_END_ACK" {
+            if let error {
+                whoop5HistoricalArchiveHealthy = false
+                recordVendorTimeline("HISTORY_END ACK write failed · \(error.localizedDescription)")
+            } else {
+                whoop5HistoricalChunksAcked += 1
+                recordVendorTimeline("HISTORY_END ACK write acknowledged · chunksAcked=\(whoop5HistoricalChunksAcked)")
+            }
+            return
+        }
         if kind == "REALTIME_HR_ON" {
             if let error {
                 recordVendorTimeline("REALTIME_HR_ON write callback · failed · \(error.localizedDescription)")
@@ -2598,6 +2753,14 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 recordVendorTimeline("post-hello notify request · \(uuid)")
                 peripheral.setNotifyValue(true, for: item)
             }
+        }
+        // Start the read-only historical pipeline only after hello and notification setup.
+        // No persistent feature flags are written by this path.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self, weak peripheral] in
+            guard let self, let peripheral,
+                  self.connectedPeripheral?.identifier == peripheral.identifier,
+                  self.whoop5HelloWriteAcknowledged else { return }
+            self.startWhoop5HistoricalSync(to: peripheral)
         }
     }
 
