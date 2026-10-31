@@ -2,10 +2,32 @@ import XCTest
 @testable import PulseForge
 
 final class Gen5R18StepCounterTests: XCTestCase {
-    func testDecodesR18SelectedAndHardwareCounters() {
+    private func makeR18Frame() -> Data {
         var frame = Data(repeating: 0, count: 124)
         frame[8] = 47
         frame[9] = 18
+        return frame
+    }
+
+    private func sealR18CRC(_ frame: inout Data) {
+        var crc: UInt32 = 0xFFFF_FFFF
+        for byte in frame[8..<120] {
+            crc ^= UInt32(byte)
+            for _ in 0..<8 {
+                crc = (crc & 1) == 1
+                    ? (crc >> 1) ^ 0xEDB8_8320
+                    : (crc >> 1)
+            }
+        }
+        crc ^= 0xFFFF_FFFF
+        frame[120] = UInt8(crc & 0xFF)
+        frame[121] = UInt8((crc >> 8) & 0xFF)
+        frame[122] = UInt8((crc >> 16) & 0xFF)
+        frame[123] = UInt8((crc >> 24) & 0xFF)
+    }
+
+    func testDecodesR18SelectedAndHardwareCounters() {
+        var frame = makeR18Frame()
         frame[57] = 0x34
         frame[58] = 0x12
         frame[59] = 0x07
@@ -14,6 +36,7 @@ final class Gen5R18StepCounterTests: XCTestCase {
         frame[62] = 0x56
         frame[63] = 1
         frame[64] = 0x10
+        sealR18CRC(&frame)
 
         let record = Gen5R18StepRecord.decode(frame)
         XCTAssertEqual(record?.selectedCounter, 0x1234)
@@ -23,14 +46,25 @@ final class Gen5R18StepCounterTests: XCTestCase {
         XCTAssertEqual(record?.softwareOverrideActive, true)
     }
 
-    func testRejectsWrongPacketOrLayout() {
-        var frame = Data(repeating: 0, count: 124)
-        frame[8] = 47
+    func testRejectsWrongPacketOrLayoutAndInvalidCRC() {
+        var frame = makeR18Frame()
+        sealR18CRC(&frame)
+        XCTAssertNotNil(Gen5R18StepRecord.decode(frame))
+
         frame[9] = 21
         XCTAssertNil(Gen5R18StepRecord.decode(frame))
         frame[9] = 18
         frame[8] = 43
         XCTAssertNil(Gen5R18StepRecord.decode(frame))
+
+        frame = makeR18Frame()
+        frame[57] = 1
+        sealR18CRC(&frame)
+        frame[57] = 2 // invalidate the inner record CRC
+        XCTAssertNil(Gen5R18StepRecord.decode(frame))
+
+        frame = makeR18Frame()
+        XCTAssertNil(Gen5R18StepRecord.decode(Data(frame.prefix(82))))
     }
 
     func testDeltaDoesNotInventResetOrRollover() {
