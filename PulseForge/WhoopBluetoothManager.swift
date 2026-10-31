@@ -1534,11 +1534,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             whoopIMUStatus = "Realtime IMU stream packet received · \(b.count) bytes · CRC valid · subtype decode pending"
             return "REALTIME_IMU_DATA_STREAM(51) · \(b.count) bytes · CRC valid · raw frame retained"
 
-        case 47: // HISTORICAL_DATA packet type; preserve raw until history subtype routing is implemented.
-            // WHOOP's audited parser is revision-aware (Rev10/11/20/21) and
-            // carries epoch, sequence, counts, ranges and sample-rate metadata.
-            // Until those fields are mapped, retain only packet-level diagnostics:
-            // never manufacture calibrated axes or timestamps from guessed offsets.
+        case 47: // HISTORICAL_DATA; byte 9 selects the record layout (R18, R20, R21, etc.).
+            // Keep unknown layouts opaque; the R18 step decoder validates its
+            // exact 124-byte record shape and inner CRC after envelope validation.
             whoopIMUFrameCount += 1
             whoopIMULastFrameAt = Date()
             whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
