@@ -98,6 +98,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var workoutSessionBaselineBPM: Int?
     @Published private(set) var whoopIMUFrameCount = 0
     @Published private(set) var whoopIMUSampleCount = 0
+    @Published private(set) var whoopR18StepDiagnostics = "No WHOOP R18 step record decoded yet"
     @Published private(set) var whoopIMULastFrameAt: Date?
     @Published private(set) var whoopIMUStatus = "Waiting for WHOOP motion stream"
     @Published private(set) var whoopIMULastRawFrameHex = "none"
@@ -1546,8 +1547,13 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             if whoopIMURawFrameHistory.count > 4 {
                 whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
             }
-            whoopIMUStatus = "Candidate raw-data frame observed · \(b.count) bytes · CRC valid · raw capture available · revision-aware decode pending"
-            return "CANDIDATE_RAW_DATA(0x2F) · \(b.count) bytes · CRC valid · axes not decoded"
+            if let step = Gen5R18StepRecord.decode(Data(b)) {
+                whoopR18StepDiagnostics = "R18 selected=\(step.selectedCounter) · hardware=\(step.hardwareCounter) · cadenceRaw=\(step.cadenceRaw) · activity=\(step.activityLabel) · softwareOverride=\(step.softwareOverrideActive)"
+                whoopIMUStatus = "R18 step fields decoded · raw counters only · app-total parity not validated"
+                return "HISTORICAL_DATA R18 · selected=\(step.selectedCounter) · hardware=\(step.hardwareCounter) · activity=\(step.activityLabel) · CRC valid"
+            }
+            whoopIMUStatus = "Candidate historical frame observed · \(b.count) bytes · CRC valid · subtype not mapped"
+            return "HISTORICAL_DATA · \(b.count) bytes · CRC valid · raw retained · subtype not mapped"
 
         case 40: // REALTIME_DATA; protocol inner[8] == complete-frame byte[16]
             whoopRealtimePacketCount += 1
