@@ -99,6 +99,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopIMUFrameCount = 0
     @Published private(set) var whoopIMUSampleCount = 0
     @Published private(set) var whoopR18StepDiagnostics = "No WHOOP R18 step record decoded yet"
+    private var whoopR18StepDelta = Gen5StepCounterDelta()
     @Published private(set) var whoopIMULastFrameAt: Date?
     @Published private(set) var whoopIMUStatus = "Waiting for WHOOP motion stream"
     @Published private(set) var whoopIMULastRawFrameHex = "none"
@@ -938,6 +939,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         vendorNotificationTimeline.removeAll()
         whoop5FragmentBuffers.removeAll()
         whoop5ExpectedFrameLengths.removeAll()
+        whoopR18StepDelta.reset()
+        whoopR18StepDiagnostics = "BLE session reset · waiting for first R18 counter sample"
         candidateNotificationStates.removeAll()
         candidateNotificationHistory.removeAll()
         whoop5CommandCharacteristic = nil
@@ -1546,9 +1549,20 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
             }
             if let step = Gen5R18StepRecord.decode(Data(b)) {
-                whoopR18StepDiagnostics = "R18 selected=\(step.selectedCounter) · hardware=\(step.hardwareCounter) · cadenceRaw=\(step.cadenceRaw) · activity=\(step.activityLabel) · softwareOverride=\(step.softwareOverrideActive)"
-                whoopIMUStatus = "R18 step fields decoded · raw counters only · app-total parity not validated"
-                return "HISTORICAL_DATA R18 · selected=\(step.selectedCounter) · hardware=\(step.hardwareCounter) · activity=\(step.activityLabel) · CRC valid"
+                let previous = whoopR18StepDelta.previous
+                let delta = whoopR18StepDelta.observe(step.selectedCounter)
+                let deltaLabel: String
+                if let delta {
+                    deltaLabel = "rawDelta=+\(delta)"
+                } else if previous == nil {
+                    deltaLabel = "rawDelta=baseline"
+                } else {
+                    deltaLabel = "rawDelta=unknown(reset/decrease)"
+                }
+                let overrideHardware = step.hardwareCounterWhenOverrideActive.map(String.init) ?? "inactive"
+                whoopR18StepDiagnostics = "R18 selected=\(step.selectedCounter) · \(deltaLabel) · hardwareOverride=\(overrideHardware) · cadenceRaw=\(step.cadenceRaw) · activity=\(step.activityLabel) · softwareOverride=\(step.softwareOverrideActive)"
+                whoopIMUStatus = "R18 step fields decoded · raw counter delta only · app-total parity not validated"
+                return "HISTORICAL_DATA R18 · selected=\(step.selectedCounter) · \(deltaLabel) · activity=\(step.activityLabel) · CRC valid"
             }
             whoopIMUStatus = "Candidate historical frame observed · \(b.count) bytes · CRC valid · subtype not mapped"
             return "HISTORICAL_DATA · \(b.count) bytes · CRC valid · raw retained · subtype not mapped"
