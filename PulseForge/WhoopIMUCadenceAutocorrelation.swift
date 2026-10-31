@@ -1,9 +1,8 @@
 import Foundation
 
 /// Experimental gait-periodicity estimator using autocorrelation of the
-/// gravity-removed acceleration magnitude. Unlike local peak counting, it
-/// estimates a dominant repeating interval over the complete window.
-/// Output is a periodic-cycle estimate, not validated footfall count.
+/// gravity-removed acceleration magnitude. Output is a periodic-cycle estimate,
+/// not a validated footfall count.
 enum WhoopIMUCadenceAutocorrelation {
     static func estimate(
         samples: [WhoopIMUSample],
@@ -31,8 +30,7 @@ enum WhoopIMUCadenceAutocorrelation {
         let maxLag = min(signal.count / 2, Int((sampleRateHz / minimumCadenceHz).rounded()))
         guard minLag <= maxLag else { return 0 }
 
-        var bestLag: Int?
-        var bestCorrelation = -Double.infinity
+        var correlations = [Double](repeating: 0, count: maxLag + 1)
         for lag in minLag...maxLag {
             var cross = 0.0
             var leftEnergy = 0.0
@@ -45,17 +43,26 @@ enum WhoopIMUCadenceAutocorrelation {
                 rightEnergy += b * b
             }
             let denominator = sqrt(leftEnergy * rightEnergy)
-            guard denominator > 0 else { continue }
-            let correlation = cross / denominator
-            if correlation > bestCorrelation {
-                bestCorrelation = correlation
-                bestLag = lag
+            if denominator > 0 {
+                correlations[lag] = cross / denominator
             }
         }
 
-        // Reject weakly periodic signals: random arm movement should not
-        // become a confident cadence estimate.
-        guard let lag = bestLag, bestCorrelation >= 0.25 else { return 0 }
+        // Select the first credible local autocorrelation maximum (shortest
+        // repeating period), rather than a stronger integer-multiple lag.
+        // This avoids reporting half cadence when a clean gait waveform also
+        // correlates strongly at two strides/steps.
+        var selectedLag: Int?
+        for lag in (minLag + 1)..<maxLag {
+            let value = correlations[lag]
+            if value >= 0.25 &&
+               value >= correlations[lag - 1] &&
+               value > correlations[lag + 1] {
+                selectedLag = lag
+                break
+            }
+        }
+        guard let lag = selectedLag else { return 0 }
         let cadenceHz = sampleRateHz / Double(lag)
         guard cadenceHz >= minimumCadenceHz, cadenceHz <= maximumCadenceHz else { return 0 }
         return max(0, Int((duration * cadenceHz).rounded()))
