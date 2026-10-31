@@ -1682,13 +1682,20 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     /// is allowed to trim its chunk. A failed archive blocks HISTORY_END acknowledgement.
     private func archiveWhoop5HistoricalFrame(_ bytes: [UInt8]) -> Bool {
         guard let support = FileManager.default.urls(for: .applicationSupportDirectory,
-                                                      in: .userDomainMask).first else { return false }
+                                                      in: .userDomainMask).first else {
+            whoop5HistoricalArchiveHealthy = false
+            return false
+        }
         let directory = support.appendingPathComponent("PulseForge", isDirectory: true)
         let url = directory.appendingPathComponent("whoop5-historical-raw-v1.jsonl")
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             if !FileManager.default.fileExists(atPath: url.path) {
-                guard FileManager.default.createFile(atPath: url.path, contents: nil) else { return false }
+                guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
+                    whoop5HistoricalArchiveHealthy = false
+                    recordVendorTimeline("Historical archive file creation failed · ACKs blocked")
+                    return false
+                }
             }
             let object: [String: Any] = [
                 "capturedAt": ISO8601DateFormatter().string(from: Date()),
@@ -2092,7 +2099,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let metaType = Int(b[10])
             switch metaType {
             case 1: // HISTORY_START
-                whoop5HistoricalArchiveHealthy = true
+                // Do not clear an earlier archive failure here: only a new sync session
+                // may reset archive health, otherwise a failed Type-47 write could be hidden.
                 whoop5HistoricalComplete = false
                 recordVendorTimeline("HISTORY_START received · metadata packet type=\(type) · raw archived")
                 return "HISTORY_START · PUFFIN_METADATA \(type) · CRC valid"
