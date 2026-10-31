@@ -5,7 +5,7 @@ import Foundation
 enum WhoopIMUStepPeakCounter {
     static func estimate(
         samples: [WhoopIMUSample],
-        thresholdG: Double = 0.10,
+        thresholdG: Double = 0.03,
         minimumInterval: TimeInterval = 0.30,
         smoothingRadius: Int = 12
     ) -> Int {
