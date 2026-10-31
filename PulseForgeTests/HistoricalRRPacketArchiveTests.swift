@@ -27,21 +27,22 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         XCTAssertEqual(HistoricalRRPacketArchive.load(from: url), [record])
     }
 
-    func testV18ArchiveRetainsFullDayWindow() throws {
+    func testV18RetentionUsesVerifiedPhysiologicalTimeInsteadOfArrivalOrder() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
-        let records = (0...HistoricalRRPacketArchive.maximumRecords).map { index in
+        let records = (0...HistoricalRRPacketArchive.maximumRecords).reversed().map { index in
             HistoricalRRPacketRecord(
-                receivedAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                receivedAt: Date(timeIntervalSince1970: TimeInterval(HistoricalRRPacketArchive.maximumRecords - index)),
                 recordType: 47,
                 revision: 18,
                 intervalsMilliseconds: [],
                 rawRRWords: [600 + (index % 100)],
-                rawFrameHex: String(index),
+                rawFrameHex: String(format: "%06X", index),
                 heartRateBPM: nil,
-                physiologicalTimestamp: nil,
-                decodeError: nil
+                physiologicalTimestamp: Date(timeIntervalSince1970: TimeInterval(index)),
+                decodeError: nil,
+                physiologyLayoutVerified: true
             )
         }
         XCTAssertEqual(
@@ -49,10 +50,47 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
             HistoricalRRPacketArchive.maximumRecords
         )
 
-        let archived = HistoricalRRPacketArchive.load(from: url)
+        let archived = try HistoricalRRPacketArchive.loadThrowing(from: url)
         XCTAssertEqual(archived.count, HistoricalRRPacketArchive.maximumRecords)
-        XCTAssertEqual(archived.first?.rawFrameHex, "1")
-        XCTAssertEqual(archived.last?.rawFrameHex, String(HistoricalRRPacketArchive.maximumRecords))
+        XCTAssertEqual(archived.first?.rawFrameHex, String(format: "%06X", HistoricalRRPacketArchive.maximumRecords))
+        XCTAssertEqual(archived.last?.rawFrameHex, "000001")
+        XCTAssertFalse(archived.contains { $0.rawFrameHex == "000000" })
+    }
+
+    func testRepeatedHistoricalFrameReplayDoesNotDuplicateArchiveRecords() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let firstReceipt = Date(timeIntervalSince1970: 1_700_000_000)
+        let original = HistoricalRRPacketRecord(
+            receivedAt: firstReceipt,
+            recordType: 47,
+            revision: 18,
+            intervalsMilliseconds: [],
+            rawRRWords: [863],
+            rawFrameHex: "AA01740001003F",
+            heartRateBPM: nil,
+            physiologicalTimestamp: nil,
+            decodeError: nil
+        )
+        let replay = HistoricalRRPacketRecord(
+            receivedAt: firstReceipt.addingTimeInterval(600),
+            recordType: 47,
+            revision: 18,
+            intervalsMilliseconds: [],
+            rawRRWords: [863],
+            rawFrameHex: "aa01740001003f",
+            heartRateBPM: nil,
+            physiologicalTimestamp: nil,
+            decodeError: nil
+        )
+
+        XCTAssertEqual(try HistoricalRRPacketArchive.append(original, to: url), 1)
+        XCTAssertEqual(try HistoricalRRPacketArchive.append(replay, to: url), 1)
+
+        let archived = try HistoricalRRPacketArchive.loadThrowing(from: url)
+        XCTAssertEqual(archived.count, 1)
+        XCTAssertEqual(archived.first?.receivedAt, firstReceipt)
+        XCTAssertEqual(archived.first?.rawFrameHex, original.rawFrameHex)
     }
 
     func testArchiveKeepsSeparateRetentionWindowsForEachRevision() throws {

@@ -151,26 +151,63 @@ enum HistoricalRRPacketArchive {
         try append(contentsOf: [record], to: fileURL, fileManager: fileManager)
     }
 
+    private static func retentionDate(for record: HistoricalRRPacketRecord) -> Date {
+        guard record.recordType == 47,
+              record.revision == 18,
+              record.physiologyLayoutVerified,
+              let timestamp = record.physiologicalTimestamp else {
+            return record.receivedAt
+        }
+        return timestamp
+    }
+
     /// Batch append high-rate raw frames and keep a separate rolling window per revision.
     @discardableResult
     static func append(contentsOf newRecords: [HistoricalRRPacketRecord],
                        to fileURL: URL,
                        fileManager: FileManager = .default) throws -> Int {
         guard !newRecords.isEmpty else { return load(from: fileURL).count }
-        var records: [HistoricalRRPacketRecord] = []
         // A corrupt existing archive must never be mistaken for an empty
         // archive and silently overwritten by the next batch.
-        records = try loadThrowing(from: fileURL, fileManager: fileManager)
+        var records = try loadThrowing(from: fileURL, fileManager: fileManager)
         records.append(contentsOf: newRecords)
+
+        // Historical offloads can be replayed after reconnects. The same CRC-valid
+        // frame adds no new evidence, so keep its first receipt instead of letting
+        // duplicate backfills consume the bounded retention window.
+        var seenFrames = Set<String>()
+        records = records.filter { record in
+            guard !record.rawFrameHex.isEmpty else { return true }
+            let identity = "\(record.recordType):\(record.revision):\(record.rawFrameHex.uppercased())"
+            return seenFrames.insert(identity).inserted
+        }
 
         for revision in Set(newRecords.map { $0.revision }) {
             let matchingIndices = records.indices.filter { records[$0].revision == revision }
             let limit = revision == 18 ? maximumRecords : maximumRecordsForOtherRevisions
             let excess = matchingIndices.count - limit
-            if excess > 0 {
-                for index in matchingIndices.prefix(excess).reversed() {
-                    records.remove(at: index)
+            guard excess > 0 else { continue }
+
+            // For verified v18 records, retain the newest physiological history,
+            // not whichever frames happened to arrive last during a replay.
+            // Unknown layouts have no trusted sample time and use receipt time.
+            let oldestIndices = matchingIndices.sorted { lhs, rhs in
+                let left = records[lhs]
+                let right = records[rhs]
+                let leftTime = retentionDate(for: left)
+                let rightTime = retentionDate(for: right)
+                if leftTime != rightTime { return leftTime < rightTime }
+                if left.receivedAt != right.receivedAt {
+                    return left.receivedAt < right.receivedAt
                 }
+                if left.rawFrameHex != right.rawFrameHex {
+                    return left.rawFrameHex < right.rawFrameHex
+                }
+                return lhs < rhs
+            }.prefix(excess)
+            let remove = Set(oldestIndices)
+            records = records.enumerated().compactMap { index, record in
+                remove.contains(index) ? nil : record
             }
         }
 
