@@ -36,10 +36,55 @@ enum ForgeTab: String, CaseIterable {
     }
 }
 
+final class PulseForgeTestMode: ObservableObject {
+    private let defaults = UserDefaults.standard
+    private let startKey = "pulseforge.localTestMode.startedAt"
+    private let duration: TimeInterval = 24 * 60 * 60
+
+    var startedAt: Date {
+        if let saved = defaults.object(forKey: startKey) as? Date { return saved }
+        let now = Date()
+        defaults.set(now, forKey: startKey)
+        return now
+    }
+
+    var remaining: TimeInterval { max(0, duration - Date().timeIntervalSince(startedAt)) }
+    var isActive: Bool { remaining > 0 }
+
+    func remainingText(at date: Date = .now) -> String {
+        let seconds = max(0, Int(duration - date.timeIntervalSince(startedAt)))
+        return String(format: "%02d:%02d:%02d", seconds / 3600, (seconds % 3600) / 60, seconds % 60)
+    }
+}
+
+struct LocalTestModeBanner: View {
+    @ObservedObject var mode: PulseForgeTestMode
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            HStack(spacing: 8) {
+                Image(systemName: mode.isActive ? "testtube.2" : "clock.badge.exclamationmark")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(mode.isActive ? "24-HOUR LOCAL TEST MODE" : "LOCAL TEST WINDOW ENDED")
+                        .font(.system(size: 9, weight: .bold)).tracking(0.8)
+                    Text(mode.isActive ? "Local PulseForge features · \(mode.remainingText()) remaining" : "Local features remain available; account services use normal authorization")
+                        .font(.system(size: 9))
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(mode.isActive ? ForgeColors.lime : ForgeColors.muted)
+            .padding(.horizontal, 13).padding(.vertical, 9)
+            .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(ForgeColors.stroke, lineWidth: 1))
+        }
+    }
+}
+
 struct MainTabView: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
     @State private var selected: ForgeTab = .today
+    @StateObject private var testMode = PulseForgeTestMode()
     @StateObject private var bluetooth = WhoopBluetoothManager()
     @StateObject private var gpsRun = GPSRunStore()
 
@@ -58,6 +103,14 @@ struct MainTabView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .environmentObject(bluetooth)
             .environmentObject(gpsRun)
+            VStack {
+                LocalTestModeBanner(mode: testMode)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 6)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .allowsHitTesting(false)
             ForgeTabBar(selected: $selected)
         }
         .ignoresSafeArea(.keyboard)
