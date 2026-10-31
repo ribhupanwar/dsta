@@ -82,6 +82,11 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     /// Latest decoded Type-47 v18 step-counter fields; raw ticks are not official daily steps.
     @Published private(set) var whoopStepCounterDiagnostics = "No Type-47 v18 step-counter frame decoded yet"
     @Published private(set) var whoopStepCounterFrameCount = 0
+    @Published private(set) var whoopStepCounterLatestValue: Int?
+    @Published private(set) var whoopStepCounterPacketDelta: Int?
+    @Published private(set) var whoopStepCounterActivity = "unknown"
+    private var previousWhoopStepCounterSample: Whoop5StepSample?
+
     @Published private(set) var whoopRRLastUpdatedAt: Date?
     @Published private(set) var whoopRRSource = "No WHOOP RR intervals decoded yet"
     @Published private(set) var whoopCommandResponseCount = 0
@@ -1748,6 +1753,15 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 let receivedAt = Date()
                 do {
                     let stepSample = try Whoop5StepFrameDecoder.decodeHistoricalV18(b, timestamp: receivedAt)
+                    let previousStepSample = previousWhoopStepCounterSample
+                    whoopStepCounterLatestValue = Int(stepSample.selectedCounter)
+                    whoopStepCounterPacketDelta = previousStepSample.map {
+                        Int(stepSample.selectedCounter &- $0.selectedCounter)
+                    }
+                    whoopStepCounterActivity = stepSample.activityClass.map {
+                        $0 == 0 ? "still" : ($0 == 1 ? "walk" : "run")
+                    } ?? "unknown"
+                    previousWhoopStepCounterSample = stepSample
                     whoopStepCounterFrameCount += 1
                     let hardwareText = stepSample.hardwareCounter.map(String.init) ?? "not-present"
                     let classText = stepSample.activityClass.map(String.init) ?? "unknown"
