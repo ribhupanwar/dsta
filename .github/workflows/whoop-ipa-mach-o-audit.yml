@@ -378,6 +378,48 @@ jobs:
           PY
           echo "Cross-reference analysis is static; verify any candidate parser against captured BLE frames before decoding steps." >> mach-o-evidence/README.txt
 
+      - name: Deep audit WHOOP app internals beyond BLE/R24
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mach-o-evidence/deep/{bundle,objc,swift,storage,network,step-flow}
+          APP="$(find /tmp/whoop-ipa/Payload -maxdepth 2 -type d -name '*.app' -print -quit)"
+          BIN=/tmp/whoop-arm64
+          # App-owned metadata, extensions, entitlements, frameworks and resource models.
+          /usr/libexec/PlistBuddy -c Print "$APP/Info.plist" > mach-o-evidence/deep/bundle/Info.plist.txt 2>&1 || true
+          codesign -d --entitlements :- "$APP" > mach-o-evidence/deep/bundle/entitlements.plist 2>mach-o-evidence/deep/bundle/codesign-errors.txt || true
+          find "$APP" -type f \( -name '*.mom' -o -name '*.momd' -o -name '*.xcdatamodeld' -o -name '*.sqlite' -o -name '*.db' -o -name '*.realm' -o -name '*.plist' -o -name '*.json' -o -name '*.framework' -o -name '*.appex' \) -print | sort > mach-o-evidence/deep/bundle/data-framework-inventory.txt
+          find "$APP" -type f \( -name '*.mom' -o -name '*.momd' -o -name '*.xcdatamodeld' \) -print0 | while IFS= read -r -d '' f; do
+            out="mach-o-evidence/deep/storage/$(basename "$f").txt"
+            { echo "MODEL=$f"; plutil -p "$f" 2>&1 || strings -a "$f" 2>&1 || true; } >> "$out"
+          done
+          # Objective-C runtime metadata: class/category/protocol/method lists and selector strings.
+          otool -arch arm64 -ov "$BIN" > mach-o-evidence/deep/objc/objc-runtime-metadata.txt 2>&1 || true
+          strings -a "$BIN" | grep -E '^(step|steps|currentStepCount|lastStepCount|previousStepCount|delayedStepCountProcessingWorkItem|CMPedometer|HKQuantityTypeIdentifierStepCount|Processed Steps Data|Historical Processed Steps Packet|step_count_samples|deleted_step_count_samples|IMUPacket|RealtimeIMUData|HealthKitStepCount|[+-]\\[[^]]+\\])' > mach-o-evidence/deep/objc/step-selector-class-strings.txt || true
+          # Full symbol/type inventories and broad app-internal step references.
+          nm -arch arm64 -nm "$BIN" | sort > mach-o-evidence/deep/swift/all-symbols.txt 2>&1 || true
+          xcrun swift-demangle < <(awk '{print $NF}' mach-o-evidence/deep/swift/all-symbols.txt | grep '^_' | sort -u) > mach-o-evidence/deep/swift/all-demangled-symbols.txt 2>&1 || true
+          grep -Ei 'step|pedometer|motion|activity|stride|cadence|healthkit|quantitytype|sample|historical|realtime|sync|repository|store|database|persist|dashboard|activitysummary' mach-o-evidence/deep/swift/all-demangled-symbols.txt > mach-o-evidence/deep/step-flow/swift-symbol-candidates.txt || true
+          strings -a "$BIN" | sort -u > mach-o-evidence/deep/bundle/all-binary-strings.txt
+          grep -Ei 'step|pedometer|motion|activity|stride|cadence|healthkit|quantitytype|step_count_samples|deleted_step_count_samples|Processed Steps|Historical Processed Steps|currentStepCount|lastStepCount|previousStepCount|CMPedometer|HKStatisticsQuery|HKSampleQuery|HKAnchoredObjectQuery|HKObserverQuery|URLSession|graphql|/v[0-9]+/|step.?count' mach-o-evidence/deep/step-flow/step-related-strings.txt || true
+          grep -Ei 'https?://|graphql|/api/|/v[0-9]+/|step_count|step-count|steps|activity' mach-o-evidence/deep/bundle/all-binary-strings.txt > mach-o-evidence/deep/network/network-endpoint-and-step-api-candidates.txt || true
+          # Extract nearby disassembly for every known step-state, persistence, and HealthKit string reference.
+          r2 -q -e bin.relocs.apply=true -c 'aaa; izz~step; izz~Step; izz~HealthKit; izz~Processed; izz~Pedometer; izz~Motion; izz~step_count_samples; izz~currentStepCount; izz~lastStepCount; izz~previousStepCount' "$BIN" > mach-o-evidence/deep/step-flow/radare2-string-search.txt 2>mach-o-evidence/deep/step-flow/radare2-errors.txt || true
+          # Keep the app's own data-flow evidence grouped by source, processing, persistence, and presentation.
+          {
+            echo "# WHOOP in-app step-count investigation"
+            echo "This report inspects the original app bundle and arm64 executable; no BLE-only assumption is made."
+            echo "## Candidate sources"
+            grep -Ei 'CMPedometer|CoreMotion|HKQuantityTypeIdentifierStepCount|HKStatisticsQuery|HKSampleQuery|step.?count|pedometer|IMUPacket|RealtimeIMUData' mach-o-evidence/deep/step-flow/step-related-strings.txt || true
+            echo "## Candidate processing/state"
+            grep -Ei 'currentStepCount|lastStepCount|previousStepCount|delayedStepCountProcessingWorkItem|Processed Steps|Historical Processed Steps|step.?count|cadence|stride' mach-o-evidence/deep/step-flow/swift-symbol-candidates.txt || true
+            echo "## Candidate persistence"
+            grep -Ei 'step_count_samples|deleted_step_count_samples|sqlite|realm|coredata|persistent|store|database|step' mach-o-evidence/deep/bundle/data-framework-inventory.txt || true
+            echo "## Candidate server/API path"
+            grep -Ei 'step|activity|graphql|/api/|/v[0-9]+/' mach-o-evidence/deep/network/network-endpoint-and-step-api-candidates.txt || true
+          } > mach-o-evidence/deep/step-flow/flow-index.txt
+          echo "Deep in-app audit complete: Objective-C metadata, Swift symbols, resources/models, persistence candidates, API strings, and step-flow index." >> mach-o-evidence/README.txt
+
       - name: Upload Mach-O evidence
         uses: actions/upload-artifact@v4
         with:
