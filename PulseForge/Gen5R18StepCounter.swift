@@ -19,6 +19,12 @@ struct Gen5R18StepRecord: Equatable {
         }
     }
 
+    /// The @61 hardware source is meaningful only while the software
+    /// counter override is active. Preserve raw zero separately.
+    var hardwareCounterWhenOverrideActive: UInt16? {
+        softwareOverrideActive ? hardwareCounter : nil
+    }
+
     static func decode(_ frame: Data) -> Gen5R18StepRecord? {
         // Absolute offsets in the complete WHOOP 5/MG format-1 frame.
         // Validate the exact R18 shape and its record CRC independently of
