@@ -177,6 +177,43 @@ jobs:
             echo "No test target detected; build remains successful." > "$TEST_LOG"
           fi
 
+      - name: Build unsigned iOS device app and package IPA
+        if: steps.source.outputs.has_project == 'true'
+        shell: bash
+        env:
+          CONTAINER: ${{ steps.discover.outputs.container }}
+          CONTAINER_FLAG: ${{ steps.discover.outputs.container_flag }}
+          SCHEME: ${{ steps.discover.outputs.scheme }}
+        run: |
+          set -euo pipefail
+          DEVICE_LOG="ci-logs/device-build.log"
+          xcodebuild "$CONTAINER_FLAG" "$CONTAINER" \
+            -scheme "$SCHEME" \
+            -destination "generic/platform=iOS" \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee "$DEVICE_LOG"
+          APP_PATH="build/Build/Products/Release-iphoneos/PulseForge.app"
+          if [[ ! -d "$APP_PATH" ]]; then
+            echo "::error::Device .app not found at $APP_PATH"
+            exit 1
+          fi
+          mkdir -p ipa-staging/Payload
+          cp -R "$APP_PATH" ipa-staging/Payload/PulseForge.app
+          (cd ipa-staging && /usr/bin/zip -qry ../PulseForge-unsigned.ipa Payload)
+          echo "Unsigned device IPA packaged. It must be signed with a valid provisioning profile before installation." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload unsigned iOS IPA
+        if: success() && steps.source.outputs.has_project == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulseforge-unsigned-ipa
+          path: PulseForge-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+
       - name: Upload full Xcode logs
         if: always()
         uses: actions/upload-artifact@v4
