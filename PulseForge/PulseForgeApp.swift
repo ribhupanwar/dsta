@@ -1338,11 +1338,14 @@ struct StepComparisonCard: View {
                             .font(.system(size: 30, weight: .semibold, design: .rounded))
                             .monospacedDigit()
                             .foregroundStyle(.white)
-                        Text("raw @57 ticks")
+                        Text("selected cumulative @57")
                             .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
-                        Text("Packet Δ: " + (bluetooth.whoopStepCounterPacketDelta.map(String.init) ?? "—"))
+                        Text("20s accepted Δ: " + String(bluetooth.whoopStepCounterWindowTicks20s))
                             .font(.system(size: 9, weight: .semibold, design: .monospaced))
                             .foregroundStyle(ForgeColors.lime)
+                        Text("Latest packet Δ: " + (bluetooth.whoopStepCounterPacketDelta.map(String.init) ?? "—"))
+                            .font(.system(size: 8, design: .monospaced))
+                            .foregroundStyle(ForgeColors.muted)
                         Text("Activity: " + bluetooth.whoopStepCounterActivity.uppercased())
                             .font(.system(size: 8, weight: .medium))
                             .foregroundStyle(ForgeColors.muted)
@@ -1371,7 +1374,7 @@ struct StepComparisonCard: View {
                         } ?? "IMU: WAITING")
                             .font(.system(size: 8, weight: .medium))
                             .foregroundStyle(ForgeColors.muted)
-                        Text("100 Hz · peak threshold 0.10g")
+                        Text("100 Hz · detrended peak threshold 0.03g")
                             .font(.system(size: 8))
                             .foregroundStyle(ForgeColors.muted)
                     }
@@ -1396,7 +1399,7 @@ struct StepComparisonCard: View {
                         } ?? "IMU: WAITING")
                             .font(.system(size: 8, weight: .medium))
                             .foregroundStyle(ForgeColors.muted)
-                        Text("100 Hz · gyro threshold 18°/s")
+                        Text("100 Hz · detrended gyro threshold 6°/s")
                             .font(.system(size: 8))
                             .foregroundStyle(ForgeColors.muted)
                     }
@@ -1424,7 +1427,7 @@ struct StepComparisonCard: View {
                     .padding(12)
                     .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 13))
                 }
-                Text("A is raw Type-47 @57 counter ticks. B counts acceleration peaks; C counts gyroscope swing peaks; D estimates repeating gait cycles from acceleration autocorrelation. B–D are experimental and uncalibrated. D may return zero when motion is weak or irregular. Compare all four with your manual count; none is official WHOOP daily steps yet.")
+                Text("A shows Type-47 @57 cumulative counter and accepted raw ticks accumulated over the rolling 20-second receipt-time window. B counts detrended acceleration peaks; C counts detrended gyroscope peaks; D estimates repeating gait cycles from acceleration autocorrelation. B–D are experimental and uncalibrated. Type-47 timestamps here are packet receipt times, not verified physiological times; raw ticks are not confirmed official steps.")
                     .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
             }
             .padding(14)
