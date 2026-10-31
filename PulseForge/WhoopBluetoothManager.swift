@@ -84,8 +84,11 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopStepCounterFrameCount = 0
     @Published private(set) var whoopStepCounterLatestValue: Int?
     @Published private(set) var whoopStepCounterPacketDelta: Int?
+    /// Accepted raw Type-47 counter ticks across the same rolling 20-second window as IMU estimators.
+    @Published private(set) var whoopStepCounterWindowTicks20s = 0
     @Published private(set) var whoopStepCounterActivity = "unknown"
     private var previousWhoopStepCounterSample: Whoop5StepSample?
+    private var whoopStepCounterWindowSamples: [Whoop5StepSample] = []
 
     @Published private(set) var whoopRRLastUpdatedAt: Date?
     @Published private(set) var whoopRRSource = "No WHOOP RR intervals decoded yet"
@@ -1762,6 +1765,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         $0 == 0 ? "still" : ($0 == 1 ? "walk" : "run")
                     } ?? "unknown"
                     previousWhoopStepCounterSample = stepSample
+                    whoopStepCounterWindowSamples.append(stepSample)
+                    let stepWindowCutoff = receivedAt.addingTimeInterval(-20)
+                    whoopStepCounterWindowSamples.removeAll { $0.timestamp < stepWindowCutoff }
+                    whoopStepCounterWindowTicks20s = Whoop5StepLedger.count(
+                        samples: whoopStepCounterWindowSamples
+                    ).acceptedTicks
                     whoopStepCounterFrameCount += 1
                     let hardwareText = stepSample.hardwareCounter.map(String.init) ?? "not-present"
                     let classText = stepSample.activityClass.map(String.init) ?? "unknown"
