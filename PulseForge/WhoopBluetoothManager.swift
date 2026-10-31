@@ -570,18 +570,12 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             workoutDetectionStatus = "Workout recovered after app restart · partial data"
             persistWorkoutSession()
         }
-        #if targetEnvironment(simulator)
-        // CoreBluetooth state restoration is unavailable in the CI simulator
-        // host because its generated Info.plist may not carry bluetooth-central.
-        // Keep simulator tests deterministic; physical iPhones retain restoration.
+        // Initialize CoreBluetooth without state restoration while isolating
+        // the launch-time CBCentralManager assertion seen on physical devices.
+        // Scanning, connecting, notifications and foreground BLE remain enabled.
+        // Background relaunch/restoration is intentionally deferred until the
+        // plain initializer is verified on-device.
         central = CBCentralManager(delegate: self, queue: .main)
-        #else
-        central = CBCentralManager(
-            delegate: self,
-            queue: .main,
-            options: [CBCentralManagerOptionRestoreIdentifierKey: "com.ribhupanwar.pulseforge.bluetooth-central"]
-        )
-        #endif
     }
 
     private func cancelAutomaticReconnectScan() {
