@@ -1044,6 +1044,8 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         vendorNotificationTimeline.removeAll()
         whoop5FragmentBuffers.removeAll()
         whoop5ExpectedFrameLengths.removeAll()
+        whoopR18StepDelta.reset()
+        whoopR18StepDiagnostics = "Disconnected · waiting for first R18 counter sample"
         candidateNotificationStates.removeAll()
         candidateNotificationHistory.removeAll()
         whoop5CommandCharacteristic = nil
