@@ -315,7 +315,7 @@ jobs:
           # Run whole-binary analysis once, then resolve all targets in the same
           # radare2 session. Repeating "aa" for each target needlessly rescans
           # the full Mach-O and can keep this job busy for a long time.
-          r2 -q -c 'aa; ?e BEGIN_R24_FACTORY_XREF; axtj @ 0x1008026fc; ?e BEGIN_PROCESSED_STEPS_XREF; axtj @ 0x1090d5e10; ?e BEGIN_HISTORICAL_R24_XREF; axtj @ 0x109218970; ?e BEGIN_R24_FACTORY_FUNCTION; afij @ 0x1008026fc; pdf @ 0x1008026fc; ?e BEGIN_IMU_ERROR_FUNCTION; afij @ 0x10088e4ec; pdf @ 0x10088e4ec; ?e BEGIN_R24_CALLER_AUDIT; pdf @ 0x100248774; pdf @ 0x100a4deb4; pdf @ 0x105ce95dc; pdf @ 0x105d03cac' /tmp/whoop-arm64 > /tmp/r24-r2-session.txt 2>mach-o-evidence/radare2-crossrefs-errors.txt || true
+          r2 -q -c 'aa; ?e BEGIN_R24_FACTORY_XREF; axtj @ 0x1008026fc; ?e BEGIN_PROCESSED_STEPS_XREF; axtj @ 0x1090d5e10; ?e BEGIN_HISTORICAL_R24_XREF; axtj @ 0x109218970; ?e BEGIN_STEP_STATE_CURRENT_XREF; axtj @ 0x109da3570; ?e BEGIN_STEP_STATE_LAST_XREF; axtj @ 0x109da4c74; ?e BEGIN_STEP_STATE_PREVIOUS_XREF; axtj @ 0x109da3570; ?e BEGIN_HEALTHKIT_STEP_REQUEST_XREF; axtj @ 0x108a963a0; ?e BEGIN_HEALTHKIT_STEP_DTO_XREF; axtj @ 0x108aa7960; ?e BEGIN_IMU_PACKET_XREF; axtj @ 0x109de49fe; ?e BEGIN_REALTIME_IMU_XREF; axtj @ 0x108af95d6; ?e BEGIN_R24_FACTORY_FUNCTION; afij @ 0x1008026fc; pdf @ 0x1008026fc; ?e BEGIN_IMU_ERROR_FUNCTION; afij @ 0x10088e4ec; pdf @ 0x10088e4ec; ?e BEGIN_R24_CALLER_AUDIT; pdf @ 0x100248774; pdf @ 0x100a4deb4; pdf @ 0x105ce95dc; pdf @ 0x105d03cac' /tmp/whoop-arm64 > /tmp/r24-r2-session.txt 2>mach-o-evidence/radare2-crossrefs-errors.txt || true
           python3 - <<'PY'
           from pathlib import Path
           text = Path("/tmp/r24-r2-session.txt").read_text(errors="replace")
@@ -323,7 +323,14 @@ jobs:
           markers = [
               ("r24-factory-xrefs.json", "BEGIN_R24_FACTORY_XREF", "BEGIN_PROCESSED_STEPS_XREF"),
               ("processed-steps-string-xrefs.json", "BEGIN_PROCESSED_STEPS_XREF", "BEGIN_HISTORICAL_R24_XREF"),
-              ("historical-r24-string-xrefs.json", "BEGIN_HISTORICAL_R24_XREF", "BEGIN_R24_FACTORY_FUNCTION"),
+              ("historical-r24-string-xrefs.json", "BEGIN_HISTORICAL_R24_XREF", "BEGIN_STEP_STATE_CURRENT_XREF"),
+              ("step-state-current-xrefs.json", "BEGIN_STEP_STATE_CURRENT_XREF", "BEGIN_STEP_STATE_LAST_XREF"),
+              ("step-state-last-xrefs.json", "BEGIN_STEP_STATE_LAST_XREF", "BEGIN_STEP_STATE_PREVIOUS_XREF"),
+              ("step-state-previous-xrefs.json", "BEGIN_STEP_STATE_PREVIOUS_XREF", "BEGIN_HEALTHKIT_STEP_REQUEST_XREF"),
+              ("healthkit-step-request-xrefs.json", "BEGIN_HEALTHKIT_STEP_REQUEST_XREF", "BEGIN_HEALTHKIT_STEP_DTO_XREF"),
+              ("healthkit-step-dto-xrefs.json", "BEGIN_HEALTHKIT_STEP_DTO_XREF", "BEGIN_IMU_PACKET_XREF"),
+              ("imu-packet-string-xrefs.json", "BEGIN_IMU_PACKET_XREF", "BEGIN_REALTIME_IMU_XREF"),
+              ("realtime-imu-string-xrefs.json", "BEGIN_REALTIME_IMU_XREF", "BEGIN_R24_FACTORY_FUNCTION"),
               ("r24-factory-function.txt", "BEGIN_R24_FACTORY_FUNCTION", "BEGIN_IMU_ERROR_FUNCTION"),
               ("imu-error-function.txt", "BEGIN_IMU_ERROR_FUNCTION", "BEGIN_R24_CALLER_AUDIT"),
               ("r24-caller-functions.txt", "BEGIN_R24_CALLER_AUDIT", None),
