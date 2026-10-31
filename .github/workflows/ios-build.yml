@@ -8,6 +8,7 @@ on:
       - integrate-pulseforge-into-main
       - ci/unsigned-ipa-export
       - ui/reference-dashboard-redesign
+      - feat/whoop5-step-ledger-v1
   workflow_dispatch:
 
 concurrency:
