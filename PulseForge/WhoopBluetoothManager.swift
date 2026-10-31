@@ -1751,9 +1751,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     whoopStepCounterFrameCount += 1
                     let hardwareText = stepSample.hardwareCounter.map(String.init) ?? "not-present"
                     let classText = stepSample.activityClass.map(String.init) ?? "unknown"
-                    whoopStepCounterDiagnostics = "Type-47 v18 · frames \\(whoopStepCounterFrameCount) · selected@57 \\(stepSample.selectedCounter) · source \\(stepSample.source.rawValue) · hardware@61 \\(hardwareText) · cadence@59 \\(stepSample.cadenceRaw) · activity@63 \\(classText) · override@64 \\(stepSample.softwareOverrideActive ? "on" : "off") · receipt time only; not a daily step total"
+                    whoopStepCounterDiagnostics = "Type-47 v18 · frames \(whoopStepCounterFrameCount) · selected@57 \(stepSample.selectedCounter) · source \(stepSample.source.rawValue) · hardware@61 \(hardwareText) · cadence@59 \(stepSample.cadenceRaw) · activity@63 \(classText) · override@64 \(stepSample.softwareOverrideActive ? "on" : "off") · receipt time only; not a daily step total"
                 } catch {
-                    whoopStepCounterDiagnostics = "Type-47 v18 step fields unavailable · \\(error)"
+                    whoopStepCounterDiagnostics = "Type-47 v18 step fields unavailable · \(error)"
                 }
                 let rawHex = b.map { String(format: "%02X", $0) }.joined()
                 var rr: [Int] = []
