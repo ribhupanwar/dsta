@@ -1326,8 +1326,14 @@ struct StepComparisonCard: View {
                         .font(.system(size: 9, weight: .bold)).tracking(0.9)
                         .foregroundStyle(ForgeColors.muted)
                     Spacer()
-                    Text("LIVE EXPERIMENT")
-                        .font(.system(size: 8, weight: .bold)).foregroundStyle(ForgeColors.lime)
+                    Spacer()
+                    ShareLink(item: bluetooth.stepCounterExportSnapshot,
+                              subject: Text("PulseForge step experiment data"),
+                              preview: SharePreview("PulseForge step experiment data")) {
+                        Label("EXPORT STEP DATA", systemImage: "square.and.arrow.up")
+                            .font(.system(size: 8, weight: .bold)).tracking(0.5)
+                            .foregroundStyle(ForgeColors.lime)
+                    }
                 }
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 8) {
