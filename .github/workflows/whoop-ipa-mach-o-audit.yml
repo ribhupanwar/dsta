@@ -342,3 +342,5 @@ jobs:
           name: whoop-ipa-mach-o-protocol-audit
           path: mach-o-evidence/
           retention-days: 14
+
+# Re-run the corrected R24 audit after fixing the evidence marker split.
