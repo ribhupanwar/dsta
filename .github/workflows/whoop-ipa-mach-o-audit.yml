@@ -315,7 +315,7 @@ jobs:
           # Run whole-binary analysis once, then resolve all targets in the same
           # radare2 session. Repeating "aa" for each target needlessly rescans
           # the full Mach-O and can keep this job busy for a long time.
-          r2 -q -e bin.relocs.apply=true -c 'aa; ?e BEGIN_R24_FACTORY_XREF; axtj @ 0x1008026fc; ?e BEGIN_PROCESSED_STEPS_XREF; axtj @ 0x1090d5e10; ?e BEGIN_HISTORICAL_R24_XREF; axtj @ 0x109218970; ?e BEGIN_STEP_STATE_CURRENT_XREF; axtj @ 0x109da44b0; ?e BEGIN_STEP_STATE_LAST_XREF; axtj @ 0x109da4c74; ?e BEGIN_STEP_STATE_PREVIOUS_XREF; axtj @ 0x109da3570; ?e BEGIN_HEALTHKIT_STEP_REQUEST_XREF; axtj @ 0x108a963a0; ?e BEGIN_HEALTHKIT_STEP_DTO_XREF; axtj @ 0x108aa7960; ?e BEGIN_IMU_PACKET_XREF; axtj @ 0x109de49fe; ?e BEGIN_REALTIME_IMU_XREF; axtj @ 0x108af95d6; ?e BEGIN_HISTORICAL_R24_DISPATCH_XREF; axtj @ 0x105ce7fdc; ?e BEGIN_HISTORICAL_R24_DISPATCH_FUNCTION; afij @ 0x105ce7fdc; pdf @ 0x105ce7fdc; ?e BEGIN_STEP_SAMPLE_CALLEE_XREF; axtj @ 0x10036e4a4; ?e BEGIN_STEP_SAMPLE_CALLEE_FUNCTION; afij @ 0x10036e4a4; pdf @ 0x10036e4a4; ?e BEGIN_R24_FACTORY_FUNCTION; afij @ 0x1008026fc; pdf @ 0x1008026fc; ?e BEGIN_IMU_ERROR_FUNCTION; afij @ 0x10088e4ec; pdf @ 0x10088e4ec; ?e BEGIN_R24_CALLER_AUDIT; pdf @ 0x100248774; pdf @ 0x100a4deb4; pdf @ 0x105ce95dc; pdf @ 0x105d03cac' /tmp/whoop-arm64 > /tmp/r24-r2-session.txt 2>mach-o-evidence/radare2-crossrefs-errors.txt || true
+          r2 -q -e bin.relocs.apply=true -c 'aa; ?e BEGIN_R24_FACTORY_XREF; axtj @ 0x1008026fc; ?e BEGIN_PROCESSED_STEPS_XREF; axtj @ 0x1090d5e10; ?e BEGIN_HISTORICAL_R24_XREF; axtj @ 0x109218970; ?e BEGIN_STEP_STATE_CURRENT_XREF; axtj @ 0x109da44b0; ?e BEGIN_STEP_STATE_LAST_XREF; axtj @ 0x109da4c74; ?e BEGIN_STEP_STATE_PREVIOUS_XREF; axtj @ 0x109da3570; ?e BEGIN_HEALTHKIT_STEP_REQUEST_XREF; axtj @ 0x108a963a0; ?e BEGIN_HEALTHKIT_STEP_DTO_XREF; axtj @ 0x108aa7960; ?e BEGIN_IMU_PACKET_XREF; axtj @ 0x109de49fe; ?e BEGIN_REALTIME_IMU_XREF; axtj @ 0x108af95d6; ?e BEGIN_HISTORICAL_R24_DISPATCH_XREF; axtj @ 0x105ce7fb8; ?e BEGIN_HISTORICAL_R24_DISPATCH_FUNCTION; afij @ 0x105ce7fb8; pdf @ 0x105ce7fb8; ?e BEGIN_STEP_SAMPLE_CALLEE_XREF; axtj @ 0x10036e4a4; ?e BEGIN_STEP_SAMPLE_NEXT_PARSER_XREF; axtj @ 0x10036e5a4; ?e BEGIN_STEP_SAMPLE_NEXT_PARSER_FUNCTION; afij @ 0x10036e5a4; pdf @ 0x10036e5a4; ?e BEGIN_R24_DISPATCH_CALLER_FUNCTIONS; pdf @ 0x105ce75d4; pdf @ 0x105ce76bc; pdf @ 0x105ce94b0; pdf @ 0x105ce9500; pdf @ 0x105ce954c; pdf @ 0x105ce95c8; pdf @ 0x105cf43b8; ?e BEGIN_R24_FACTORY_FUNCTION; afij @ 0x1008026fc; pdf @ 0x1008026fc; ?e BEGIN_IMU_ERROR_FUNCTION; afij @ 0x10088e4ec; pdf @ 0x10088e4ec; ?e BEGIN_R24_CALLER_AUDIT; pdf @ 0x100248774; pdf @ 0x100a4deb4; pdf @ 0x105ce95dc; pdf @ 0x105d03cac' /tmp/whoop-arm64 > /tmp/r24-r2-session.txt 2>mach-o-evidence/radare2-crossrefs-errors.txt || true
           python3 - <<'PY'
           from pathlib import Path
           text = Path("/tmp/r24-r2-session.txt").read_text(errors="replace")
@@ -332,6 +332,9 @@ jobs:
               ("imu-packet-string-xrefs.json", "BEGIN_IMU_PACKET_XREF", "BEGIN_REALTIME_IMU_XREF"),
               ("realtime-imu-string-xrefs.json", "BEGIN_REALTIME_IMU_XREF", "BEGIN_HISTORICAL_R24_DISPATCH_XREF"),
               ("historical-r24-dispatch-xrefs.json", "BEGIN_HISTORICAL_R24_DISPATCH_XREF", "BEGIN_HISTORICAL_R24_DISPATCH_FUNCTION"),
+              ("step-sample-next-parser-xrefs.json", "BEGIN_STEP_SAMPLE_NEXT_PARSER_XREF", "BEGIN_STEP_SAMPLE_NEXT_PARSER_FUNCTION"),
+              ("step-sample-next-parser-function.txt", "BEGIN_STEP_SAMPLE_NEXT_PARSER_FUNCTION", "BEGIN_R24_DISPATCH_CALLER_FUNCTIONS"),
+              ("r24-dispatch-caller-functions.txt", "BEGIN_R24_DISPATCH_CALLER_FUNCTIONS", "BEGIN_STEP_SAMPLE_CALLEE_XREF"),
               ("historical-r24-dispatch-function.txt", "BEGIN_HISTORICAL_R24_DISPATCH_FUNCTION", "BEGIN_STEP_SAMPLE_CALLEE_XREF"),
               ("step-sample-callee-xrefs.json", "BEGIN_STEP_SAMPLE_CALLEE_XREF", "BEGIN_STEP_SAMPLE_CALLEE_FUNCTION"),
               ("step-sample-callee-function.txt", "BEGIN_STEP_SAMPLE_CALLEE_FUNCTION", "BEGIN_R24_FACTORY_FUNCTION"),
@@ -354,4 +357,4 @@ jobs:
           path: mach-o-evidence/
           retention-days: 14
 
-# Re-run the corrected R24 audit after fixing the evidence marker split.
+# Re-run the corrected R24 audit with dispatcher-entry callers and nested step parser tracing.
