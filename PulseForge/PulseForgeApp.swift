@@ -287,6 +287,62 @@ struct LiveHeartRateChartCard: View {
     }
 }
 
+struct WhoopR18StepCard: View {
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+
+    private var selectedCounter: String {
+        guard let range = bluetooth.whoopR18StepDiagnostics.range(of: "selected=") else { return "—" }
+        let suffix = bluetooth.whoopR18StepDiagnostics[range.upperBound...]
+        let digits = suffix.prefix(while: { $0.isNumber })
+        return digits.isEmpty ? "—" : String(digits)
+    }
+
+    private var deltaText: String {
+        guard let range = bluetooth.whoopR18StepDiagnostics.range(of: "rawDelta=") else { return "Waiting for a valid R18 frame" }
+        let suffix = bluetooth.whoopR18StepDiagnostics[range.upperBound...]
+        return String(suffix.prefix { $0 != "·" }).trimmingCharacters(in: .whitespaces)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("WHOOP RAW STEP SIGNAL", systemImage: "figure.walk")
+                    .font(.system(size: 9, weight: .bold)).tracking(0.9)
+                    .foregroundStyle(ForgeColors.muted)
+                Spacer()
+                Text(bluetooth.whoopR18StepDiagnostics.hasPrefix("R18 ") ? "R18 DECODED" : "WAITING")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(bluetooth.whoopR18StepDiagnostics.hasPrefix("R18 ") ? ForgeColors.lime : ForgeColors.muted)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(selectedCounter)
+                    .font(.system(size: 42, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(selectedCounter == "—" ? ForgeColors.muted : ForgeColors.lime)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("SELECTED COUNTER")
+                        .font(.system(size: 8, weight: .bold)).tracking(0.7)
+                        .foregroundStyle(ForgeColors.muted)
+                    Text(deltaText)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white)
+                }
+                Spacer()
+            }
+            Text(bluetooth.whoopR18StepDiagnostics)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(ForgeColors.muted)
+                .textSelection(.enabled)
+            Text("Experimental raw WHOOP R18 motion counter — not yet verified against the WHOOP app's daily step total. A missing value means no valid R18 frame has arrived.")
+                .font(.system(size: 9))
+                .foregroundStyle(ForgeColors.muted)
+        }
+        .padding(16)
+        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(ForgeColors.stroke, lineWidth: 1))
+    }
+}
+
 struct WhoopMotionCard: View {
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
 
@@ -1180,6 +1236,7 @@ struct DeviceDashboard: View {
                     .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     }
                     LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE · LAST 60 SECONDS")
+                    WhoopR18StepCard()
                     WhoopMotionCard()
                     if bluetooth.connectedName != nil {
                         Button { bluetooth.disconnect() } label: {
