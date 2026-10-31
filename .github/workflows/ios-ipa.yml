@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feat/whoop5-step-ledger-v1
     paths:
       - "PulseForge/**"
       - "project.yml"
