@@ -913,18 +913,18 @@ struct StrainDashboard: View {
                                     .font(.system(size: 39, weight: .light, design: .rounded))
                                     .monospacedDigit()
                                 Text("LOAD PTS")
-                                    .font(.system(size: 8, weight: .bold)).tracking(0.8)
+                                    .font(WoopTypography.label(8)).tracking(0.8)
                                     .foregroundStyle(ForgeColors.muted)
                             }
                         }
                         .frame(width: 132, height: 132)
                         VStack(alignment: .leading, spacing: 7) {
                             Text(insights.cardioLoadPoints == nil ? "Building cardio load" : "Cardio load recorded")
-                                .font(.system(size: 18, weight: .semibold))
+                                .font(WoopTypography.emphasis(18))
                             Text(insights.cardioLoadPoints == nil
                                  ? "Add a measured maximum heart rate and record a workout with heart-rate samples."
                                  : "Intensity-weighted workout load from Apple Health heart-rate samples. This is not a WHOOP Strain score.")
-                                .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                                .font(WoopTypography.body(12)).foregroundStyle(ForgeColors.muted)
                         }
                     }
                 }
@@ -936,7 +936,7 @@ struct StrainDashboard: View {
                     HStack(spacing: 9) {
                         TextField(measuredMaxHeartRate > 0 ? String(measuredMaxHeartRate) : "Enter measured max HR", text: $maxHeartRateDraft)
                             .keyboardType(.numberPad)
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .font(WoopTypography.metric(16))
                             .padding(12)
                             .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 10))
                         Button("SAVE") {
@@ -946,13 +946,13 @@ struct StrainDashboard: View {
                                 insights.refresh()
                             }
                         }
-                        .font(.system(size: 10, weight: .bold))
+                        .font(WoopTypography.label(10))
                         .foregroundStyle(.black)
                         .padding(.horizontal, 15).padding(.vertical, 12)
                         .background(ForgeColors.lime, in: Capsule())
                     }
                     Text("Enter a value measured during a hard effort or clinical test. PulseForge will leave cardio load blank until this is set.")
-                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                        .font(WoopTypography.body(10)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
                 SectionHeader(title: "CARDIO LOAD")
@@ -984,7 +984,7 @@ struct StrainDashboard: View {
                 .font(.system(size: 13, weight: .medium))
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
                 Text("Cardio-load points use workout HR samples and your saved measured max HR. WHOOP-style strain remains blank until its model is validated.")
-                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                    .font(WoopTypography.body(10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
             .padding(18).padding(.top, 16)
@@ -1126,9 +1126,9 @@ struct WoopActivityDashboard: View {
             VStack(alignment: .leading, spacing: 15) {
                 HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("ACTIVITY").font(.system(size: 10, weight: .bold)).tracking(1.8)
+                        Text("ACTIVITY").font(WoopTypography.label(10)).tracking(1.8)
                             .foregroundStyle(ForgeColors.muted)
-                        Text("Your activities").font(.system(size: 23, weight: .semibold))
+                        Text("Your activities").font(WoopTypography.emphasis(23))
                             .foregroundStyle(.white)
                     }
                     Spacer()
@@ -1147,7 +1147,7 @@ struct WoopActivityDashboard: View {
                         SectionHeader(title: "LAST 7 DAYS")
                         Spacer()
                         Text("\(health.weeklyRunCount) RUNS")
-                            .font(.system(size: 9, weight: .bold)).tracking(0.7)
+                            .font(WoopTypography.label(9)).tracking(0.7)
                             .foregroundStyle(ForgeColors.lime)
                     }
                     HStack(spacing: 10) {
@@ -1158,7 +1158,7 @@ struct WoopActivityDashboard: View {
                         RunHighlight(value: String(health.weeklyRunCount), unit: "RUNS", label: "SESSIONS")
                     }
                     Text("Completed running workouts synced from Apple Health.")
-                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                        .font(WoopTypography.body(10)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(16)
                 .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 19))
@@ -1168,13 +1168,13 @@ struct WoopActivityDashboard: View {
                     SectionHeader(title: "LATEST ACTIVITY")
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Running").font(.system(size: 16, weight: .semibold))
+                            Text("Running").font(WoopTypography.emphasis(16))
                             Text(health.latestRunDate?.formatted(date: .abbreviated, time: .shortened) ?? "No run synced")
-                                .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                                .font(WoopTypography.body(10)).foregroundStyle(ForgeColors.muted)
                         }
                         Spacer()
                         Image(systemName: "figure.run")
-                            .font(.system(size: 19)).foregroundStyle(ForgeColors.lime)
+                            .font(WoopTypography.body(19)).foregroundStyle(ForgeColors.lime)
                             .frame(width: 40, height: 40)
                             .background(ForgeColors.track, in: Circle())
                     }
@@ -1207,11 +1207,11 @@ struct WoopActivityDashboard: View {
                         Spacer()
                         Text("DISTANCE")
                     }
-                    .font(.system(size: 9, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                    .font(WoopTypography.label(9)).foregroundStyle(ForgeColors.muted)
                     Divider().overlay(ForgeColors.stroke)
                     if health.latestRunSplits.isEmpty {
                         Text("No distance split samples available")
-                            .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                            .font(WoopTypography.body(11)).foregroundStyle(ForgeColors.muted)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
                         ForEach(health.latestRunSplits) { split in
@@ -1223,7 +1223,7 @@ struct WoopActivityDashboard: View {
                                 Text(String(format: "%.2f km", split.distanceKm))
                                     .foregroundStyle(ForgeColors.muted)
                             }
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .font(WoopTypography.metric(11))
                         }
                     }
                 }
@@ -1232,7 +1232,7 @@ struct WoopActivityDashboard: View {
                 .overlay(RoundedRectangle(cornerRadius: 19).stroke(ForgeColors.stroke, lineWidth: 1))
 
                 Text("Only synced workout measurements are displayed. Live GPS recording is separate from Apple Health history.")
-                    .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                    .font(WoopTypography.body(9)).foregroundStyle(ForgeColors.muted)
                 Color.clear.frame(height: 105)
             }
             .padding(.horizontal, 17)
@@ -1527,29 +1527,29 @@ struct DeviceDashboard: View {
                 HStack { Spacer(); WhoopBatteryInline() }
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        Image(systemName: "waveform.path.ecg").font(.system(size: 24)).foregroundStyle(ForgeColors.lime)
+                        Image(systemName: "waveform.path.ecg").font(WoopTypography.body(24)).foregroundStyle(ForgeColors.lime)
                         Spacer()
                         Text(bluetooth.connectedName == nil ? "NOT CONNECTED" : "CONNECTED")
-                            .font(.system(size: 9, weight: .bold)).tracking(1)
+                            .font(WoopTypography.label(9)).tracking(1)
                             .foregroundStyle(bluetooth.connectedName == nil ? ForgeColors.muted : ForgeColors.lime)
                     }
                     Text(bluetooth.connectedName ?? (bluetooth.isConnecting ? "Connecting to WHOOP…" : "WHOOP 5.0"))
-                        .font(.system(size: 19, weight: .semibold))
+                        .font(WoopTypography.emphasis(19))
                     Text(bluetooth.statusText)
-                        .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                        .font(WoopTypography.body(12)).foregroundStyle(ForgeColors.muted)
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
                     HStack(alignment: .center, spacing: 12) {
                         Image(systemName: "heart.fill")
-                            .font(.system(size: 18))
+                            .font(WoopTypography.body(18))
                             .foregroundStyle(bluetooth.freshHeartRateBPM == nil ? ForgeColors.muted : ForgeColors.lime)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(bluetooth.freshHeartRateBPM.map(String.init) ?? "—")
-                                .font(.system(size: 28, weight: .semibold, design: .rounded))
+                                .font(WoopTypography.metric(28))
                                 .monospacedDigit()
                             Text(bluetooth.freshHeartRateBPM == nil
                                  ? "CONNECTED · WAITING FOR HR DATA"
                                  : "LIVE · \(bluetooth.heartRateUpdateCount) UPDATE(S)")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(WoopTypography.emphasis(9))
                                 .foregroundStyle(ForgeColors.muted)
                             Text(bluetooth.lastHeartRateAt.map { "LAST HR · \($0.formatted(date: .omitted, time: .standard))" } ?? "NO HR PACKET RECEIVED")
                                 .font(.system(size: 8, weight: .medium, design: .monospaced))
@@ -1557,7 +1557,7 @@ struct DeviceDashboard: View {
                         }
                         Spacer()
                         Text("BPM")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(WoopTypography.label(9))
                             .foregroundStyle(ForgeColors.muted)
                     }
                     .padding(14)
@@ -1570,21 +1570,21 @@ struct DeviceDashboard: View {
                     if bluetooth.connectedName != nil {
                         Button { bluetooth.disconnect() } label: {
                             Label("DISCONNECT BAND", systemImage: "xmark.circle")
-                                .font(.system(size: 10, weight: .bold)).tracking(0.8)
+                                .font(WoopTypography.label(10)).tracking(0.8)
                                 .frame(maxWidth: .infinity).padding(14)
                                 .background(ForgeColors.track, in: Capsule()).foregroundStyle(.white)
                         }
                     } else if bluetooth.isConnecting {
                         Button { bluetooth.disconnect() } label: {
                             Label("CANCEL CONNECTION", systemImage: "xmark.circle")
-                                .font(.system(size: 10, weight: .bold)).tracking(0.8)
+                                .font(WoopTypography.label(10)).tracking(0.8)
                                 .frame(maxWidth: .infinity).padding(14)
                                 .background(ForgeColors.track, in: Capsule()).foregroundStyle(.white)
                         }
                     } else {
                         Button { bluetooth.startScan() } label: {
                             Label("SCAN FOR WHOOP BAND", systemImage: "dot.radiowaves.left.and.right")
-                                .font(.system(size: 10, weight: .bold)).tracking(0.8)
+                                .font(WoopTypography.label(10)).tracking(0.8)
                                 .frame(maxWidth: .infinity).padding(14)
                                 .background(ForgeColors.lime, in: Capsule()).foregroundStyle(.black)
                         }
@@ -1592,7 +1592,7 @@ struct DeviceDashboard: View {
                     if bluetooth.connectedName != nil {
                         Button { showingEventProbeConfirmation = true } label: {
                             Label("PROBE EVENT 33 / 34 · BRIEFLY PAUSE HR", systemImage: "waveform.path")
-                                .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                                .font(WoopTypography.label(9)).tracking(0.5)
                                 .frame(maxWidth: .infinity).padding(12)
                                 .background(ForgeColors.track, in: Capsule()).foregroundStyle(ForgeColors.lime)
                         }
@@ -1612,7 +1612,7 @@ struct DeviceDashboard: View {
                                 Button { bluetooth.connect(to: device) } label: {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 3) {
-                                            Text(device.name).font(.system(size: 13, weight: .semibold))
+                                            Text(device.name).font(WoopTypography.emphasis(13))
                                             Text(device.id.uuidString.prefix(8))
                                                 .font(.system(size: 9, design: .monospaced)).foregroundStyle(ForgeColors.muted)
                                             if !device.advertisedServices.isEmpty {
@@ -1650,7 +1650,7 @@ struct DeviceDashboard: View {
                                         }
                                         Spacer()
                                         Text("\(device.rssi) dBm").font(.system(size: 10, design: .monospaced)).foregroundStyle(ForgeColors.muted)
-                                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
+                                        Image(systemName: "chevron.right").font(WoopTypography.label(10))
                                     }
                                     .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                                 }
@@ -1662,11 +1662,11 @@ struct DeviceDashboard: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("LATEST BLE EVENT")
-                                .font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
+                                .font(WoopTypography.label(9)).tracking(1).foregroundStyle(ForgeColors.lime)
                             Spacer()
                             ShareLink(item: bluetooth.diagnosticSnapshot) {
                                 Label("EXPORT", systemImage: "square.and.arrow.up")
-                                    .font(.system(size: 9, weight: .bold)).tracking(0.6)
+                                    .font(WoopTypography.label(9)).tracking(0.6)
                                     .foregroundStyle(ForgeColors.lime)
                             }
                         }
@@ -1678,7 +1678,7 @@ struct DeviceDashboard: View {
                     .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     VStack(alignment: .leading, spacing: 7) {
                         Text("NOTIFICATION CHANNEL STATUS")
-                            .font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
+                            .font(WoopTypography.label(9)).tracking(1).foregroundStyle(ForgeColors.lime)
                         Text(bluetooth.notificationDiagnostics.joined(separator: "\\n"))
                             .font(.system(size: 8, design: .monospaced))
                             .foregroundStyle(ForgeColors.muted)
@@ -1690,7 +1690,7 @@ struct DeviceDashboard: View {
                     if !bluetooth.discoveredProfile.isEmpty {
                         VStack(alignment: .leading, spacing: 7) {
                             Text("DISCOVERED GATT PROFILE")
-                                .font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.lime)
+                                .font(WoopTypography.label(9)).tracking(1).foregroundStyle(ForgeColors.lime)
                             Text(bluetooth.gattCapabilitySummary)
                                 .font(.system(size: 9, design: .monospaced))
                                 .foregroundStyle(ForgeColors.muted)
@@ -1702,9 +1702,9 @@ struct DeviceDashboard: View {
                         .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     }
                     Text("WHOOP candidate detection is heuristic (device name and archive-derived UUID hints); it does not confirm device identity or service roles.")
-                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                        .font(WoopTypography.body(10)).foregroundStyle(ForgeColors.muted)
                     Text("This first pass only scans, connects and lists GATT services/characteristics. It does not send commands or guess the live-HR packet format.")
-                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                        .font(WoopTypography.body(10)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(20).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 SectionHeader(title: "APPLE HEALTH")
@@ -1713,13 +1713,13 @@ struct DeviceDashboard: View {
                         Label("Health data access", systemImage: "heart.text.square")
                         Spacer()
                         Text(health.isAuthorized ? "REQUESTED" : "NOT SET UP")
-                            .font(.system(size: 9, weight: .bold)).foregroundStyle(health.isAuthorized ? ForgeColors.lime : ForgeColors.muted)
+                            .font(WoopTypography.label(9)).foregroundStyle(health.isAuthorized ? ForgeColors.lime : ForgeColors.muted)
                     }
                     Text("Allow access to heart rate, HRV, resting heart rate, respiratory rate, blood oxygen, sleep and workouts.")
-                        .font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                        .font(WoopTypography.body(12)).foregroundStyle(ForgeColors.muted)
                     Button { Task { await health.requestAccess() } } label: {
                         Text(health.isAuthorized ? "ACCESS REQUESTED" : "CONNECT APPLE HEALTH")
-                            .font(.system(size: 11, weight: .bold)).tracking(1)
+                            .font(WoopTypography.label(11)).tracking(1)
                             .frame(maxWidth: .infinity).padding(14)
                             .background(ForgeColors.lime, in: Capsule()).foregroundStyle(.black)
                     }
