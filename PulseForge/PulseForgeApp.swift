@@ -91,16 +91,16 @@ struct ForgeTabBar: View {
                 tabButton(title: item.0, symbol: item.1, tab: item.2)
             }
             Menu {
-                Button("Sleep", systemImage: "moon.zzz.fill") { selected = .sleep }
-                Button("Strain", systemImage: "flame.fill") { selected = .strain }
-                Button("Activity", systemImage: "figure.run") { selected = .run }
-                Button("Device", systemImage: "waveform.path.ecg") { selected = .device }
+                Button("Sleep") { selected = .sleep }
+                Button("Strain") { selected = .strain }
+                Button("Activity") { selected = .run }
+                Button("Device") { selected = .device }
             } label: {
                 VStack(spacing: 5) {
                     Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold))
                     Text("More").font(WoopTypography.label(8)).lineLimit(1)
                 }
-                .foregroundStyle(isMoreSelection ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary)
+                .foregroundColor(isMoreSelection ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .contentShape(Rectangle())
@@ -121,7 +121,7 @@ struct ForgeTabBar: View {
                 Image(systemName: symbol).font(.system(size: 16, weight: .semibold))
                 Text(title).font(WoopTypography.label(8)).lineLimit(1)
             }
-            .foregroundStyle(selected == tab ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary)
+            .foregroundColor(selected == tab ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .background {
