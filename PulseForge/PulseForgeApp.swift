@@ -1029,12 +1029,14 @@ struct StrainDashboard: View {
                     HStack(spacing: 22) {
                         ZStack {
                             Circle().stroke(ForgeColors.track, lineWidth: 9)
-                            Circle().trim(from: 0, to: 0)
-                                .stroke(Color(red: 0.98, green: 0.58, blue: 0.27), style: StrokeStyle(lineWidth: 9, lineCap: .round))
-                                .rotationEffect(.degrees(-90))
-                            Text(insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—")
-                                .font(.system(size: 39, weight: .light, design: .rounded))
-                                .monospacedDigit()
+                            VStack(spacing: 2) {
+                                Text(insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—")
+                                    .font(.system(size: 39, weight: .light, design: .rounded))
+                                    .monospacedDigit()
+                                Text("LOAD PTS")
+                                    .font(.system(size: 8, weight: .bold)).tracking(0.8)
+                                    .foregroundStyle(ForgeColors.muted)
+                            }
                         }
                         .frame(width: 132, height: 132)
                         VStack(alignment: .leading, spacing: 7) {
