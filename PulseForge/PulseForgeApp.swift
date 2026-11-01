@@ -997,7 +997,6 @@ struct StrainDashboard: View {
             }
             .padding(18).padding(.top, 16)
         }
-        .refreshable { health.refresh(); insights.refresh() }
     }
 }
 
