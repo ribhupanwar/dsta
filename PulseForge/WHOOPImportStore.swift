@@ -1,3 +1,4 @@
+import SwiftUI
 import Foundation
 import Combine
 import UniformTypeIdentifiers
@@ -50,9 +51,7 @@ final class WHOOPImportStore: ObservableObject {
         defer { if granted { url.stopAccessingSecurityScopedResource() } }
 
         do {
-            guard let archive = Archive(url: url, accessMode: .read) else {
-                throw ImportError.invalidArchive
-            }
+            let archive = try Archive(url: url, accessMode: .read)
             var csv: [String: String] = [:]
             for entry in archive where entry.type == .file && entry.path.lowercased().hasSuffix(".csv") {
                 let name = URL(fileURLWithPath: entry.path).lastPathComponent.lowercased()
@@ -127,7 +126,7 @@ final class WHOOPImportStore: ObservableObject {
         }
     }
 
-    private static func parseNights(_ csv: String) -> [WHOOPImportedNight] {
+    nonisolated private static func parseNights(_ csv: String) -> [WHOOPImportedNight] {
         let rows = CSV.decode(csv)
         guard let header = rows.first else { return [] }
         let keys = header.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
@@ -164,7 +163,7 @@ final class WHOOPImportStore: ObservableObject {
         }
     }
 
-    private static func parseDate(_ raw: String, zone: String) -> Date? {
+    nonisolated private static func parseDate(_ raw: String, zone: String) -> Date? {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -172,7 +171,7 @@ final class WHOOPImportStore: ObservableObject {
         return formatter.date(from: raw)
     }
 
-    private static func parseTimeZone(_ raw: String) -> TimeZone {
+    nonisolated private static func parseTimeZone(_ raw: String) -> TimeZone {
         let cleaned = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard cleaned.hasPrefix("UTC"), cleaned.count >= 8 else {
             return TimeZone(identifier: cleaned) ?? .current
@@ -186,12 +185,12 @@ final class WHOOPImportStore: ObservableObject {
         return TimeZone(secondsFromGMT: sign * (hours * 3600 + minutes * 60)) ?? .current
     }
 
-    private static func sameNight(_ lhs: WHOOPImportedNight, _ rhs: WHOOPImportedNight) -> Bool {
+    nonisolated private static func sameNight(_ lhs: WHOOPImportedNight, _ rhs: WHOOPImportedNight) -> Bool {
         guard let a = lhs.wakeOnset ?? lhs.sleepOnset, let b = rhs.wakeOnset ?? rhs.sleepOnset else { return false }
         return abs(a.timeIntervalSince(b)) < 60
     }
 
-    private static func mergingSleep(_ sleep: WHOOPImportedNight, into cycle: WHOOPImportedNight) -> WHOOPImportedNight {
+    nonisolated private static func mergingSleep(_ sleep: WHOOPImportedNight, into cycle: WHOOPImportedNight) -> WHOOPImportedNight {
         WHOOPImportedNight(
             cycleStart: cycle.cycleStart ?? sleep.cycleStart,
             sleepOnset: sleep.sleepOnset ?? cycle.sleepOnset,
@@ -214,7 +213,7 @@ final class WHOOPImportStore: ObservableObject {
         )
     }
 
-    private static func countRows(_ csv: String) -> Int {
+    nonisolated private static func countRows(_ csv: String) -> Int {
         max(0, CSV.decode(csv).count - 1)
     }
 }
