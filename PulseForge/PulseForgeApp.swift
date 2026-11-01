@@ -2089,6 +2089,27 @@ struct DeviceDashboard: View {
                     WhoopRRCard()
                     WhoopMotionCard()
                     WhoopStepSignalMonitorCard()
+                    VStack(alignment: .leading, spacing: 9) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("STEP & MOTION RAW DATA")
+                                    .font(.system(size: 9, weight: .bold)).tracking(0.9)
+                                    .foregroundStyle(ForgeColors.lime)
+                                Text("Type-40 + Type-47 packets · R21 frames · decoded IMU samples")
+                                    .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                            }
+                            Spacer()
+                            ShareLink(item: bluetooth.stepSignalExportJSON) {
+                                Label("EXPORT JSON", systemImage: "square.and.arrow.up")
+                                    .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                                    .foregroundStyle(ForgeColors.lime)
+                            }
+                        }
+                        Text("Exports timestamped raw packet bytes and available motion samples. Candidate counter/cadence fields are marked unverified; this is not a confirmed step count.")
+                            .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     if bluetooth.connectedName != nil {
                         Button { bluetooth.disconnect() } label: {
                             Label("DISCONNECT BAND", systemImage: "xmark.circle")
