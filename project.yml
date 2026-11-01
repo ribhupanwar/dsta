@@ -35,6 +35,15 @@ targets:
         UIBackgroundModes:
           - bluetooth-central
           - location
+        UIAppFonts:
+          - woop_inter_variable.ttf
+          - woop_proxima_regular.otf
+          - woop_proxima_semibold.otf
+          - woop_proxima_bold.otf
+          - woop_d_din_regular.otf
+          - woop_d_din_bold.otf
+          - woop_dinpro_medium.otf
+          - woop_dinpro_bold.otf
     entitlements:
       path: PulseForge/PulseForge.entitlements
       properties:
