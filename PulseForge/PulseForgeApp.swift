@@ -83,7 +83,8 @@ struct ForgeTabBar: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(visibleTabs, id: \.2) { item in
+            ForEach(visibleTabs.indices, id: \.self) { index in
+                let item = visibleTabs[index]
                 tabButton(title: item.0, symbol: item.1, tab: item.2)
             }
             Menu {
