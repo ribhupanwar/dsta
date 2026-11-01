@@ -9,6 +9,18 @@ struct WoopReferenceSleepScreen: View {
         health.sleepHours.map { String(format: "%.1f", $0) } ?? "—"
     }
 
+    private var sleepStageTotal: Double {
+        [health.deepSleepMinutes, health.remSleepMinutes, health.coreSleepMinutes, health.awakeMinutes]
+            .compactMap { $0 }
+            .filter { $0.isFinite && $0 > 0 }
+            .reduce(0, +)
+    }
+
+    private var hasSleepStages: Bool {
+        [health.deepSleepMinutes, health.remSleepMinutes, health.coreSleepMinutes, health.awakeMinutes]
+            .contains { ($0 ?? 0) > 0 }
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
@@ -127,30 +139,49 @@ struct WoopReferenceSleepScreen: View {
     private var stages: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionTitle("SLEEP STAGES")
-            VStack(spacing: 0) {
-                stageRow("Deep", value: health.deepSleepMinutes, color: WoopReplicaPalette.deepSleep, symbol: "moon.fill")
-                Divider().overlay(WoopReplicaPalette.hairline)
-                stageRow("REM", value: health.remSleepMinutes, color: WoopReplicaPalette.remSleep, symbol: "brain.head.profile")
-                Divider().overlay(WoopReplicaPalette.hairline)
-                stageRow("Core", value: health.coreSleepMinutes, color: WoopReplicaPalette.coreSleep, symbol: "circle.fill")
-                Divider().overlay(WoopReplicaPalette.hairline)
-                stageRow("Awake", value: health.awakeMinutes, color: WoopReplicaPalette.muted, symbol: "sun.max")
+            if hasSleepStages {
+                VStack(spacing: 0) {
+                    stageRow("Deep", value: health.deepSleepMinutes, color: WoopReplicaPalette.deepSleep, symbol: "moon.fill")
+                    Divider().overlay(WoopReplicaPalette.hairline)
+                    stageRow("REM", value: health.remSleepMinutes, color: WoopReplicaPalette.remSleep, symbol: "brain.head.profile")
+                    Divider().overlay(WoopReplicaPalette.hairline)
+                    stageRow("Core", value: health.coreSleepMinutes, color: WoopReplicaPalette.coreSleep, symbol: "circle.fill")
+                    Divider().overlay(WoopReplicaPalette.hairline)
+                    stageRow("Awake", value: health.awakeMinutes, color: WoopReplicaPalette.muted, symbol: "sun.max")
+                }
+                .padding(.horizontal, 15)
+                .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
+            } else {
+                Text("Sleep-stage breakdown is not available in Apple Health yet.")
+                    .font(WoopTypography.body(11))
+                    .foregroundStyle(WoopReplicaPalette.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
             }
-            .padding(.horizontal, 15)
-            .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
         }
     }
 
     private func stageRow(_ title: String, value: Double?, color: Color, symbol: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: symbol).font(WoopTypography.body(12)).foregroundStyle(color).frame(width: 18)
-            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(WoopReplicaPalette.primary)
-            Spacer()
-            Text(value.map { String(format: "%.0f min", $0) } ?? "—")
-                .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
-                .foregroundStyle(WoopReplicaPalette.secondary)
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol).font(WoopTypography.body(12)).foregroundStyle(color).frame(width: 18)
+                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(WoopReplicaPalette.primary)
+                Spacer()
+                Text(value.map { String(format: "%.0f min", $0) } ?? "—")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(WoopReplicaPalette.secondary)
+            }
+            GeometryReader { proxy in
+                Capsule().fill(WoopReplicaPalette.homeTrack)
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(color)
+                            .frame(width: proxy.size.width * min(1, max(0, (value ?? 0) / max(1, sleepStageTotal))))
+                    }
+            }
+            .frame(height: 4)
         }
-        .padding(.vertical, 13)
+        .padding(.vertical, 11)
     }
 
     private var consistency: some View {
