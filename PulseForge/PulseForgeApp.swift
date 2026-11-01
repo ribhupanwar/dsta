@@ -7,12 +7,14 @@ import Charts
 struct PulseForgeApp: App {
     @StateObject private var health = HealthDataStore()
     @StateObject private var insights = TrainingInsightsStore()
+    @StateObject private var whoopImport = WHOOPImportStore()
 
     var body: some Scene {
         WindowGroup {
             MainTabView()
                 .environmentObject(health)
                 .environmentObject(insights)
+                .environmentObject(whoopImport)
                 .preferredColorScheme(.dark)
         }
     }
