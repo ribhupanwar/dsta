@@ -41,6 +41,23 @@ struct WhoopIMUSample: Identifiable, Codable {
     var id: TimeInterval { timestamp.timeIntervalSince1970 }
 }
 
+struct StepSignalRawPacket: Codable {
+    let packetType: Int
+    let receivedAt: Date
+    let byteCount: Int
+    let hex: String
+}
+
+struct StepSignalExportDocument: Codable {
+    let schemaVersion: Int
+    let exportedAt: Date
+    let connectedDevice: String?
+    let rawPackets: [StepSignalRawPacket]
+    let r21RawFrames: [String]
+    let decodedIMUSamples: [WhoopIMUSample]
+    let candidateDiagnostics: [String: String]
+}
+
 struct WorkoutSessionRecord: Identifiable, Codable {
     let id: UUID
     let startedAt: Date
@@ -120,6 +137,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var stepSignalActivity: Int?
     @Published private(set) var stepSignalSoftwareOverride: Bool?
     @Published private(set) var stepSignalFrameCount = 0
+    /// Bounded, timestamped raw Type-40/Type-47 frames for user-exportable protocol analysis.
+    private var stepSignalRawPacketHistory: [StepSignalRawPacket] = []
+    private let stepSignalRawPacketHistoryLimit = 1000
     private var lastWhoopStepTimelineAt: Date?
     private var lastHistoricalStepDiagnosticsAt: Date?
     @Published private(set) var whoopEventPacketCount = 0
@@ -1148,6 +1168,49 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             let state = vendorNotificationStates[uuid] ?? "not requested"
             let payload = vendorNotificationPayloads[uuid] ?? "no payload received"
             return "\(uuid): \(state) · \(payload)"
+        }
+    }
+
+    /// Complete step/motion evidence export. Candidate fields remain explicitly unverified.
+    var stepSignalExportJSON: String {
+        let document = StepSignalExportDocument(
+            schemaVersion: 1,
+            exportedAt: Date(),
+            connectedDevice: connectedName,
+            rawPackets: stepSignalRawPacketHistory,
+            r21RawFrames: whoopIMURawFrameHistory,
+            decodedIMUSamples: Array(liveWhoopIMUSamples.suffix(20_000)),
+            candidateDiagnostics: [
+                "lastPacketType": stepSignalLastPacketType.map(String.init) ?? "unknown",
+                "lastPacketLength": String(stepSignalLastPacketLength),
+                "frameCount": String(stepSignalFrameCount),
+                "selectedCounterCandidate": stepSignalSelectedCounter.map(String.init) ?? "unavailable",
+                "hardwareCounterCandidate": stepSignalHardwareCounter.map(String.init) ?? "unavailable",
+                "cadenceRawCandidate": stepSignalCadence.map(String.init) ?? "unavailable",
+                "activityRawCandidate": stepSignalActivity.map(String.init) ?? "unavailable",
+                "softwareOverrideCandidate": stepSignalSoftwareOverride.map { $0 ? "true" : "false" } ?? "unavailable",
+                "interpretation": "Raw/candidate fields only; not a verified WHOOP step count or cadence."
+            ]
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(document), let json = String(data: data, encoding: .utf8) else {
+            return "{\"error\":\"Step signal export encoding failed\"}"
+        }
+        return json
+    }
+
+    private func retainStepSignalRawPacket(type: Int, bytes: [UInt8], at date: Date) {
+        let record = StepSignalRawPacket(
+            packetType: type,
+            receivedAt: date,
+            byteCount: bytes.count,
+            hex: bytes.map { String(format: "%02X", $0) }.joined()
+        )
+        stepSignalRawPacketHistory.append(record)
+        if stepSignalRawPacketHistory.count > stepSignalRawPacketHistoryLimit {
+            stepSignalRawPacketHistory.removeFirst(stepSignalRawPacketHistory.count - stepSignalRawPacketHistoryLimit)
         }
     }
 
@@ -2438,6 +2501,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return "METADATA · \(metadataName) · CRC valid"
 
         case 47: // HISTORICAL_DATA; retain unmapped Gen5 layouts for protocol research.
+            retainStepSignalRawPacket(type: 47, bytes: b, at: Date())
             if b.count > 9, b[9] == 18 {
                 whoopHistorySyncStatus = "Type-47 v18 candidate frame received · original WHOOP field layout not verified"
                 let receivedAt = Date()
@@ -2576,6 +2640,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         case 40: // WHOOP 5.0 REALTIME_DATA · HR byte device-correlated; RR/motion fields remain candidates
             whoopRealtimePacketCount += 1
             let receivedAt = Date()
+            retainStepSignalRawPacket(type: 40, bytes: b, at: receivedAt)
             let capturedAt = ISO8601DateFormatter().string(from: receivedAt)
             let rawHex = b.map { String(format: "%02X", $0) }.joined()
             whoopRealtimeRRRawFrameHistory.append("\(capturedAt) · type=40 · \(b.count) bytes · HEX: \(rawHex)")
