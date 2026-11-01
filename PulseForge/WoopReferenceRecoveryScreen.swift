@@ -7,9 +7,17 @@ struct WoopReferenceRecoveryScreen: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+    @EnvironmentObject private var whoopImport: WHOOPImportStore
     @State private var selectedRange = "WEEK"
 
-    private var score: Int? { insights.recoveryScore }
+    private var importedNight: WHOOPImportedNight? { whoopImport.latestNight }
+    private var score: Int? { importedNight?.recoveryScore.map { Int($0.rounded()) } }
+    private var importedSleepHours: Double? { importedNight?.asleepMinutes.map { $0 / 60 } }
+    private var importedSleepNeedHours: Double? { importedNight?.sleepNeedMinutes.map { $0 / 60 } }
+    private var importedSleepDebtHours: Double? { importedNight?.sleepDebtMinutes.map { $0 / 60 } }
+    private var importedHRV: Double? { importedNight?.hrvMilliseconds }
+    private var importedRHR: Double? { importedNight?.restingHeartRate }
+    private var historyNights: [WHOOPImportedNight] { whoopImport.nights }
     private var scoreTint: Color {
         guard let score else { return WoopReplicaPalette.muted }
         if score >= 67 { return WoopReplicaPalette.recoveryHigh }
@@ -23,7 +31,6 @@ struct WoopReferenceRecoveryScreen: View {
                 header
                 hero
                 metrics
-                healthSignals
                 whoopBandMetrics
                 trendSection
                 explanation
@@ -75,7 +82,7 @@ struct WoopReferenceRecoveryScreen: View {
                         .font(WoopTypography.metric(54))
                         .monospacedDigit()
                         .foregroundStyle(WoopReplicaPalette.primary)
-                    Text(score == nil ? "WAITING FOR DATA" : insights.recoveryStatus.uppercased())
+                    Text(score == nil ? "IMPORT WHOOP HISTORY" : "WHOOP EXPORT · HISTORICAL")
                         .font(WoopTypography.label(9))
                         .tracking(1.1)
                         .foregroundStyle(scoreTint)
@@ -83,8 +90,8 @@ struct WoopReferenceRecoveryScreen: View {
             }
             .frame(width: 214, height: 214)
             Text(score == nil
-                 ? "Recovery will appear when enough valid health measurements are available."
-                 : "Your recovery estimate combines your available HRV and resting heart-rate baseline.")
+                 ? "Import your WHOOP export to show its historical Recovery scores."
+                 : "Showing the Recovery score recorded by WHOOP for the latest imported cycle.")
                 .font(WoopTypography.body(12))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(WoopReplicaPalette.secondary)
@@ -100,16 +107,16 @@ struct WoopReferenceRecoveryScreen: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionTitle("KEY CONTRIBUTORS", trailing: "TODAY")
             HStack(spacing: 10) {
-                metricTile(title: "HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms", symbol: "waveform.path.ecg")
-                metricTile(title: "RESTING HEART RATE", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm", symbol: "heart")
+                metricTile(title: "HRV", value: importedHRV.map { String(format: "%.0f", $0) } ?? "—", unit: "ms", symbol: "waveform.path.ecg")
+                metricTile(title: "RESTING HEART RATE", value: importedRHR.map(String.init) ?? "—", unit: "bpm", symbol: "heart")
             }
             HStack(spacing: 10) {
-                metricTile(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours", symbol: "moon.zzz")
-                metricTile(title: "SLEEP NEED", value: String(format: "%.1f", insights.sleepNeedHours), unit: "hours · estimate", symbol: "bed.double")
+                metricTile(title: "SLEEP", value: importedSleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours", symbol: "moon.zzz")
+                metricTile(title: "SLEEP NEED", value: importedSleepNeedHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours · estimate", symbol: "bed.double")
             }
             HStack(spacing: 10) {
-                metricTile(title: "SLEEP DEBT", value: insights.sleepDebtHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours · 7-night estimate", symbol: "moon.zzz")
-                metricTile(title: "TYPICAL SLEEP", value: insights.typicalSleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours · 28-day median", symbol: "calendar")
+                metricTile(title: "SLEEP DEBT", value: importedSleepDebtHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours · 7-night estimate", symbol: "moon.zzz")
+                metricTile(title: "TYPICAL SLEEP", value: (historyNights.compactMap { $0.asleepMinutes }.sorted().dropFirst(max(0, historyNights.compactMap { $0.asleepMinutes }.count / 2)).first).map { String(format: "%.1f", $0 / 60) } ?? "—", unit: "hours · 28-day median", symbol: "calendar")
             }
         }
     }
@@ -211,21 +218,21 @@ struct WoopReferenceRecoveryScreen: View {
             }
             VStack(spacing: 12) {
                 WoopHealthTrendChart(
-                    values: Array(insights.trendHistory.suffix(selectedRange == "WEEK" ? 7 : 30).map { $0.hrvMilliseconds }),
+                    values: Array(historyNights.suffix(selectedRange == "WEEK" ? 7 : 30).map { $0.hrvMilliseconds }),
                     tint: WoopReplicaPalette.sleep,
                     unit: "ms",
                     height: 92,
                     rangeLabel: selectedRange == "WEEK" ? "7 DAYS AGO" : "30 DAYS AGO"
                 )
                 WoopHealthTrendChart(
-                    values: Array(insights.trendHistory.suffix(selectedRange == "WEEK" ? 7 : 30).map { $0.restingHeartRate }),
+                    values: Array(historyNights.suffix(selectedRange == "WEEK" ? 7 : 30).map { $0.restingHeartRate }),
                     tint: WoopReplicaPalette.recoveryHigh,
                     unit: "bpm",
                     height: 82,
                     rangeLabel: selectedRange == "WEEK" ? "7 DAYS AGO" : "30 DAYS AGO"
                 )
-                if !insights.trendHistory.contains(where: { $0.hrvMilliseconds != nil || $0.restingHeartRate != nil }) {
-                    Text("Trend lines will appear when date-wise Apple Health measurements are available.")
+                if !historyNights.contains(where: { $0.hrvMilliseconds != nil || $0.restingHeartRate != nil }) {
+                    Text("Import WHOOP history to populate date-wise HRV and RHR trends.")
                         .font(WoopTypography.body(10))
                         .foregroundStyle(WoopReplicaPalette.secondary)
                         .multilineTextAlignment(.center)
@@ -254,7 +261,7 @@ struct WoopReferenceRecoveryScreen: View {
     private var explanation: some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle("ABOUT RECOVERY")
-            Text("Recovery is an on-device PulseForge estimate, not WHOOP's proprietary score. It is displayed only when the underlying measurements support a calculation.")
+            Text("Recovery, HRV, RHR and sleep contributors shown here are imported from your WHOOP export. No Apple Health fallback is used for these values.")
                 .font(WoopTypography.body(11))
                 .lineSpacing(3)
                 .foregroundStyle(WoopReplicaPalette.secondary)
