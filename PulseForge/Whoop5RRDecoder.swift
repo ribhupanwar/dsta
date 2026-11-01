@@ -44,6 +44,23 @@ enum Whoop5RRDecoder {
         return try decodeWords(frame, countOffset: 23, wordsOffset: 24)
     }
 
+    /// Gen5 historical header timestamp: unix seconds @ frame[15...18]
+    /// and Q15 fractional second @ frame[19...20]. These are the frame-absolute
+    /// coordinates of inner[7...12] after the 8-byte Gen5 envelope/header.
+    /// Receipt time must never be substituted for this physiological time.
+    static func decodeHistoricalV18Timestamp(_ frame: [UInt8]) -> Date? {
+        guard frame.count >= 21,
+              frame[0] == 0xAA, frame[1] == 0x01,
+              Int(frame[8]) == 47, Int(frame[9]) == 18 else { return nil }
+        let seconds = UInt32(frame[15])
+            | (UInt32(frame[16]) << 8)
+            | (UInt32(frame[17]) << 16)
+            | (UInt32(frame[18]) << 24)
+        let fractionQ15 = UInt16(frame[19]) | (UInt16(frame[20]) << 8)
+        return Date(timeIntervalSince1970: TimeInterval(seconds)
+                    + TimeInterval(fractionQ15) / 32768.0)
+    }
+
     private static func decodeWords(_ frame: [UInt8], countOffset: Int,
                                     wordsOffset: Int) throws -> [Int] {
         let count = Int(frame[countOffset])
