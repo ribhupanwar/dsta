@@ -1751,6 +1751,8 @@ final class HealthDataStore: ObservableObject {
     @Published private(set) var restingHeartRate: Int?
     @Published private(set) var respiratoryRate: Double?
     @Published private(set) var bloodOxygenPercent: Double?
+    @Published private(set) var bodyTemperatureCelsius: Double?
+    @Published private(set) var sleepingWristTemperatureCelsius: Double?
     @Published private(set) var sleepHours: Double?
     @Published private(set) var deepSleepMinutes: Double?
     @Published private(set) var remSleepMinutes: Double?
@@ -1798,10 +1800,13 @@ final class HealthDataStore: ObservableObject {
         // every OS/device configuration. Build the read set only from types
         // that are actually available instead of force-unwrapping them.
         var readTypes = Set<HKObjectType>()
-        let quantityIdentifiers: [HKQuantityTypeIdentifier] = [
+        var quantityIdentifiers: [HKQuantityTypeIdentifier] = [
             .heartRate, .heartRateVariabilitySDNN, .restingHeartRate, .stepCount,
-            .respiratoryRate, .oxygenSaturation, .distanceWalkingRunning
+            .respiratoryRate, .oxygenSaturation, .distanceWalkingRunning, .bodyTemperature
         ]
+        if #available(iOS 16.0, *) {
+            quantityIdentifiers.append(.appleSleepingWristTemperature)
+        }
         for identifier in quantityIdentifiers {
             if let type = HKObjectType.quantityType(forIdentifier: identifier) {
                 readTypes.insert(type)
@@ -1845,6 +1850,14 @@ final class HealthDataStore: ObservableObject {
         loadLatestQuantity(.respiratoryRate, unit: rateUnit) { [weak self] value in self?.respiratoryRate = value; group.leave() }
         group.enter()
         loadLatestQuantity(.oxygenSaturation, unit: HKUnit.percent(), multiplier: 100) { [weak self] value in self?.bloodOxygenPercent = value; group.leave() }
+        group.enter()
+        loadLatestQuantity(.bodyTemperature, unit: HKUnit.degreeCelsius()) { [weak self] value in self?.bodyTemperatureCelsius = value; group.leave() }
+        if #available(iOS 16.0, *) {
+            group.enter()
+            loadLatestQuantity(.appleSleepingWristTemperature, unit: HKUnit.degreeCelsius()) { [weak self] value in self?.sleepingWristTemperatureCelsius = value; group.leave() }
+        } else {
+            sleepingWristTemperatureCelsius = nil
+        }
         group.notify(queue: .main, execute: completion)
     }
 
