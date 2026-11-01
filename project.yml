@@ -3,6 +3,10 @@ options:
   bundleIdPrefix: com.ribhupanwar
   deploymentTarget:
     iOS: "18.0"
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: 0.9.19
 settings:
   base:
     SWIFT_VERSION: "5.9"
@@ -55,6 +59,8 @@ targets:
     sources:
       - path: PulseForgeTests
     dependencies:
+      - package: ZIPFoundation
+        product: ZIPFoundation
       - target: PulseForge
 schemes:
   PulseForge:
