@@ -45,14 +45,14 @@ struct WoopReferenceSleepScreen: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 5) {
-                Text("SLEEP").font(.system(size: 11, weight: .bold, design: .rounded))
+                Text("SLEEP").font(WoopTypography.label(11))
                     .tracking(2.2).foregroundStyle(WoopReplicaPalette.secondary)
                 Text("Last night").font(WoopTypography.emphasis(22))
                     .foregroundStyle(WoopReplicaPalette.primary)
             }
             Spacer()
             Image(systemName: "moon.stars")
-                .font(.system(size: 17, weight: .medium))
+                .font(WoopTypography.body(17))
                 .foregroundStyle(WoopReplicaPalette.secondary)
                 .frame(width: 42, height: 42)
                 .background(WoopReplicaPalette.surfaceRaised, in: Circle())
@@ -102,7 +102,7 @@ struct WoopReferenceSleepScreen: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(WoopTypography.label(8)).tracking(0.5)
                 .foregroundStyle(WoopReplicaPalette.secondary)
-            Text(value).font(.system(size: 17, weight: .semibold, design: .rounded))
+            Text(value).font(WoopTypography.metricBold(17))
                 .monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
         }
     }
@@ -112,11 +112,11 @@ struct WoopReferenceSleepScreen: View {
             sectionTitle("SLEEP NEED")
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("Estimated need").font(.system(size: 13, weight: .medium))
+                    Text("Estimated need").font(WoopTypography.body(13))
                         .foregroundStyle(WoopReplicaPalette.primary)
                     Spacer()
                     Text(String(format: "%.1f hours", insights.sleepNeedHours))
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .font(WoopTypography.metricBold(17))
                         .foregroundStyle(WoopReplicaPalette.primary)
                 }
                 GeometryReader { proxy in
@@ -166,10 +166,10 @@ struct WoopReferenceSleepScreen: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 10) {
                 Image(systemName: symbol).font(WoopTypography.body(12)).foregroundStyle(color).frame(width: 18)
-                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(WoopReplicaPalette.primary)
+                Text(title).font(WoopTypography.body(12)).foregroundStyle(WoopReplicaPalette.primary)
                 Spacer()
                 Text(value.map { String(format: "%.0f min", $0) } ?? "—")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(WoopTypography.metricBold(12)).monospacedDigit()
                     .foregroundStyle(WoopReplicaPalette.secondary)
             }
             GeometryReader { proxy in
