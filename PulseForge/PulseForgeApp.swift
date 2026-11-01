@@ -2158,11 +2158,19 @@ struct HeaderView: View {
     let title: String
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(eyebrow).font(.system(size: 10, weight: .bold)).tracking(1.7).foregroundStyle(ForgeColors.lime)
-            HStack {
-                Text(title).font(.system(size: 31, weight: .bold, design: .rounded)).tracking(-0.8)
+            Text(eyebrow.uppercased())
+                .font(WoopTypography.label(9)).tracking(1.5)
+                .foregroundStyle(WoopReplicaPalette.secondary)
+            HStack(alignment: .center) {
+                Text(title)
+                    .font(WoopTypography.emphasis(27)).tracking(-0.35)
+                    .foregroundStyle(WoopReplicaPalette.primary)
                 Spacer()
-                Image(systemName: "person.crop.circle").font(.system(size: 25, weight: .light)).foregroundStyle(ForgeColors.muted)
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(WoopReplicaPalette.sleep)
+                    .frame(width: 40, height: 40)
+                    .background(WoopReplicaPalette.surfaceRaised, in: Circle())
             }
         }
     }
@@ -2172,10 +2180,16 @@ struct SectionHeader: View {
     let title: String
     var action: String? = nil
     var body: some View {
-        HStack {
-            Text(title).font(.system(size: 11, weight: .bold)).tracking(1.4)
+        HStack(alignment: .firstTextBaseline) {
+            Text(title.uppercased())
+                .font(WoopTypography.label(9)).tracking(1.1)
+                .foregroundStyle(WoopReplicaPalette.secondary)
             Spacer()
-            if let action { Text(action).font(.system(size: 11, weight: .semibold)).foregroundStyle(ForgeColors.lime) }
+            if let action {
+                Text(action.uppercased())
+                    .font(WoopTypography.label(8)).tracking(0.6)
+                    .foregroundStyle(WoopReplicaPalette.sleep)
+            }
         }
     }
 }
@@ -2209,12 +2223,22 @@ struct CompactMetric: View {
     let unit: String
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 8, weight: .bold)).tracking(0.7).foregroundStyle(ForgeColors.muted)
-            Text(value).font(.system(size: 23, weight: .semibold, design: .rounded))
-            Text(unit).font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+            Text(title.uppercased())
+                .font(WoopTypography.label(8)).tracking(0.65)
+                .foregroundStyle(WoopReplicaPalette.secondary)
+                .lineLimit(1).minimumScaleFactor(0.75)
+            Text(value)
+                .font(WoopTypography.metric(23)).monospacedDigit()
+                .foregroundStyle(WoopReplicaPalette.primary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Text(unit)
+                .font(WoopTypography.body(9))
+                .foregroundStyle(WoopReplicaPalette.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 15))
+        .padding(12)
+        .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 15))
+        .overlay(RoundedRectangle(cornerRadius: 15).stroke(WoopReplicaPalette.hairline, lineWidth: 1))
     }
 }
 
