@@ -115,7 +115,7 @@ struct WoopCommunityScreen: View {
                             .frame(width: 43, height: 43)
                             .background(WoopReplicaPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 13))
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(team)
+                            Text(team.name)
                                 .font(WoopTypography.emphasis(14))
                                 .foregroundStyle(WoopReplicaPalette.primary)
                             Text("LOCAL TEAM · \(team.focus.uppercased())")
