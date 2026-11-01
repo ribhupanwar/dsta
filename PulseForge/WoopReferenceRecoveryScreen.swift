@@ -1,11 +1,8 @@
 import SwiftUI
-import HealthKit
 
 /// First native SwiftUI port of the supplied Woop recovery screen.
 /// Values are sourced from PulseForge HealthKit/calculation stores; no sample scores are fabricated.
 struct WoopReferenceRecoveryScreen: View {
-    @EnvironmentObject private var health: HealthDataStore
-    @EnvironmentObject private var insights: TrainingInsightsStore
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
     @EnvironmentObject private var whoopImport: WHOOPImportStore
     @State private var selectedRange = "WEEK"
@@ -119,38 +116,6 @@ struct WoopReferenceRecoveryScreen: View {
                 metricTile(title: "TYPICAL SLEEP", value: (historyNights.compactMap { $0.asleepMinutes }.sorted().dropFirst(max(0, historyNights.compactMap { $0.asleepMinutes }.count / 2)).first).map { String(format: "%.1f", $0 / 60) } ?? "—", unit: "hours · 28-day median", symbol: "calendar")
             }
         }
-    }
-
-    private var healthSignals: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("ADDITIONAL HEALTH SIGNALS", trailing: "APPLE HEALTH")
-            HStack(spacing: 10) {
-                metricTile(
-                    title: "BLOOD OXYGEN",
-                    value: health.bloodOxygenPercent.map { String(format: "%.1f", $0) } ?? "—",
-                    unit: "%",
-                    symbol: "drop"
-                )
-                metricTile(
-                    title: health.bodyTemperatureCelsius != nil ? "BODY TEMP" : "WRIST TEMP",
-                    value: (health.bodyTemperatureCelsius ?? health.sleepingWristTemperatureCelsius)
-                        .map { String(format: "%.2f", $0) } ?? "—",
-                    unit: "°C",
-                    symbol: "thermometer.medium"
-                )
-            }
-            Text(health.bodyTemperatureCelsius != nil
-                 ? "Latest Apple Health body-temperature sample. Blood oxygen is the latest available SpO₂ sample."
-                 : (health.sleepingWristTemperatureCelsius != nil
-                    ? "Temperature is Apple Watch sleeping wrist temperature, not core body temperature. Blood oxygen is the latest available SpO₂ sample."
-                    : "Latest available Apple Health SpO₂. Temperature appears when a compatible device has written body or sleeping-wrist temperature to Apple Health."))
-                .font(WoopTypography.body(9))
-                .lineSpacing(2)
-                .foregroundStyle(WoopReplicaPalette.muted)
-        }
-        .padding(15)
-        .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
-        .overlay(RoundedRectangle(cornerRadius: 17).stroke(WoopReplicaPalette.hairline, lineWidth: 1))
     }
 
     private var whoopBandMetrics: some View {
