@@ -92,7 +92,7 @@ struct ForgeTabBar: View {
     var body: some View {
         HStack(spacing: 4) {
             tabButton(title: "Home", symbol: "house.fill", tab: .today)
-            tabButton(title: "Health", symbol: "heart.fill", tab: .recovery)
+            tabButton(title: "Recovery", symbol: "heart.fill", tab: .recovery)
             tabButton(title: "Community", symbol: "person.2.fill", tab: .community)
             moreMenu
         }
