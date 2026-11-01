@@ -47,7 +47,14 @@ jobs:
           APK="$(find input/extracted -type f -iname '*.apk' ! -path '*/__MACOSX/*' ! -name '._*' | head -n 1)"
           test -n "$APK"
           mkdir -p output
-          jadx --deobf --show-bad-code -d output/decompiled "$APK"
+          set +e
+          jadx --deobf --show-bad-code --comments-level debug -d output/decompiled "$APK" 2>&1 | tee output/jadx.log
+          JADX_EXIT=${PIPESTATUS[0]}
+          set -e
+          echo "JADX exit code: $JADX_EXIT (partial output retained; JADX may report unrecoverable methods)"
+          sudo apt-get update -qq
+          sudo apt-get install -y apktool
+          apktool d -f "$APK" -o output/smali
           {
             echo '# Woop APK static-analysis inventory'
             echo
@@ -57,11 +64,14 @@ jobs:
             echo '## Manifest / package inventory'
             find output/decompiled -maxdepth 4 -type f | head -200
             echo
+            echo '## APK manifest and DEX inventory'
+            find output/smali -maxdepth 3 -type f | head -200
+            echo
             echo '## Step / motion / sensor / cadence references'
-            grep -RniE 'step.?count|step.?detector|pedometer|cadence|stride|accelerometer|gyroscope|sensor.TYPE|TYPE_STEP|stepCount|walking|running|motion' output/decompiled --include='*.java' --include='*.xml' | head -1500 || true
+            grep -RniE 'step.?count|step.?detector|pedometer|cadence|stride|accelerometer|gyroscope|sensor.TYPE|TYPE_STEP|stepCount|walking|running|motion' output/decompiled output/smali --include='*.java' --include='*.smali' --include='*.xml' | head -3000 || true
             echo
             echo '## BLE / GATT references'
-            grep -RniE 'BluetoothGatt|BluetoothLeScanner|BluetoothGattCharacteristic|notify|indicate|UUID|onCharacteristicChanged' output/decompiled --include='*.java' --include='*.xml' | head -1000 || true
+            grep -RniE 'BluetoothGatt|BluetoothLeScanner|BluetoothGattCharacteristic|notify|indicate|UUID|onCharacteristicChanged' output/decompiled output/smali --include='*.java' --include='*.smali' --include='*.xml' | head -2000 || true
           } > output/ANALYSIS-INDEX.md
           cat output/ANALYSIS-INDEX.md
       - name: Upload decompiled source and index
@@ -71,5 +81,7 @@ jobs:
           path: |
             output/ANALYSIS-INDEX.md
             output/decompiled/
+            output/smali/
+            output/jadx.log
           if-no-files-found: error
           retention-days: 7
