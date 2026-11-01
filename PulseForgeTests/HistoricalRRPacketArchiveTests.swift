@@ -5,67 +5,76 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
     private func temporaryURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-            .appendingPathComponent("historical-rr.json")
+            .appendingPathComponent("historical-rr.jsonl")
     }
 
-    func testPersistsAndReloadsHistoricalPacketWithReceiptTimeAndRawFrame() throws {
-        let url = temporaryURL()
-        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
-        let record = HistoricalRRPacketRecord(
-            receivedAt: Date(timeIntervalSince1970: 1_700_000_000),
+    private func record(_ index: Int) -> HistoricalRRPacketRecord {
+        HistoricalRRPacketRecord(
+            receivedAt: Date(timeIntervalSince1970: TimeInterval(index)),
             recordType: 47,
             revision: 18,
             intervalsMilliseconds: [602, 613],
-            rawFrameHex: "AA0174",
-            physiologicalTimestamp: nil,
+            rawFrameHex: String(index),
+            physiologicalTimestamp: Date(timeIntervalSince1970: TimeInterval(index)),
             decodeError: nil
         )
-
-        XCTAssertEqual(try HistoricalRRPacketArchive.append(record, to: url), 1)
-        XCTAssertEqual(HistoricalRRPacketArchive.load(from: url), [record])
     }
 
-    func testArchiveRetainsOnlyNewestFiveHundredRecords() throws {
+    func testPersistsAndReloadsHistoricalPacketAsJSONLines() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let first = record(1)
+        let second = record(2)
+
+        XCTAssertEqual(try HistoricalRRPacketArchive.append(first, to: url), 1)
+        XCTAssertEqual(try HistoricalRRPacketArchive.append(second, to: url), 2)
+        XCTAssertEqual(HistoricalRRPacketArchive.load(from: url), [first, second])
+    }
+
+    func testAppendOnlyArchiveDoesNotTruncateAtPreviousFiveHundredRecordLimit() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
-        for index in 0..<(HistoricalRRPacketArchive.maximumRecords + 1) {
-            let record = HistoricalRRPacketRecord(
-                receivedAt: Date(timeIntervalSince1970: TimeInterval(index)),
-                recordType: 47,
-                revision: 18,
-                intervalsMilliseconds: [600],
-                rawFrameHex: String(index),
-                physiologicalTimestamp: nil,
-                decodeError: nil
-            )
-            _ = try HistoricalRRPacketArchive.append(record, to: url)
+        for index in 0...500 {
+            _ = try HistoricalRRPacketArchive.append(record(index), to: url)
         }
 
         let records = HistoricalRRPacketArchive.load(from: url)
-        XCTAssertEqual(records.count, 500)
-        XCTAssertEqual(records.first?.rawFrameHex, "1")
+        XCTAssertEqual(records.count, 501)
+        XCTAssertEqual(records.first?.rawFrameHex, "0")
         XCTAssertEqual(records.last?.rawFrameHex, "500")
+    }
+
+    func testMigratesLegacyJSONArrayBeforeAppending() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        let legacy = try JSONEncoder().encode([record(10)])
+        try legacy.write(to: url)
+
+        XCTAssertEqual(try HistoricalRRPacketArchive.append(record(11), to: url), 2)
+        XCTAssertEqual(HistoricalRRPacketArchive.load(from: url), [record(10), record(11)])
     }
 
     func testPersistsRawFrameWhenCandidateRRLayoutIsRejected() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
-        let record = HistoricalRRPacketRecord(
+        let rejected = HistoricalRRPacketRecord(
             receivedAt: Date(timeIntervalSince1970: 1_700_000_100),
             recordType: 47,
             revision: 18,
             intervalsMilliseconds: [],
             rawFrameHex: "AA0147UNDECODED",
             physiologicalTimestamp: nil,
-            decodeError: "candidate RR count/offset rejected"
+            decodeError: "candidate v18 layout rejected"
         )
 
-        XCTAssertEqual(try HistoricalRRPacketArchive.append(record, to: url), 1)
+        _ = try HistoricalRRPacketArchive.append(rejected, to: url)
         let restored = try XCTUnwrap(HistoricalRRPacketArchive.load(from: url).first)
-        XCTAssertEqual(restored.rawFrameHex, record.rawFrameHex)
+        XCTAssertEqual(restored.rawFrameHex, rejected.rawFrameHex)
         XCTAssertEqual(restored.intervalsMilliseconds, [])
-        XCTAssertEqual(restored.decodeError, record.decodeError)
+        XCTAssertEqual(restored.decodeError, rejected.decodeError)
         XCTAssertNil(restored.physiologicalTimestamp)
     }
 
