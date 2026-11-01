@@ -17,6 +17,7 @@ final class TrainingInsightsStore: ObservableObject {
     @Published private(set) var workoutMinutesToday: Double?
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var isRefreshing = false
+    @Published private(set) var trendHistory: [DailyHealthTrend] = []
 
     private let healthStore = HKHealthStore()
     private let calendar = Calendar.current
@@ -51,9 +52,92 @@ final class TrainingInsightsStore: ObservableObject {
             group.leave()
         }
 
+        group.enter()
+        loadTrendHistory { [weak self] points in
+            self?.trendHistory = points
+            group.leave()
+        }
+
         group.notify(queue: .main) { [weak self] in
             self?.lastUpdated = Date()
             self?.isRefreshing = false
+        }
+    }
+
+    private func loadTrendHistory(completion: @escaping ([DailyHealthTrend]) -> Void) {
+        let end = Date()
+        let start = calendar.date(byAdding: .day, value: -29, to: calendar.startOfDay(for: end)) ?? end.addingTimeInterval(-30 * 86400)
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var hrv: [HKQuantitySample] = []
+        var rhr: [HKQuantitySample] = []
+        var sleep: [HKCategorySample] = []
+
+        func loadQuantity(_ identifier: HKQuantityTypeIdentifier, assign: @escaping ([HKQuantitySample]) -> Void) {
+            guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { return }
+            group.enter()
+            let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit,
+                                      sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)]) { _, samples, _ in
+                assign(samples as? [HKQuantitySample] ?? [])
+                group.leave()
+            }
+            healthStore.execute(query)
+        }
+
+        loadQuantity(.heartRateVariabilitySDNN) { values in lock.lock(); hrv = values; lock.unlock() }
+        loadQuantity(.restingHeartRate) { values in lock.lock(); rhr = values; lock.unlock() }
+
+        if let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
+            group.enter()
+            let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit,
+                                      sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) { _, samples, _ in
+                lock.lock(); sleep = samples as? [HKCategorySample] ?? []; lock.unlock()
+                group.leave()
+            }
+            healthStore.execute(query)
+        }
+
+        group.notify(queue: .main) {
+            lock.lock()
+            let hrvSamples = hrv
+            let rhrSamples = rhr
+            let sleepSamples = sleep
+            lock.unlock()
+
+            let asleepValues: Set<Int> = [
+                HKCategoryValueSleepAnalysis.asleep.rawValue,
+                HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
+                HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+                HKCategoryValueSleepAnalysis.asleepREM.rawValue
+            ]
+            let days = (0..<30).compactMap { offset -> Date? in
+                self.calendar.date(byAdding: .day, value: offset - 29, to: self.calendar.startOfDay(for: end))
+            }
+            let points = days.map { day -> DailyHealthTrend in
+                let nextDay = self.calendar.date(byAdding: .day, value: 1, to: day) ?? day.addingTimeInterval(86400)
+                let hrvValues = hrvSamples.filter { $0.endDate >= day && $0.endDate < nextDay }
+                    .map { $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli)) }
+                let rhrValues = rhrSamples.filter { $0.endDate >= day && $0.endDate < nextDay }
+                    .map { $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute())) }
+                let sleepIntervals = sleepSamples.filter {
+                    asleepValues.contains($0.value) && $0.endDate > day && $0.startDate < nextDay
+                }
+                let sleepSeconds = sleepIntervals.reduce(0.0) { total, sample in
+                    let clippedStart = max(day, sample.startDate)
+                    let clippedEnd = min(nextDay, sample.endDate)
+                    return total + max(0, clippedEnd.timeIntervalSince(clippedStart))
+                }
+                return DailyHealthTrend(
+                    date: day,
+                    hrvMilliseconds: hrvValues.isEmpty ? nil : hrvValues.reduce(0, +) / Double(hrvValues.count),
+                    restingHeartRate: rhrValues.isEmpty ? nil : rhrValues.reduce(0, +) / Double(rhrValues.count),
+                    sleepHours: sleepSeconds > 0 ? sleepSeconds / 3600 : nil
+                )
+            }
+            completion(points)
         }
     }
 
