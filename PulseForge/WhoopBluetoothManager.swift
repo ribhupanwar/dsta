@@ -157,22 +157,24 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private func enqueueLiveIMUSamplesForUI(_ samples: [WhoopIMUSample]) {
         guard !samples.isEmpty else { return }
         pendingLiveIMUSamples.append(contentsOf: samples)
-        guard !liveIMUPublishScheduled else { return }
+        scheduleLiveIMUPublishIfNeeded()
+    }
+
+    private func scheduleLiveIMUPublishIfNeeded() {
+        guard !liveIMUPublishScheduled, !pendingLiveIMUSamples.isEmpty else { return }
         liveIMUPublishScheduled = true
         DispatchQueue.main.asyncAfter(deadline: .now() + liveIMUPublishInterval) { [weak self] in
             guard let self else { return }
             let batch = self.pendingLiveIMUSamples
             self.pendingLiveIMUSamples.removeAll(keepingCapacity: true)
             self.liveIMUPublishScheduled = false
-            guard !batch.isEmpty else { return }
-            self.liveWhoopIMUSamples.append(contentsOf: batch)
-            if self.liveWhoopIMUSamples.count > 2000 {
-                self.liveWhoopIMUSamples.removeFirst(self.liveWhoopIMUSamples.count - 2000)
+            if !batch.isEmpty {
+                self.liveWhoopIMUSamples.append(contentsOf: batch)
+                if self.liveWhoopIMUSamples.count > 2000 {
+                    self.liveWhoopIMUSamples.removeFirst(self.liveWhoopIMUSamples.count - 2000)
+                }
             }
-            // If samples arrived during publication, schedule the next bounded update.
-            if !self.pendingLiveIMUSamples.isEmpty {
-                self.enqueueLiveIMUSamplesForUI([])
-            }
+            self.scheduleLiveIMUPublishIfNeeded()
         }
     }
 
