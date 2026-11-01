@@ -40,7 +40,7 @@ struct WoopReferenceRecoveryScreen: View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 5) {
                 Text("RECOVERY")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(WoopTypography.label(11))
                     .tracking(2.2)
                     .foregroundStyle(WoopReplicaPalette.secondary)
                 Text(Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
@@ -49,7 +49,7 @@ struct WoopReferenceRecoveryScreen: View {
             }
             Spacer()
             Image(systemName: "calendar")
-                .font(.system(size: 17, weight: .medium))
+                .font(WoopTypography.body(17))
                 .foregroundStyle(WoopReplicaPalette.secondary)
                 .frame(width: 42, height: 42)
                 .background(WoopReplicaPalette.surfaceRaised, in: Circle())
@@ -114,7 +114,7 @@ struct WoopReferenceRecoveryScreen: View {
     private func metricTile(title: String, value: String, unit: String, symbol: String) -> some View {
         VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 12, weight: .medium))
+                Image(systemName: symbol).font(WoopTypography.body(12))
                 Text(title).font(WoopTypography.label(9)).tracking(0.7)
                     .lineLimit(1).minimumScaleFactor(0.75)
             }
@@ -122,7 +122,7 @@ struct WoopReferenceRecoveryScreen: View {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(value).font(WoopTypography.metric(27)).monospacedDigit()
                     .foregroundStyle(WoopReplicaPalette.primary)
-                Text(unit).font(.system(size: 10, weight: .medium))
+                Text(unit).font(WoopTypography.body(10))
                     .foregroundStyle(WoopReplicaPalette.secondary)
             }
         }
