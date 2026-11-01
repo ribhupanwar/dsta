@@ -156,19 +156,17 @@ struct WoopReferenceSleepScreen: View {
     private var consistency: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionTitle("SLEEP HISTORY")
-            HStack(spacing: 10) {
-                Image(systemName: "chart.bar.xaxis").font(.system(size: 22, weight: .light))
-                    .foregroundStyle(WoopReplicaPalette.muted)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Your sleep trend is building").font(WoopTypography.emphasis(12))
-                        .foregroundStyle(WoopReplicaPalette.primary)
-                    Text("A reliable trend will appear as more nightly HealthKit samples are collected.")
-                        .font(WoopTypography.body(10)).foregroundStyle(WoopReplicaPalette.secondary)
-                }
-                Spacer(minLength: 0)
+            WoopHealthTrendChart(
+                values: insights.trendHistory.map { $0.sleepHours },
+                tint: WoopReplicaPalette.sleep,
+                unit: "hours",
+                height: 112
+            )
+            if !insights.trendHistory.contains(where: { $0.sleepHours != nil }) {
+                Text("Sleep history will appear when Apple Health has date-wise sleep samples.")
+                    .font(WoopTypography.body(10))
+                    .foregroundStyle(WoopReplicaPalette.secondary)
             }
-            .padding(16)
-            .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
         }
     }
 
