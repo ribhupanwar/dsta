@@ -19,6 +19,9 @@ targets:
     platform: iOS
     sources:
       - path: PulseForge
+    dependencies:
+      - package: ZIPFoundation
+        product: ZIPFoundation
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ribhupanwar.pulseforge
@@ -59,8 +62,6 @@ targets:
     sources:
       - path: PulseForgeTests
     dependencies:
-      - package: ZIPFoundation
-        product: ZIPFoundation
       - target: PulseForge
 schemes:
   PulseForge:
