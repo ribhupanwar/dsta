@@ -201,22 +201,3 @@ struct WoopReferenceRecoveryScreen: View {
         }
     }
 }
-
-enum WoopReplicaPalette {
-    static let canvas = Color(red: 16/255, green: 20/255, blue: 24/255)
-    static let surface = Color(red: 41/255, green: 54/255, blue: 62/255)
-    static let surfaceRaised = Color(red: 52/255, green: 67/255, blue: 75/255)
-    static let surfaceInset = Color(red: 27/255, green: 39/255, blue: 46/255)
-    static let primary = Color.white
-    static let secondary = Color(red: 176/255, green: 181/255, blue: 186/255)
-    static let muted = Color(red: 127/255, green: 135/255, blue: 141/255)
-    static let hairline = Color(red: 43/255, green: 48/255, blue: 52/255)
-    static let homeTrack = Color(red: 43/255, green: 48/255, blue: 52/255)
-    static let recoveryLow = Color(red: 1, green: 0, blue: 38/255)
-    static let recoveryMid = Color(red: 1, green: 222/255, blue: 0)
-    static let recoveryHigh = Color(red: 0, green: 232/255, blue: 45/255)
-    static let sleep = Color(red: 91/255, green: 166/255, blue: 224/255)
-    static let deepSleep = Color(red: 75/255, green: 91/255, blue: 190/255)
-    static let remSleep = Color(red: 132/255, green: 105/255, blue: 220/255)
-    static let coreSleep = Color(red: 52/255, green: 153/255, blue: 221/255)
-}
