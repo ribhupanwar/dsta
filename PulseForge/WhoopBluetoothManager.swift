@@ -1702,7 +1702,20 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     recordVendorTimeline("Event probe ON command response · seq=\(echoedSequence) · result=\(resultName)")
                     return "COMMAND_RESPONSE · Event probe REALTIME_HR_ON(3) · seq \(echoedSequence) · \(resultName)"
                 }
-                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) · \(resultName) · IMU startup remains Event-33 gated"
+                guard result == 1 else {
+                    whoopIMUStatus = "Realtime HR command \(resultName) · motion request withheld"
+                    recordVendorTimeline("IMU startup withheld · REALTIME_HR_ON(3) did not succeed · \(resultName)")
+                    return "COMMAND_RESPONSE · REALTIME_HR_ON(3) · \(resultName) · motion request withheld"
+                }
+                // The strap diagnostic shows valid Type-40 HR but no Event 33.
+                // Do not deadlock motion startup on the optional event notification:
+                // arm the bounded, hardware-validated raw-data sequence after HR ON succeeds.
+                if !whoop5AutoIMUStartRequested && !whoop5AutoIMUEnabled {
+                    recordVendorTimeline("IMU startup · REALTIME_HR_ON(3) SUCCESS · Event 33 absent; requesting bounded START_RAW_DATA [01]")
+                    sendWhoop5RawDataStart(to: peripheral)
+                    return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · START_RAW_DATA(81) requested"
+                }
+                return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · motion capture already requested"
             }
             return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
 
