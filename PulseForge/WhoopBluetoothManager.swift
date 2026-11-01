@@ -79,6 +79,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopHistoricalRRIntervalsMilliseconds: [Int] = []
     @Published private(set) var whoopHistoricalRRLastUpdatedAt: Date?
     @Published private(set) var whoopHistoricalRRSource = "No historical WHOOP RR intervals decoded yet"
+    @Published private(set) var whoopHistoricalRecoveryMetrics: HistoricalRecoveryMetrics.Result?
+    @Published private(set) var whoopHistoricalRecoveryMetricsStatus = "Waiting for historical WHOOP samples"
+    private var historicalMetricsRefreshWorkItem: DispatchWorkItem?
+    private var historicalMetricsRefreshGeneration = 0
     @Published private(set) var whoopRRLastUpdatedAt: Date?
     @Published private(set) var whoopRRSource = "No WHOOP RR intervals decoded yet"
     @Published private(set) var whoopCommandResponseCount = 0
@@ -1976,6 +1980,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         } else {
                             whoopHistoricalRRSource = "Type-47 v18 RR candidate archived · \(rr.count) intervals · physiological timestamp decoded · packets \(count)"
                         }
+                        scheduleHistoricalMetricsRefresh(from: archiveURL)
                     } catch {
                         whoopHistoricalRRSource = "Historical v18 raw frame captured · archive failed · \(error.localizedDescription)"
                     }
@@ -2475,6 +2480,29 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         heartRateUpdateCount += 1
         lastBLEEvent = "\(source) · \(bpm) bpm · \(ISO8601DateFormatter().string(from: timestamp)) · sample #\(heartRateUpdateCount)"
         statusText = "Live HR · \(bpm) bpm · \(heartRateUpdateCount) update(s)"
+    }
+
+    /// Recompute once the historical offload stream has been quiet for 15 seconds.
+    /// This avoids rescanning a growing archive for every one-second packet.
+    private func scheduleHistoricalMetricsRefresh(from archiveURL: URL) {
+        historicalMetricsRefreshWorkItem?.cancel()
+        historicalMetricsRefreshGeneration += 1
+        let generation = historicalMetricsRefreshGeneration
+        whoopHistoricalRecoveryMetricsStatus = "Historical packets received · waiting for sync to settle"
+        let workItem = DispatchWorkItem { [weak self] in
+            DispatchQueue.global(qos: .utility).async {
+                let records = HistoricalRRPacketArchive.load(from: archiveURL)
+                let result = HistoricalRecoveryMetrics.calculate(from: records)
+                DispatchQueue.main.async {
+                    guard let self, self.historicalMetricsRefreshGeneration == generation else { return }
+                    self.whoopHistoricalRecoveryMetrics = result
+                    self.whoopHistoricalRecoveryMetricsStatus =
+                        "Historical analysis complete · \(result.qualifyingHRVWindows) valid HRV window(s) · \(result.validHeartRateSamples) HR samples"
+                }
+            }
+        }
+        historicalMetricsRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: workItem)
     }
 
     private func appendRRIntervals(_ intervals: [Int], source: String, receivedAt: Date = Date()) {
