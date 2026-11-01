@@ -529,6 +529,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var whoop5HRStreamConfirmed = false
     private var whoop5AutoIMUStartRequested = false
     private var whoop5AutoIMUEnabled = false
+    private var whoop5R10R11Sequence: UInt8?
+    private var whoop5IMUModeSequence: UInt8?
     private var whoop5RawStreamStopWorkItem: DispatchWorkItem?
     private var whoop5PendingWrites: [String] = []
     private var whoop5NextCommandSequence: UInt8 = 2
@@ -1623,6 +1625,38 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let result = Int(b[12])
             let resultName = [0: "FAILURE", 1: "SUCCESS", 2: "PENDING", 3: "UNSUPPORTED"][result] ?? "UNKNOWN(\(result))"
             recordVendorTimeline("COMMAND_RESPONSE · cmd=\(command) · seq=\(echoedSequence) · result=\(resultName) · frame=\(b.count) bytes · CRC valid")
+            if command == 63, whoop5R10R11Sequence == UInt8(echoedSequence) {
+                if result == 2 {
+                    whoopIMUStatus = "R10/R11 realtime command pending · awaiting final response"
+                    return "COMMAND_RESPONSE · SEND_R10_R11_REALTIME(63) · PENDING"
+                }
+                whoop5R10R11Sequence = nil
+                guard result == 1 else {
+                    whoop5AutoIMUStartRequested = false
+                    whoopIMUStatus = "R10/R11 realtime command rejected · \(resultName)"
+                    recordVendorTimeline("SEND_R10_R11_REALTIME(63) response · \(resultName)")
+                    return "COMMAND_RESPONSE · SEND_R10_R11_REALTIME(63) · \(resultName)"
+                }
+                recordVendorTimeline("SEND_R10_R11_REALTIME(63) SUCCESS · requesting TOGGLE_IMU_MODE(106)")
+                sendWhoop5IMUModeEnable(to: peripheral)
+                return "COMMAND_RESPONSE · SEND_R10_R11_REALTIME(63) SUCCESS · IMU mode enable queued"
+            }
+            if command == 106, whoop5IMUModeSequence == UInt8(echoedSequence) {
+                if result == 2 {
+                    whoopIMUStatus = "IMU mode enable pending · awaiting final response"
+                    return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · PENDING"
+                }
+                whoop5IMUModeSequence = nil
+                whoop5AutoIMUEnabled = result == 1
+                if result == 1 {
+                    whoopIMUStatus = "IMU mode accepted · waiting for Gen5 R21 motion packets"
+                } else {
+                    whoop5AutoIMUStartRequested = false
+                    whoopIMUStatus = "IMU mode rejected · \(resultName)"
+                }
+                recordVendorTimeline("TOGGLE_IMU_MODE(106) response · \(resultName)")
+                return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · \(resultName)"
+            }
             if command == 81 {
                 if result == 2 {
                     whoopIMUStatus = "START_RAW_DATA pending · awaiting final response"
@@ -2188,6 +2222,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         let sequence = whoop5NextCommandSequence
         whoop5NextCommandSequence &+= 1
         let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x3F, payload: [0x01])
+        whoop5R10R11Sequence = sequence
         whoop5PendingWrites.append("SEND_R10_R11_ON")
         let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
         recordVendorTimeline("SEND_R10_R11_REALTIME_ON write requested · opcode 3F · seq=\(sequence) · HEX: \(hex)")
@@ -2203,6 +2238,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         let sequence = whoop5NextCommandSequence
         whoop5NextCommandSequence &+= 1
         let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x6A, payload: [0x01, 0x01])
+        whoop5IMUModeSequence = sequence
         whoop5PendingWrites.append("TOGGLE_IMU_MODE")
         let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
         recordVendorTimeline("TOGGLE_IMU_MODE_ON write requested · opcode 6A · seq=\(sequence) · payload=01 01 · HEX: \(hex)")
@@ -2434,6 +2470,31 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
               !whoop5PendingWrites.isEmpty else { return }
         let kind = whoop5PendingWrites.removeFirst()
 
+        if kind == "SEND_R10_R11_ON" {
+            if let error {
+                whoop5R10R11Sequence = nil
+                whoop5AutoIMUStartRequested = false
+                whoopIMUStatus = "R10/R11 realtime write failed · \(error.localizedDescription)"
+                recordVendorTimeline("SEND_R10_R11_REALTIME(63) write callback · failed · \(error.localizedDescription)")
+            } else {
+                whoopIMUStatus = "R10/R11 realtime write acknowledged · awaiting command response"
+                recordVendorTimeline("SEND_R10_R11_REALTIME(63) write callback · acknowledged by CoreBluetooth")
+            }
+            return
+        }
+        if kind == "TOGGLE_IMU_MODE" {
+            if let error {
+                whoop5IMUModeSequence = nil
+                whoop5AutoIMUStartRequested = false
+                whoop5AutoIMUEnabled = false
+                whoopIMUStatus = "IMU mode write failed · \(error.localizedDescription)"
+                recordVendorTimeline("TOGGLE_IMU_MODE(106) write callback · failed · \(error.localizedDescription)")
+            } else {
+                whoopIMUStatus = "IMU mode write acknowledged · awaiting command response"
+                recordVendorTimeline("TOGGLE_IMU_MODE(106) write callback · acknowledged by CoreBluetooth")
+            }
+            return
+        }
         if kind == "START_RAW_DATA_60S" {
             if let error {
                 whoop5AutoIMUStartRequested = false
