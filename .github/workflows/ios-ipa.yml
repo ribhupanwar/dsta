@@ -31,7 +31,7 @@ jobs:
         with:
           lfs: true
 
-      - name: Extract original WHOOP font binaries without conversion
+      - name: Inspect original WHOOP archive font paths
         shell: bash
         run: |
           set -euo pipefail
@@ -40,21 +40,19 @@ jobs:
           archive = "Whoop.zip"
           if not os.path.isfile(archive):
               raise SystemExit("Whoop.zip missing")
-          os.makedirs("PulseForge/Resources/Fonts", exist_ok=True)
           with zipfile.ZipFile(archive) as z:
-              entries = [n for n in z.namelist()
-                         if "/res/font/" in ("/" + n)
-                         and n.lower().endswith((".ttf", ".otf"))]
-              if len(entries) != 8:
-                  raise SystemExit(f"Expected 8 original fonts, found {len(entries)}: {entries}")
-              for entry in entries:
-                  name = entry.rsplit("/", 1)[-1]
-                  data = z.read(entry)
-                  with open("PulseForge/Resources/Fonts/" + name, "wb") as out:
-                      out.write(data)
-                  print(f"{name} {len(data)} bytes")
+              names = z.namelist()
+              print("ARCHIVE_ENTRIES", len(names))
+              matches = [n for n in names if n.lower().endswith((".ttf", ".otf", ".woff", ".woff2"))]
+              print("FONT_FILES", len(matches))
+              for n in matches:
+                  info = z.getinfo(n)
+                  print(f"FONT_PATH {n} SIZE {info.file_size}")
+              candidates = [n for n in names if "font" in n.lower() or "assets" in n.lower()]
+              print("FONT_OR_ASSET_PATHS", len(candidates))
+              for n in candidates[:250]:
+                  print("PATH", n)
           PY
-          shasum -a 256 PulseForge/Resources/Fonts/* | tee "$RUNNER_TEMP/whoop-font-sha256.txt"
 
       - name: Install XcodeGen
         run: |
