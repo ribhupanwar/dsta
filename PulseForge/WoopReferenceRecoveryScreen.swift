@@ -202,7 +202,7 @@ struct WoopReferenceRecoveryScreen: View {
     }
 }
 
-private enum WoopReplicaPalette {
+enum WoopReplicaPalette {
     static let canvas = Color(red: 16/255, green: 20/255, blue: 24/255)
     static let surface = Color(red: 41/255, green: 54/255, blue: 62/255)
     static let surfaceRaised = Color(red: 52/255, green: 67/255, blue: 75/255)
