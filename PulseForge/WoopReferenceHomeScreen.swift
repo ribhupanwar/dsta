@@ -5,9 +5,11 @@ struct WoopReferenceHomeScreen: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+    @EnvironmentObject private var whoopImport: WHOOPImportStore
     @State private var showingRecovery = false
     @State private var showingSleep = false
     @State private var showingLoad = false
+    @State private var showingWHOOPImport = false
 
     private var recoveryTint: Color {
         guard let score = insights.recoveryScore else { return WoopReplicaPalette.muted }
@@ -20,6 +22,7 @@ struct WoopReferenceHomeScreen: View {
                 header
                 scoreStrip
                 deviceNotice
+                whoopImportEntry
                 scoreRings
                 monitors
                 myDay
@@ -56,6 +59,10 @@ struct WoopReferenceHomeScreen: View {
             .preferredColorScheme(.dark)
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingWHOOPImport) {
+            WHOOPDataImportSheet().environmentObject(whoopImport)
+                .presentationDetents([.large]).presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingLoad) {
             NavigationStack {
@@ -121,6 +128,28 @@ struct WoopReferenceHomeScreen: View {
             Spacer()
             Circle().fill(bluetooth.freshHeartRateBPM == nil ? WoopReplicaPalette.muted : WoopReplicaPalette.recoveryHigh).frame(width: 7, height: 7)
         }.padding(14).background(WoopReplicaPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 15))
+    }
+
+    private var whoopImportEntry: some View {
+        Button { showingWHOOPImport = true } label: {
+            HStack(spacing: 11) {
+                Image(systemName: "square.and.arrow.down").font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(WoopReplicaPalette.sleep)
+                    .frame(width: 36, height: 36).background(WoopReplicaPalette.surface, in: Circle())
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("IMPORT WHOOP DATA").font(WoopTypography.label(9)).tracking(0.8)
+                        .foregroundStyle(WoopReplicaPalette.primary)
+                    Text(whoopImport.nights.isEmpty ? "Choose your WHOOP export ZIP" : whoopImport.status)
+                        .font(WoopTypography.body(10)).foregroundStyle(WoopReplicaPalette.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(WoopReplicaPalette.muted)
+            }
+            .padding(12).background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 15))
+            .overlay(RoundedRectangle(cornerRadius: 15).stroke(WoopReplicaPalette.hairline, lineWidth: 1))
+        }.buttonStyle(.plain)
     }
 
     private var scoreRings: some View {
@@ -235,6 +264,36 @@ struct WoopReferenceHomeScreen: View {
                 }.padding(13).background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 15))
             } else {
                 emptyCard("No running workout found in Apple Health yet.")
+            }
+            importedSleepActivity
+        }
+    }
+
+    private var importedSleepActivity: some View {
+        Group {
+            if let night = whoopImport.latestNight {
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(spacing: 9) {
+                        Image(systemName: "moon.zzz.fill").font(WoopTypography.body(16))
+                            .foregroundStyle(WoopReplicaPalette.sleep)
+                            .frame(width: 36, height: 36).background(WoopReplicaPalette.surfaceInset, in: Circle())
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Sleep · WHOOP Export").font(WoopTypography.emphasis(12)).foregroundStyle(WoopReplicaPalette.primary)
+                            Text(night.wakeOnset?.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()) ?? "Imported sleep")
+                                .font(WoopTypography.body(9)).foregroundStyle(WoopReplicaPalette.secondary)
+                        }
+                        Spacer()
+                        Text(night.asleepMinutes.map { String(format: "%.1f h", $0 / 60) } ?? "—")
+                            .font(WoopTypography.emphasis(13)).foregroundStyle(WoopReplicaPalette.sleep)
+                    }
+                    HStack(spacing: 14) {
+                        activityMetric("BEDTIME", night.sleepOnset?.formatted(date: .omitted, time: .shortened) ?? "—")
+                        activityMetric("WAKE", night.wakeOnset?.formatted(date: .omitted, time: .shortened) ?? "—")
+                        activityMetric("DEEP", night.deepMinutes.map { "\(Int($0.rounded())) min" } ?? "—")
+                        activityMetric("REM", night.remMinutes.map { "\(Int($0.rounded())) min" } ?? "—")
+                    }.padding(.leading, 45)
+                }
+                .padding(13).background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 15))
             }
         }
     }
