@@ -106,7 +106,7 @@ struct WoopReferenceRecoveryScreen: View {
             }
             HStack(spacing: 10) {
                 metricTile(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours", symbol: "moon.zzz")
-                metricTile(title: "SLEEP NEED", value: "—", unit: "not available", symbol: "bed.double")
+                metricTile(title: "SLEEP NEED", value: String(format: "%.1f", insights.sleepNeedHours), unit: "hours · estimate", symbol: "bed.double")
             }
         }
     }
