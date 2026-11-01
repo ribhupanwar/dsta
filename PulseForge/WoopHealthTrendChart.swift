@@ -14,6 +14,7 @@ struct WoopHealthTrendChart: View {
     let tint: Color
     let unit: String
     var height: CGFloat = 126
+    var rangeLabel: String = "30 DAYS AGO"
 
     private var finiteValues: [Double] {
         values.compactMap { value in
@@ -85,7 +86,7 @@ struct WoopHealthTrendChart: View {
             .frame(height: height)
 
             HStack {
-                Text("30 DAYS AGO")
+                Text(rangeLabel)
                 Spacer()
                 Text("15 DAYS")
                 Spacer()
