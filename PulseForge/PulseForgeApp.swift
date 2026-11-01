@@ -424,7 +424,15 @@ struct WhoopRRCard: View {
 struct WhoopMotionCard: View {
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
 
-    private var latestSample: WhoopIMUSample? { bluetooth.liveWhoopIMUSamples.last }
+    // Prefer realtime samples; fall back to separately retained decoded Type-47
+    // history so the four diagnostic tiles remain populated when Type-43 is absent.
+    private var metricSamples: [WhoopIMUSample] {
+        bluetooth.liveWhoopIMUSamples.isEmpty
+            ? bluetooth.historicalWhoopIMUSamples
+            : bluetooth.liveWhoopIMUSamples
+    }
+
+    private var latestSample: WhoopIMUSample? { metricSamples.last }
 
     private var accelerationMagnitude: Double? {
         guard let sample = latestSample else { return nil }
@@ -445,7 +453,7 @@ struct WhoopMotionCard: View {
     }
 
     private var recentSamples: [WhoopIMUSample] {
-        Array(bluetooth.liveWhoopIMUSamples.suffix(100))
+        Array(metricSamples.suffix(100))
     }
 
     private var accelerationVariability: Double? {
