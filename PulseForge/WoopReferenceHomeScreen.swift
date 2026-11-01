@@ -62,7 +62,7 @@ struct WoopReferenceHomeScreen: View {
             separator
             stripMetric("SLEEP", value: health.sleepHours.map { String(format: "%.1f h", $0) } ?? "—", tint: WoopReplicaPalette.sleep) { showingSleep = true }
             separator
-            stripMetric("STRAIN", value: insights.cardioLoadPoints.map { String(format: "%.1f", $0) } ?? "—", tint: WoopReplicaPalette.recoveryMid) {}
+            stripMetric("LOAD PTS", value: insights.cardioLoadPoints.map { String(format: "%.1f", $0) } ?? "—", tint: WoopReplicaPalette.recoveryMid) {}
         }
         .padding(.vertical, 13).background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
         .overlay(RoundedRectangle(cornerRadius: 17).stroke(WoopReplicaPalette.hairline, lineWidth: 1))
@@ -96,7 +96,18 @@ struct WoopReferenceHomeScreen: View {
         HStack(spacing: 8) {
             ring("RECOVERY", value: insights.recoveryScore, tint: recoveryTint) { showingRecovery = true }
             ring("SLEEP", value: health.sleepHours.map { Int(($0 / max(1, insights.sleepNeedHours) * 100).rounded()) }, tint: WoopReplicaPalette.sleep) { showingSleep = true }
-            ring("STRAIN", value: nil, tint: WoopReplicaPalette.recoveryMid) {}
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle().stroke(WoopReplicaPalette.homeTrack, lineWidth: 6)
+                    VStack(spacing: 2) {
+                        Text(insights.cardioLoadPoints.map { String(format: "%.1f", $0) } ?? "—")
+                            .font(WoopTypography.metric(19)).monospacedDigit()
+                            .foregroundStyle(WoopReplicaPalette.primary)
+                        Text("PTS").font(WoopTypography.label(7)).foregroundStyle(WoopReplicaPalette.secondary)
+                    }
+                }.frame(width: 68, height: 68)
+                Text("LOAD").font(WoopTypography.label(8)).tracking(0.6).foregroundStyle(WoopReplicaPalette.secondary)
+            }.frame(maxWidth: .infinity)
         }.padding(.vertical, 16).background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 18))
     }
 
