@@ -3,7 +3,7 @@ name: WHOOP IPA Mach-O protocol symbol audit
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, ui/whoop-native-shell-v1]
     paths:
       - ".github/workflows/whoop-ipa-mach-o-audit.yml"
 
@@ -50,9 +50,9 @@ jobs:
           nm -arch arm64 -nm /tmp/whoop-arm64 > mach-o-evidence/nm-arm64.txt 2>&1 || true
           xcrun swift-demangle < <(awk '{print $NF}' mach-o-evidence/nm-arm64.txt | grep '^_' | sort -u) \
             > mach-o-evidence/swift-demangled-symbols.txt 2>&1 || true
-          grep -Ei 'Hello(Packet|Response|Sending|Info)|sendGetHelloPacket|RealtimeHRPacket|RealtimeSequenceable|HistoricalSequenceable|FrameEnvelopePacket|RevisionRouter|RealtimeHeartRateData|HistoricalPull|WhoopPacket.*CRC|rrIntervals|RealtimeDataType' \
+          grep -Ei 'Hello(Packet|Response|Sending|Info)|sendGetHelloPacket|RealtimeHRPacket|RealtimeSequenceable|HistoricalSequenceable|FrameEnvelopePacket|RevisionRouter|RealtimeHeartRateData|HistoricalPull|WhoopPacket.*CRC|rrIntervals|RealtimeDataType|Processed.*Steps|StepCount|R24' \
             mach-o-evidence/swift-demangled-symbols.txt > mach-o-evidence/protocol-symbols.txt || true
-          strings -a /tmp/whoop-arm64 | grep -Ei 'HelloPacketRev[34]|sendGetHelloPacket|HelloResponsePacket|RealtimeHRPacket|HistoricalSequenceable|rrIntervals|FD4B|Characteristics Subscribed|HELLO RESPONSE' \
+          strings -a /tmp/whoop-arm64 | grep -Ei 'HelloPacketRev[34]|sendGetHelloPacket|HelloResponsePacket|RealtimeHRPacket|HistoricalSequenceable|rrIntervals|Processed.*Steps|step_count|R24|FD4B|Characteristics Subscribed|HELLO RESPONSE' \
             > mach-o-evidence/protocol-strings.txt || true
           otool -arch arm64 -l /tmp/whoop-arm64 > mach-o-evidence/load-commands.txt
           otool -arch arm64 -tvV /tmp/whoop-arm64 > /tmp/whoop-disassembly.txt 2>mach-o-evidence/otool-errors.txt || true
@@ -61,7 +61,7 @@ jobs:
           import re
           source = Path("/tmp/whoop-disassembly.txt").read_text(errors="replace")
           lines = source.splitlines()
-          terms = re.compile(r"hello|realtimehr|historical|frameenvelope|revisionrouter|rrinterval|sendgethellopacket|crc", re.I)
+          terms = re.compile(r"hello|realtimehr|historical|frameenvelope|revisionrouter|rrinterval|sendgethellopacket|crc|processed.?steps|step.?count|R24|105ce7ff8|105ce8038|108ebdb70|10036dcb4|10036e4a4", re.I)
           hits = [i for i, line in enumerate(lines) if terms.search(line)]
           keep = set()
           for i in hits:
