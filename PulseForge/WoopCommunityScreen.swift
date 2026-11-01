@@ -92,60 +92,77 @@ struct WoopCommunityScreen: View {
 
     private var myTeams: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                sectionTitle("YOUR TEAMS")
-                Spacer()
-                Text("\(teams.count) CREATED")
-                    .font(WoopTypography.label(8)).tracking(0.7)
-                    .foregroundStyle(WoopReplicaPalette.muted)
-            }
-
-            if teams.isEmpty {
-                emptyState(
-                    icon: "person.3.sequence.fill",
-                    title: "Your team starts here",
-                    message: "Create a training group and keep its details on this device. Shared membership and live team feeds need a Community service."
-                )
-            } else {
-                ForEach(teams) { team in
-                    HStack(spacing: 12) {
-                        Image(systemName: "figure.run")
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(WoopReplicaPalette.sleep)
-                            .frame(width: 43, height: 43)
-                            .background(WoopReplicaPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 13))
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(team.name)
-                                .font(WoopTypography.emphasis(14))
-                                .foregroundStyle(WoopReplicaPalette.primary)
-                            Text("LOCAL TEAM · \(team.focus.uppercased())")
-                                .font(WoopTypography.label(8)).tracking(0.7)
-                                .foregroundStyle(WoopReplicaPalette.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "iphone")
-                            .font(.system(size: 12))
-                            .foregroundStyle(WoopReplicaPalette.muted)
-                    }
-                    .padding(13)
-                    .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(WoopReplicaPalette.hairline, lineWidth: 1))
-                }
-            }
-
-            Button { showingCreateTeam = true } label: {
-                Label("CREATE A TEAM", systemImage: "plus")
-                    .font(WoopTypography.label(10)).tracking(0.8)
-                    .foregroundStyle(WoopReplicaPalette.canvas)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
-                    .background(WoopReplicaPalette.recoveryHigh, in: Capsule())
-            }
-            .buttonStyle(.plain)
+            teamsHeader
+            teamContent
+            createTeamButton
         }
         .padding(16)
         .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 20))
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(WoopReplicaPalette.hairline, lineWidth: 1))
+    }
+
+    private var teamsHeader: some View {
+        HStack {
+            sectionTitle("YOUR TEAMS")
+            Spacer()
+            Text("\(teams.count) CREATED")
+                .font(WoopTypography.label(8)).tracking(0.7)
+                .foregroundStyle(WoopReplicaPalette.muted)
+        }
+    }
+
+    @ViewBuilder
+    private var teamContent: some View {
+        if teams.isEmpty {
+            emptyState(
+                icon: "person.3.sequence.fill",
+                title: "Your team starts here",
+                message: "Create a training group and keep its details on this device. Shared membership and live team feeds need a Community service."
+            )
+        } else {
+            VStack(spacing: 10) {
+                ForEach(teams) { team in
+                    teamRow(team)
+                }
+            }
+        }
+    }
+
+    private func teamRow(_ team: LocalCommunityTeam) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "figure.run")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(WoopReplicaPalette.sleep)
+                .frame(width: 43, height: 43)
+                .background(WoopReplicaPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 13))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(team.name)
+                    .font(WoopTypography.emphasis(14))
+                    .foregroundStyle(WoopReplicaPalette.primary)
+                Text("LOCAL TEAM · \(team.focus.uppercased())")
+                    .font(WoopTypography.label(8)).tracking(0.7)
+                    .foregroundStyle(WoopReplicaPalette.secondary)
+            }
+            Spacer()
+            Image(systemName: "iphone")
+                .font(.system(size: 12))
+                .foregroundStyle(WoopReplicaPalette.muted)
+        }
+        .padding(13)
+        .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(WoopReplicaPalette.hairline, lineWidth: 1))
+    }
+
+    private var createTeamButton: some View {
+        Button { showingCreateTeam = true } label: {
+            Label("CREATE A TEAM", systemImage: "plus")
+                .font(WoopTypography.label(10)).tracking(0.8)
+                .foregroundStyle(WoopReplicaPalette.canvas)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .background(WoopReplicaPalette.recoveryHigh, in: Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private var discover: some View {
