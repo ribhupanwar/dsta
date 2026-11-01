@@ -105,7 +105,7 @@ struct WoopReferenceRecoveryScreen: View {
             sectionTitle("KEY CONTRIBUTORS", trailing: "TODAY")
             HStack(spacing: 10) {
                 metricTile(title: "HRV", value: importedHRV.map { String(format: "%.0f", $0) } ?? "—", unit: "ms", symbol: "waveform.path.ecg")
-                metricTile(title: "RESTING HEART RATE", value: importedRHR.map(String.init) ?? "—", unit: "bpm", symbol: "heart")
+                metricTile(title: "RESTING HEART RATE", value: importedRHR.map { String(format: "%.0f", $0) } ?? "—", unit: "bpm", symbol: "heart")
             }
             HStack(spacing: 10) {
                 metricTile(title: "SLEEP", value: importedSleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours", symbol: "moon.zzz")
