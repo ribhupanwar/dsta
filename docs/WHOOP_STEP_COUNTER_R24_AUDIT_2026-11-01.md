@@ -51,6 +51,18 @@ There is also a CRC-comment issue in that candidate: for a 124-byte format-1 fra
 
 Do **not** transplant the R18 candidate decoder into the current UI branch or label its selected counter as daily steps until its source fields and semantics are proven. Keep raw frames and diagnostic evidence separate from user-visible step totals.
 
+## PulseForge capture instrumentation added
+
+The current UI branch now archives CRC-valid Type-47 frames that reach the unclassified-revision fallback without decoding them:
+
+- Source: `PulseForge/HistoricalWhoopPacketArchive.swift`
+- Integration: `PulseForge/WhoopBluetoothManager.swift`, Type-47 fallback
+- App Support archive: `PulseForge/historical-whoop-type47-v1.json`
+- Retention: newest 500 records on disk; latest 40 frames are included in the in-memory diagnostic snapshot
+- Stored fields: receipt time, GATT channel, packet type, revision byte, byte count, outer transport-CRC validation, complete raw frame hex, and an explicit raw-only classification
+
+R18 and R21 continue through their existing separate paths. This new archive targets unknown revisions such as the R24 candidate. It intentionally does not call any field decoder or create a step total. The purpose is to obtain real, CRC-valid frames for byte-for-byte correlation with the WHOOP IPA dispatcher.
+
 ## Next engineering sequence
 
 1. Trace the historical dispatcher entry at `0x105ce7ff8` and the R24 branch at `0x105ce8038`; identify the exact discriminator byte and record-reader entry.
