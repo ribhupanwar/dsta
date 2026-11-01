@@ -1707,6 +1707,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     whoopIMUStatus = "Gen5 R21 frame valid · no paired samples · raw retained"
                     return "GEN5_R21_IMU(0x2B) · no paired samples"
                 }
+                // Persist every decoded packet independently of workout recording.
+                _ = DailyIMUMotionHistoryStore.shared.append(decoded)
                 liveWhoopIMUSamples.append(contentsOf: decoded)
                 if liveWhoopIMUSamples.count > 2000 {
                     liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 2000)
@@ -1816,7 +1818,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         whoopIMUStatus = "Historical Gen5 R21 buffer valid · no paired samples"
                         return "HISTORICAL_R21_IMU(0x2F) · no paired samples · CRC valid"
                     }
-                    liveWhoopIMUSamples.append(contentsOf: decoded)
+                    // Persist every decoded packet independently of workout recording.
+                _ = DailyIMUMotionHistoryStore.shared.append(decoded)
+                liveWhoopIMUSamples.append(contentsOf: decoded)
                     if liveWhoopIMUSamples.count > 2000 {
                         liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 2000)
                     }
