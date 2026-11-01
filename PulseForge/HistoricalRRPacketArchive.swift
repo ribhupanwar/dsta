@@ -9,6 +9,10 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
     let recordType: Int
     let revision: Int
     let intervalsMilliseconds: [Int]
+    /// Per-second Gen5 v18 HR (0 means no reading); absent on older archive entries.
+    var heartRateBpm: Int? = nil
+    /// Raw band sleep-state byte; intentionally not mapped to sleep stages.
+    var sleepStateRaw: UInt8? = nil
     let rawFrameHex: String
     /// Nil until an embedded physiological timestamp is independently decoded.
     let physiologicalTimestamp: Date?
