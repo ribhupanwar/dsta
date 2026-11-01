@@ -81,6 +81,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopHistoricalRRSource = "No historical WHOOP RR intervals decoded yet"
     @Published private(set) var whoopHistoricalRecoveryMetrics: HistoricalRecoveryMetrics.Result?
     @Published private(set) var whoopHistoricalRecoveryMetricsStatus = "Waiting for historical WHOOP samples"
+    @Published private(set) var whoopHistoricalSleepStateSampleCount = 0
+    @Published private(set) var whoopHistoricalLatestSleepStateRaw: UInt8?
+
     private var historicalMetricsRefreshWorkItem: DispatchWorkItem?
     private var historicalMetricsRefreshGeneration = 0
     @Published private(set) var whoopRRLastUpdatedAt: Date?
@@ -1958,13 +1961,18 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     whoopRRSource = "Historical v18 RR candidate rejected · \(error)"
                 }
 
+                let rawSleepState = Whoop5RRDecoder.decodeHistoricalV18SleepStateRaw(b)
+                if let rawSleepState {
+                    whoopHistoricalSleepStateSampleCount += 1
+                    whoopHistoricalLatestSleepStateRaw = rawSleepState
+                }
                 let record = HistoricalRRPacketRecord(
                     receivedAt: receivedAt,
                     recordType: 47,
                     revision: 18,
                     intervalsMilliseconds: rr,
                     heartRateBpm: Whoop5RRDecoder.decodeHistoricalV18HeartRate(b),
-                    sleepStateRaw: Whoop5RRDecoder.decodeHistoricalV18SleepStateRaw(b),
+                    sleepStateRaw: rawSleepState,
                     rawFrameHex: rawHex,
                     physiologicalTimestamp: Whoop5RRDecoder.decodeHistoricalV18Timestamp(b),
                     decodeError: decodeError
