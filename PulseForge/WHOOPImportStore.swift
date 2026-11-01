@@ -91,8 +91,6 @@ final class WHOOPImportStore: ObservableObject {
 
     func setImportError(_ error: Error) { status = "Import failed: \(error.localizedDescription)" }
 
-    func setImportError(_ error: Error) { status = "Import failed: \(error.localizedDescription)" }
-
     private func restore() {
         guard let data = UserDefaults.standard.data(forKey: persistenceKey),
               let saved = try? JSONDecoder().decode(SavedImport.self, from: data) else { return }
