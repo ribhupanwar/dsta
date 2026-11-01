@@ -90,7 +90,7 @@ struct WoopReferenceSleepScreen: View {
                 Spacer()
                 metric("SLEEP DEBT", value: insights.sleepDebtHours.map { String(format: "%.1f h", $0) } ?? "—")
                 Spacer()
-                metric("7-DAY AVG", value: insights.typicalSleepHours.map { String(format: "%.1f h", $0) } ?? "—")
+                metric("TYPICAL SLEEP", value: insights.typicalSleepHours.map { String(format: "%.1f h", $0) } ?? "—")
             }
         }
         .padding(20)
