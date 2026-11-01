@@ -61,6 +61,11 @@ jobs:
           echo "$APP" > /tmp/whoop-app-path.txt
           find "$APP" -type f \( -name '*.nib' -o -name '*.storyboardc' -o -name '*.car' -o -name '*.strings' -o -name '*.stringsdict' \) -print > whoop-ui-reference/ui-resource-paths.txt
 
+      - name: Set up Go for nibkit decoder
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+
       - name: Decode NIB and storyboard structures when present
         shell: bash
         run: |
