@@ -28,31 +28,6 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
-        with:
-          lfs: true
-
-      - name: Inspect original WHOOP archive font paths
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import os, zipfile
-          archive = "Whoop.zip"
-          if not os.path.isfile(archive):
-              raise SystemExit("Whoop.zip missing")
-          with zipfile.ZipFile(archive) as z:
-              names = z.namelist()
-              print("ARCHIVE_ENTRIES", len(names))
-              matches = [n for n in names if n.lower().endswith((".ttf", ".otf", ".woff", ".woff2"))]
-              print("FONT_FILES", len(matches))
-              for n in matches:
-                  info = z.getinfo(n)
-                  print(f"FONT_PATH {n} SIZE {info.file_size}")
-              candidates = [n for n in names if "font" in n.lower() or "assets" in n.lower()]
-              print("FONT_OR_ASSET_PATHS", len(candidates))
-              for n in candidates[:250]:
-                  print("PATH", n)
-          PY
 
       - name: Install XcodeGen
         run: |
