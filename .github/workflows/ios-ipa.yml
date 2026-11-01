@@ -132,6 +132,7 @@ jobs:
           cp "$RUNNER_TEMP/PulseForge-fonts.SHA256SUMS.txt" "$FONT_CHECK/PulseForge/SHA256SUMS.txt"
           while IFS= read -r line; do
             FONT_NAME="${line#*  }"
+            FONT_NAME="${FONT_NAME##*/}"
             test -s "$APP/$FONT_NAME"
             cp "$APP/$FONT_NAME" "$FONT_CHECK/PulseForge/$FONT_NAME"
           done < "$FONT_CHECK/PulseForge/SHA256SUMS.txt"
