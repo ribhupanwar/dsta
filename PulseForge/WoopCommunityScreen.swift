@@ -51,7 +51,7 @@ struct WoopCommunityScreen: View {
                     .foregroundStyle(WoopReplicaPalette.secondary)
                 Spacer()
                 Image(systemName: "person.2.fill")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(WoopTypography.body(16))
                     .foregroundStyle(WoopReplicaPalette.sleep)
                     .frame(width: 40, height: 40)
                     .background(WoopReplicaPalette.surfaceRaised, in: Circle())
@@ -131,7 +131,7 @@ struct WoopCommunityScreen: View {
     private func teamRow(_ team: LocalCommunityTeam) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "figure.run")
-                .font(.system(size: 17, weight: .medium))
+                .font(WoopTypography.body(17))
                 .foregroundStyle(WoopReplicaPalette.sleep)
                 .frame(width: 43, height: 43)
                 .background(WoopReplicaPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 13))
@@ -145,7 +145,7 @@ struct WoopCommunityScreen: View {
             }
             Spacer()
             Image(systemName: "iphone")
-                .font(.system(size: 12))
+                .font(WoopTypography.body(12))
                 .foregroundStyle(WoopReplicaPalette.muted)
         }
         .padding(13)
@@ -187,7 +187,7 @@ struct WoopCommunityScreen: View {
     private func emptyState(icon: String, title: String, message: String) -> some View {
         VStack(spacing: 11) {
             Image(systemName: icon)
-                .font(.system(size: 30, weight: .light))
+                .font(WoopTypography.body(30))
                 .foregroundStyle(WoopReplicaPalette.sleep)
                 .frame(width: 64, height: 64)
                 .background(WoopReplicaPalette.surfaceInset, in: Circle())
@@ -272,7 +272,7 @@ struct WoopCommunityScreen: View {
 
     private func featurePill(_ title: String, icon: String) -> some View {
         VStack(spacing: 7) {
-            Image(systemName: icon).font(.system(size: 14))
+            Image(systemName: icon).font(WoopTypography.body(14))
             Text(title).font(WoopTypography.label(7)).tracking(0.3)
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
