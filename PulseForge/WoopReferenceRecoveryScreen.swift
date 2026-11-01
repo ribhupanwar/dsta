@@ -44,7 +44,7 @@ struct WoopReferenceRecoveryScreen: View {
                     .tracking(2.2)
                     .foregroundStyle(WoopReplicaPalette.secondary)
                 Text(Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(WoopTypography.emphasis(22))
                     .foregroundStyle(WoopReplicaPalette.primary)
             }
             Spacer()
@@ -69,15 +69,15 @@ struct WoopReferenceRecoveryScreen: View {
                 }
                 VStack(spacing: 4) {
                     Text("RECOVERY")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(WoopTypography.label(10))
                         .tracking(1.8)
                         .foregroundStyle(WoopReplicaPalette.secondary)
                     Text(score.map(String.init) ?? "—")
-                        .font(.system(size: 54, weight: .medium, design: .rounded))
+                        .font(WoopTypography.metric(54))
                         .monospacedDigit()
                         .foregroundStyle(WoopReplicaPalette.primary)
                     Text(score == nil ? "WAITING FOR DATA" : insights.recoveryStatus.uppercased())
-                        .font(.system(size: 9, weight: .bold))
+                        .font(WoopTypography.label(9))
                         .tracking(1.1)
                         .foregroundStyle(scoreTint)
                 }
@@ -86,7 +86,7 @@ struct WoopReferenceRecoveryScreen: View {
             Text(score == nil
                  ? "Recovery will appear when enough valid health measurements are available."
                  : "Your recovery estimate combines your available HRV and resting heart-rate baseline.")
-                .font(.system(size: 12))
+                .font(WoopTypography.body(12))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(WoopReplicaPalette.secondary)
                 .frame(maxWidth: 290)
@@ -115,12 +115,12 @@ struct WoopReferenceRecoveryScreen: View {
         VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 6) {
                 Image(systemName: symbol).font(.system(size: 12, weight: .medium))
-                Text(title).font(.system(size: 9, weight: .bold)).tracking(0.7)
+                Text(title).font(WoopTypography.label(9)).tracking(0.7)
                     .lineLimit(1).minimumScaleFactor(0.75)
             }
             .foregroundStyle(WoopReplicaPalette.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(value).font(.system(size: 27, weight: .medium, design: .rounded)).monospacedDigit()
+                Text(value).font(WoopTypography.metric(27)).monospacedDigit()
                     .foregroundStyle(WoopReplicaPalette.primary)
                 Text(unit).font(.system(size: 10, weight: .medium))
                     .foregroundStyle(WoopReplicaPalette.secondary)
@@ -149,7 +149,7 @@ struct WoopReferenceRecoveryScreen: View {
                     .font(.system(size: 24, weight: .light))
                     .foregroundStyle(WoopReplicaPalette.muted)
                 Text("Your trend will appear as daily measurements are collected.")
-                    .font(.system(size: 11))
+                    .font(WoopTypography.body(11))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(WoopReplicaPalette.secondary)
             }
@@ -162,7 +162,7 @@ struct WoopReferenceRecoveryScreen: View {
     private func rangeButton(_ title: String) -> some View {
         Button { selectedRange = title } label: {
             Text(title)
-                .font(.system(size: 8, weight: .bold))
+                .font(WoopTypography.label(8))
                 .tracking(0.6)
                 .foregroundStyle(selectedRange == title ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary)
                 .padding(.horizontal, 10)
@@ -180,7 +180,7 @@ struct WoopReferenceRecoveryScreen: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle("ABOUT RECOVERY")
             Text("Recovery is an on-device PulseForge estimate, not WHOOP's proprietary score. It is displayed only when the underlying measurements support a calculation.")
-                .font(.system(size: 11))
+                .font(WoopTypography.body(11))
                 .lineSpacing(3)
                 .foregroundStyle(WoopReplicaPalette.secondary)
         }
@@ -191,11 +191,11 @@ struct WoopReferenceRecoveryScreen: View {
 
     private func sectionTitle(_ title: String, trailing: String? = nil) -> some View {
         HStack {
-            Text(title).font(.system(size: 10, weight: .bold)).tracking(1.1)
+            Text(title).font(WoopTypography.label(10)).tracking(1.1)
                 .foregroundStyle(WoopReplicaPalette.secondary)
             Spacer()
             if let trailing {
-                Text(trailing).font(.system(size: 9, weight: .bold)).tracking(0.8)
+                Text(trailing).font(WoopTypography.label(9)).tracking(0.8)
                     .foregroundStyle(WoopReplicaPalette.muted)
             }
         }
