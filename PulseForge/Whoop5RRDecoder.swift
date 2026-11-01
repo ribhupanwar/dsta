@@ -61,6 +61,25 @@ enum Whoop5RRDecoder {
                     + TimeInterval(fractionQ15) / 32768.0)
     }
 
+    /// Gen5 v18 per-second heart rate: inner[14] = frame[22].
+    /// Zero is the band's no-reading/off-skin sentinel; never carry HR forward.
+    static func decodeHistoricalV18HeartRate(_ frame: [UInt8]) -> Int? {
+        guard frame.count >= 23,
+              frame[0] == 0xAA, frame[1] == 0x01,
+              Int(frame[8]) == 47, Int(frame[9]) == 18 else { return nil }
+        let bpm = Int(frame[22])
+        return (25...230).contains(bpm) ? bpm : 0
+    }
+
+    /// Raw Gen5 v18 sleep-state byte: inner[73] = frame[81].
+    /// Keep the raw byte; do not label its bits as WHOOP sleep stages.
+    static func decodeHistoricalV18SleepStateRaw(_ frame: [UInt8]) -> UInt8? {
+        guard frame.count >= 82,
+              frame[0] == 0xAA, frame[1] == 0x01,
+              Int(frame[8]) == 47, Int(frame[9]) == 18 else { return nil }
+        return frame[81]
+    }
+
     private static func decodeWords(_ frame: [UInt8], countOffset: Int,
                                     wordsOffset: Int, maximumCount: Int,
                                     signedWords: Bool,
