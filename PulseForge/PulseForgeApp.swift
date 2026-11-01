@@ -20,14 +20,16 @@ struct PulseForgeApp: App {
 
 enum ForgeTab: String, CaseIterable {
     case today = "Today"
+    case recovery = "Recovery"
     case sleep = "Sleep"
     case strain = "Strain"
-    case run = "Run"
+    case run = "Activity"
     case device = "WHOOP"
 
     var symbol: String {
         switch self {
         case .today: "circle.grid.2x2.fill"
+        case .recovery: "heart.text.square.fill"
         case .sleep: "moon.zzz.fill"
         case .strain: "flame.fill"
         case .run: "figure.run"
@@ -49,6 +51,7 @@ struct MainTabView: View {
             Group {
                 switch selected {
                 case .today: WoopReferenceHomeScreen()
+                case .recovery: WoopReferenceRecoveryScreen()
                 case .sleep: WoopReferenceSleepScreen()
                 case .strain: StrainDashboard()
                 case .run: RunningDashboard()
@@ -75,8 +78,8 @@ struct ForgeTabBar: View {
             ForEach(ForgeTab.allCases, id: \.self) { tab in
                 Button { selected = tab } label: {
                     VStack(spacing: 5) {
-                        Image(systemName: tab.symbol).font(.system(size: 18, weight: .semibold))
-                        Text(tab.rawValue).font(.system(size: 10, weight: .semibold))
+                        Image(systemName: tab.symbol).font(.system(size: 16, weight: .semibold))
+                        Text(tab.rawValue).font(.system(size: 8, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.75)
                     }
                     .foregroundStyle(selected == tab ? ForgeColors.lime : ForgeColors.muted)
                     .frame(maxWidth: .infinity)
@@ -85,7 +88,7 @@ struct ForgeTabBar: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 4)
         .padding(.bottom, 18)
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) { Rectangle().fill(ForgeColors.stroke).frame(height: 1) }
