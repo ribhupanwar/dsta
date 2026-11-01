@@ -153,6 +153,47 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var pendingLiveIMUSamples: [WhoopIMUSample] = []
     private var liveIMUPublishScheduled = false
     private let liveIMUPublishInterval: TimeInterval = 0.25
+    // Diagnostics are observable too: coalesce packet-by-packet updates so
+    // historical bursts cannot continuously invalidate the SwiftUI tree.
+    private var pendingIMUFrameCount = 0
+    private var pendingIMUSampleCount = 0
+    private var pendingIMULastFrameAt: Date?
+    private var pendingIMULastRawFrameHex: String?
+    private var pendingIMUStatus: String?
+    private var imuDiagnosticsPublishScheduled = false
+    private let imuDiagnosticsPublishInterval: TimeInterval = 1.0
+
+    private func enqueueIMUDiagnostics(frameCount: Int = 1, sampleCount: Int = 0,
+                                       rawFrameHex: String? = nil, status: String) {
+        pendingIMUFrameCount += frameCount
+        pendingIMUSampleCount += sampleCount
+        pendingIMULastFrameAt = Date()
+        if let rawFrameHex { pendingIMULastRawFrameHex = rawFrameHex }
+        pendingIMUStatus = status
+        guard !imuDiagnosticsPublishScheduled else { return }
+        imuDiagnosticsPublishScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + imuDiagnosticsPublishInterval) { [weak self] in
+            guard let self else { return }
+            self.whoopIMUFrameCount += self.pendingIMUFrameCount
+            self.whoopIMUSampleCount += self.pendingIMUSampleCount
+            self.pendingIMUFrameCount = 0
+            self.pendingIMUSampleCount = 0
+            self.whoopIMULastFrameAt = self.pendingIMULastFrameAt
+            self.pendingIMULastFrameAt = nil
+            if let hex = self.pendingIMULastRawFrameHex {
+                self.whoopIMULastRawFrameHex = hex
+                self.pendingIMULastRawFrameHex = nil
+            }
+            if let status = self.pendingIMUStatus {
+                self.whoopIMUStatus = status
+                self.pendingIMUStatus = nil
+            }
+            self.imuDiagnosticsPublishScheduled = false
+            if self.pendingIMUFrameCount > 0 || self.pendingIMUSampleCount > 0 || self.pendingIMUStatus != nil {
+                self.enqueueIMUDiagnostics(frameCount: 0, sampleCount: 0, status: self.pendingIMUStatus ?? "WHOOP motion diagnostics updated")
+            }
+        }
+    }
 
     private func enqueueLiveIMUSamplesForUI(_ samples: [WhoopIMUSample]) {
         guard !samples.isEmpty else { return }
@@ -1802,11 +1843,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return "METADATA · subtype=\(metadataType) · CRC valid"
 
         case 43: // Gen5 R21 realtime IMU buffer (0x2B); same v21 layout as historical 0x2F.
-            whoopIMUFrameCount += 1
-            whoopIMULastFrameAt = Date()
-            whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
+            let rawHex = b.map { String(format: "%02X", $0) }.joined()
             let capturedAt = ISO8601DateFormatter().string(from: Date())
-            whoopIMURawFrameHistory.append("type=43 · \(capturedAt) · \(whoopIMULastRawFrameHex)")
+            whoopIMURawFrameHistory.append("type=43 · \(capturedAt) · \(rawHex)")
             if whoopIMURawFrameHistory.count > 4 {
                 whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
             }
@@ -1814,7 +1853,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             do {
                 let decoded = try Gen5R21IMUDecoder.decode(b)
                 guard !decoded.isEmpty else {
-                    whoopIMUStatus = "Gen5 R21 frame valid · no paired samples · raw retained"
+                    enqueueIMUDiagnostics(rawFrameHex: rawHex, status: "Gen5 R21 frame valid · no paired samples · raw retained")
                     return "GEN5_R21_IMU(0x2B) · no paired samples"
                 }
                 // Persist every decoded packet independently of workout recording.
@@ -1823,28 +1862,26 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 if workoutIsRecording {
                     workoutWhoopIMUSamples.append(contentsOf: decoded)
                 }
-                whoopIMUSampleCount += decoded.count
+                enqueueIMUDiagnostics(sampleCount: decoded.count, rawFrameHex: rawHex,
+                                      status: "Gen5 R21 live · \(decoded.count) paired samples · 100 Hz")
                 if workoutIsRecording,
                    workoutWhoopIMUSamples.count - lastWhoopIMUPersistedSampleCount >= 500 {
                     // Persist IMU in ~5-second batches at 100 Hz, not on every frame.
                     persistWorkoutSession()
                 }
-                whoopIMUStatus = "Gen5 R21 decoded · \(decoded.count) paired samples · 100 Hz · accel/gyro scales applied"
                 return "GEN5_R21_IMU(0x2B) · decoded \(decoded.count) samples · 100 Hz · CRC valid"
             } catch {
-                whoopIMUStatus = "Gen5 R21 candidate rejected · \(error) · raw retained"
+                enqueueIMUDiagnostics(rawFrameHex: rawHex, status: "Gen5 R21 candidate rejected · \(error) · raw retained")
                 return "GEN5_R21_IMU(0x2B) · decode rejected · \(error)"
             }
         case 51: // Existing REALTIME_IMU_DATA_STREAM path retained independently; do not conflate with Gen5 R21.
-            whoopIMUFrameCount += 1
-            whoopIMULastFrameAt = Date()
-            whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
+            let rawHex = b.map { String(format: "%02X", $0) }.joined()
             let capturedAt = ISO8601DateFormatter().string(from: Date())
-            whoopIMURawFrameHistory.append("type=51 · \(capturedAt) · \(whoopIMULastRawFrameHex)")
+            whoopIMURawFrameHistory.append("type=51 · \(capturedAt) · \(rawHex)")
             if whoopIMURawFrameHistory.count > 4 {
                 whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
             }
-            whoopIMUStatus = "Realtime IMU stream packet received · \(b.count) bytes · CRC valid · subtype decode pending"
+            enqueueIMUDiagnostics(rawFrameHex: rawHex, status: "Realtime IMU stream packet received · \(b.count) bytes · CRC valid · subtype decode pending")
             return "REALTIME_IMU_DATA_STREAM(51) · \(b.count) bytes · CRC valid · raw frame retained"
 
         case 47: // HISTORICAL_DATA; contains several Gen5 layouts, not all of them IMU.
@@ -1911,34 +1948,31 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             // observed high-rate offload path; command ACKs alone do not prove
             // that live raw streaming (0x2B) or IMU mode (106) is active.
             if b.count == 1244, b[8] == 0x2F, b[9] == 21 {
-                whoopIMUFrameCount += 1
-                whoopIMULastFrameAt = Date()
-                whoopIMULastRawFrameHex = b.map { String(format: "%02X", $0) }.joined()
+                let rawHex = b.map { String(format: "%02X", $0) }.joined()
                 let capturedAt = ISO8601DateFormatter().string(from: Date())
-                whoopIMURawFrameHistory.append("type=47 · \(capturedAt) · \(whoopIMULastRawFrameHex)")
+                whoopIMURawFrameHistory.append("type=47 · \(capturedAt) · \(rawHex)")
                 if whoopIMURawFrameHistory.count > 4 {
                     whoopIMURawFrameHistory.removeFirst(whoopIMURawFrameHistory.count - 4)
                 }
                 do {
                     let decoded = try Gen5R21IMUDecoder.decode(b)
                     guard !decoded.isEmpty else {
-                        whoopIMUStatus = "Historical Gen5 R21 buffer valid · no paired samples"
+                        enqueueIMUDiagnostics(rawFrameHex: rawHex, status: "Historical Gen5 R21 buffer valid · no paired samples")
                         return "HISTORICAL_R21_IMU(0x2F) · no paired samples · CRC valid"
                     }
                     // Historical offload is archived only. Never feed it into the
                     // live dashboard or an active workout's realtime motion samples.
                     _ = DailyIMUMotionHistoryStore.shared.append(decoded)
-                    whoopIMUSampleCount += decoded.count
-                    whoopIMUStatus = "Gen5 R21 history decoded · \(decoded.count) paired samples · archived · not live"
-                    recordVendorTimeline("HISTORICAL R21 IMU archived · \(decoded.count) samples · type 47 · 100 Hz")
+                    enqueueIMUDiagnostics(sampleCount: decoded.count, rawFrameHex: rawHex,
+                                          status: "Historical Gen5 R21 history decoded · \(decoded.count) paired samples · archived · not live")
                     return "HISTORICAL_R21_IMU(0x2F) · decoded \(decoded.count) samples · CRC valid"
                 } catch {
-                    whoopIMUStatus = "Historical Gen5 R21 candidate rejected · \(error) · raw retained"
+                    enqueueIMUDiagnostics(rawFrameHex: rawHex, status: "Historical Gen5 R21 candidate rejected · \(error) · raw retained")
                     return "HISTORICAL_R21_IMU(0x2F) · decode rejected · \(error)"
                 }
             }
 
-            whoopIMUStatus = "Historical WHOOP 5 frame retained · \(b.count) bytes · inner revision \(b.count > 9 ? Int(b[9]) : -1) · R21 decode not matched"
+            enqueueIMUDiagnostics(status: "Historical WHOOP 5 frame retained · \(b.count) bytes · inner revision \(b.count > 9 ? Int(b[9]) : -1) · R21 decode not matched")
             return "HISTORICAL_DATA(0x2F) · \(b.count) bytes · raw retained"
 
         case 40: // REALTIME_DATA; WHOOP 5 offsets: HR@16, RR count@17, RR u16-ms words@18+
