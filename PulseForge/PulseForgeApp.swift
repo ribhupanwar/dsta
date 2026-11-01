@@ -75,6 +75,7 @@ struct MainTabView: View {
 
 struct ForgeTabBar: View {
     @Binding var selected: ForgeTab
+    @Namespace private var lensNamespace
 
     private var isMoreSelection: Bool {
         selected == .sleep || selected == .strain || selected == .run || selected == .device
@@ -94,6 +95,7 @@ struct ForgeTabBar: View {
         .shadow(color: .black.opacity(0.22), radius: 14, y: 5)
         .padding(.horizontal, 20)
         .padding(.bottom, 8)
+        .animation(.spring(response: 0.42, dampingFraction: 0.82), value: selected)
     }
 
     private var moreMenu: some View {
@@ -118,11 +120,25 @@ struct ForgeTabBar: View {
         .foregroundColor(moreForeground)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
+        .background {
+            if isMoreSelection { navigationLens }
+        }
         .contentShape(Rectangle())
     }
 
     private var moreForeground: Color {
         isMoreSelection ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary
+    }
+
+    private var navigationLens: some View {
+        Capsule()
+            .fill(LinearGradient(
+                colors: [Color.white.opacity(0.17), Color.white.opacity(0.07)],
+                startPoint: .top,
+                endPoint: .bottom
+            ))
+            .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.8))
+            .matchedGeometryEffect(id: "whoop-navigation-lens", in: lensNamespace)
     }
 
     private var navBackground: some View {
@@ -151,23 +167,131 @@ struct ForgeTabBar: View {
         .foregroundColor(selected == tab ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
-        .background(selected == tab ? WoopReplicaPalette.surfaceRaised : Color.clear, in: Capsule())
+        .background {
+            if selected == tab { navigationLens }
+        }
         .contentShape(Rectangle())
     }
 }
 
 struct WoopCommunityScreen: View {
+    @State private var selectedSection = "MY TEAMS"
+
     var body: some View {
-        VStack(spacing: 12) {
-            Text("COMMUNITY").font(WoopTypography.label(11)).tracking(1.8)
-                .foregroundStyle(WoopReplicaPalette.secondary)
-            Text("Community").font(WoopTypography.emphasis(24))
-                .foregroundStyle(WoopReplicaPalette.primary)
-            Text("Your community feed will appear here.")
-                .font(WoopTypography.body(12)).foregroundStyle(WoopReplicaPalette.secondary)
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("COMMUNITY")
+                        .font(WoopTypography.label(10)).tracking(1.8)
+                        .foregroundStyle(WoopReplicaPalette.secondary)
+                    Text("Find your people")
+                        .font(WoopTypography.emphasis(27))
+                        .foregroundStyle(WoopReplicaPalette.primary)
+                    Text("Train together. Share progress. Stay accountable.")
+                        .font(WoopTypography.body(12))
+                        .foregroundStyle(WoopReplicaPalette.secondary)
+                }
+
+                HStack(spacing: 0) {
+                    communityTab("MY TEAMS")
+                    communityTab("DISCOVER")
+                }
+                .padding(4)
+                .background(WoopReplicaPalette.surfaceInset, in: Capsule())
+
+                if selectedSection == "MY TEAMS" {
+                    VStack(alignment: .leading, spacing: 15) {
+                        HStack {
+                            Text("MY TEAMS")
+                                .font(WoopTypography.label(9)).tracking(1.2)
+                                .foregroundStyle(WoopReplicaPalette.secondary)
+                            Spacer()
+                            Image(systemName: "person.3.fill")
+                                .foregroundStyle(WoopReplicaPalette.sleep)
+                        }
+                        VStack(spacing: 10) {
+                            Image(systemName: "person.3.sequence.fill")
+                                .font(.system(size: 31, weight: .light))
+                                .foregroundStyle(WoopReplicaPalette.sleep)
+                            Text("Build your community")
+                                .font(WoopTypography.emphasis(18))
+                                .foregroundStyle(WoopReplicaPalette.primary)
+                            Text("Your teams and shared progress will appear here when Community is connected.")
+                                .font(WoopTypography.body(11))
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(WoopReplicaPalette.secondary)
+                                .frame(maxWidth: 270)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 27)
+                        .padding(.horizontal, 16)
+                        .background(WoopReplicaPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .padding(16)
+                    .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 19))
+                    .overlay(RoundedRectangle(cornerRadius: 19).stroke(WoopReplicaPalette.hairline, lineWidth: 1))
+                } else {
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("DISCOVER MORE")
+                            .font(WoopTypography.label(9)).tracking(1.2)
+                            .foregroundStyle(WoopReplicaPalette.secondary)
+                        VStack(spacing: 10) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 29, weight: .light))
+                                .foregroundStyle(WoopReplicaPalette.sleep)
+                            Text("Find your next team")
+                                .font(WoopTypography.emphasis(18))
+                                .foregroundStyle(WoopReplicaPalette.primary)
+                            Text("Team recommendations will appear here once the Community service is available.")
+                                .font(WoopTypography.body(11))
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(WoopReplicaPalette.secondary)
+                                .frame(maxWidth: 270)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 27)
+                        .padding(.horizontal, 16)
+                        .background(WoopReplicaPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .padding(16)
+                    .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 19))
+                    .overlay(RoundedRectangle(cornerRadius: 19).stroke(WoopReplicaPalette.hairline, lineWidth: 1))
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("YOUR SCORES, YOUR CHOICE", systemImage: "hand.raised.fill")
+                        .font(WoopTypography.label(9)).tracking(0.8)
+                        .foregroundStyle(WoopReplicaPalette.secondary)
+                    Text("Community sharing should always be optional. PulseForge does not publish your health or workout data from this screen.")
+                        .font(WoopTypography.body(11))
+                        .foregroundStyle(WoopReplicaPalette.secondary)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(WoopReplicaPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 15))
+                Color.clear.frame(height: 112)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 20)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(WoopReplicaPalette.canvas.ignoresSafeArea())
+        .animation(.easeInOut(duration: 0.2), value: selectedSection)
+    }
+
+    private func communityTab(_ title: String) -> some View {
+        Button { selectedSection = title } label: {
+            Text(title)
+                .font(WoopTypography.label(9)).tracking(0.8)
+                .foregroundStyle(selectedSection == title ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background {
+                    if selectedSection == title {
+                        Capsule().fill(WoopReplicaPalette.surfaceRaised)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
     }
 }
 
