@@ -45,7 +45,9 @@ The binary contains `HealthKitStepCountRequest` and `HealthKitStepCountSubmissio
 
 ## Existing PulseForge implementation caution
 
-The older `whoop-background-ble` branch contains `Gen5R18StepCounter.swift`, but the current `ui/whoop-native-shell-v1` branch does not. The current UI branch's Type-47 revision-18 handler is primarily an unverified RR candidate path. The R18 candidate offsets have not been tied to the R24 symbols above or proven against a live step-bearing capture.
+The older `whoop-background-ble` branch contains `Gen5R18StepCounter.swift`, but the current `ui/whoop-native-shell-v1` branch does not. The R18 decoder reads candidate offsets 57/59/61/63/64. Its XCTest fixture is entirely synthetic: it creates a zero-filled 124-byte frame, writes the expected type/revision and candidate values, then calculates and writes the CRC itself. No captured WHOOP frame is used, so those tests prove only that the implementation agrees with its own fixture.
+
+There is also a CRC-comment issue in that candidate: for a 124-byte format-1 frame, bytes 120–123 are the same footer used by the transport-envelope CRC check. The decoder's second CRC calculation is therefore not an independent record CRC as its comment claims. The current UI branch's Type-47 revision-18 handler is primarily an unverified RR candidate path. The R18 offsets have not been tied to the R24 symbols above or proven against a live step-bearing capture.
 
 Do **not** transplant the R18 candidate decoder into the current UI branch or label its selected counter as daily steps until its source fields and semantics are proven. Keep raw frames and diagnostic evidence separate from user-visible step totals.
 
