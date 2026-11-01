@@ -64,7 +64,7 @@ struct WoopReferenceHomeScreen: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showingSleep = false } } }
             }
-            .environmentObject(health).environmentObject(insights).environmentObject(bluetooth)
+            .environmentObject(health).environmentObject(insights).environmentObject(bluetooth).environmentObject(whoopImport)
             .preferredColorScheme(.dark)
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
