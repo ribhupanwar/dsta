@@ -662,7 +662,7 @@ struct WorkoutRecordingCard: View {
                             .foregroundStyle(ForgeColors.muted)
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Text(bluetooth.freshHeartRateBPM.map(String.init) ?? "—")
-                                .font(.system(size: 38, weight: .semibold, design: .rounded))
+                                .font(WoopTypography.metricBold(38))
                                 .monospacedDigit()
                                 .foregroundStyle(bluetooth.freshHeartRateBPM == nil ? ForgeColors.muted : ForgeColors.lime)
                             Text("BPM").font(WoopTypography.label(9)).foregroundStyle(ForgeColors.muted)
@@ -677,10 +677,10 @@ struct WorkoutRecordingCard: View {
                             .font(WoopTypography.label(8)).tracking(0.8)
                             .foregroundStyle(ForgeColors.muted)
                         Text(durationText(at: context.date))
-                            .font(.system(size: 23, weight: .light, design: .rounded))
+                            .font(WoopTypography.metric(23))
                             .monospacedDigit()
                         Text("\(bluetooth.workoutHeartRateSamples.count) SAMPLES · AVG \(averageBPM.map(String.init) ?? "—")")
-                            .font(.system(size: 8, weight: .semibold))
+                            .font(WoopTypography.emphasis(8))
                             .foregroundStyle(ForgeColors.muted)
                     }
                 }
@@ -689,7 +689,7 @@ struct WorkoutRecordingCard: View {
                 if let savedStart = bluetooth.lastWorkoutStartedAt {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("LAST SAVED SESSION · " + savedStart.formatted(date: .abbreviated, time: .shortened))
-                            .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
+                            .font(WoopTypography.emphasis(9)).foregroundStyle(ForgeColors.muted)
                         Text("\(bluetooth.lastWorkoutWasAutomatic == true ? "AUTOMATIC" : "MANUAL") · \(bluetooth.lastWorkoutWasInterrupted ? "INTERRUPTED / PARTIAL" : "COMPLETED")")
                             .font(WoopTypography.label(9)).tracking(0.5)
                             .foregroundStyle(bluetooth.lastWorkoutWasInterrupted ? ForgeColors.muted : ForgeColors.lime)
@@ -703,7 +703,7 @@ struct WorkoutRecordingCard: View {
                                 .foregroundStyle(ForgeColors.muted)
                             Spacer()
                             Text("\(bluetooth.workoutHistory.count) SAVED")
-                                .font(.system(size: 8, weight: .semibold))
+                                .font(WoopTypography.emphasis(8))
                                 .foregroundStyle(ForgeColors.muted)
                         }
                         ForEach(Array(bluetooth.workoutHistory.prefix(5))) { session in
@@ -719,12 +719,12 @@ struct WorkoutRecordingCard: View {
                                         Text(session.startedAt.formatted(date: .abbreviated, time: .shortened))
                                             .font(WoopTypography.emphasis(10))
                                         Text("\(session.wasAutomatic ? "AUTO" : "MANUAL") · \(session.wasInterrupted ? "PARTIAL" : "SAVED") · \(session.heartRateSamples.count) HR SAMPLES")
-                                            .font(.system(size: 8, weight: .medium)).foregroundStyle(ForgeColors.muted)
+                                            .font(WoopTypography.body(8)).foregroundStyle(ForgeColors.muted)
                                     }
                                     Spacer()
                                     let seconds = max(0, Int(session.durationSeconds))
                                     Text(String(format: "%02d:%02d", seconds / 60, seconds % 60))
-                                        .font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
+                                        .font(WoopTypography.metricBold(10)).monospacedDigit()
                                     Image(systemName: expandedWorkoutID == session.id ? "chevron.up" : "chevron.down")
                                         .font(WoopTypography.label(9)).foregroundStyle(ForgeColors.muted)
                                 }
@@ -757,7 +757,7 @@ struct WorkoutRecordingCard: View {
                                     Spacer()
                                     Text(session.wasInterrupted ? "PARTIAL SESSION" : "SESSION SAVED")
                                 }
-                                .font(.system(size: 8, weight: .semibold)).foregroundStyle(ForgeColors.muted)
+                                .font(WoopTypography.emphasis(8)).foregroundStyle(ForgeColors.muted)
                             }
                         }
                     }
@@ -789,7 +789,7 @@ struct WorkoutRecordingCard: View {
                     }
                 } label: {
                     Label(bluetooth.workoutIsRecording ? "STOP & SAVE SESSION" : "START WORKOUT", systemImage: bluetooth.workoutIsRecording ? "stop.fill" : "play.fill")
-                        .font(.system(size: 10, weight: .bold)).tracking(0.8)
+                        .font(WoopTypography.label(10)).tracking(0.8)
                         .frame(maxWidth: .infinity).padding(14)
                         .background(bluetooth.workoutIsRecording ? ForgeColors.track : ForgeColors.lime, in: Capsule())
                         .foregroundStyle(bluetooth.workoutIsRecording ? .white : .black)
@@ -801,12 +801,12 @@ struct WorkoutRecordingCard: View {
                         ? "Automatically detected from sustained elevated HR. Activity type is not inferred yet."
                         : "Recording WHOOP heart-rate samples locally on this iPhone.")
                      : "Automatic detection monitors sustained HR elevation; manual start remains available.")
-                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                    .font(WoopTypography.body(10)).foregroundStyle(ForgeColors.muted)
                 Text(bluetooth.healthKitExportStatus)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(WoopTypography.body(9))
                     .foregroundStyle(ForgeColors.muted)
                 Text("AUTO-DETECTION · " + bluetooth.workoutDetectionStatus.uppercased())
-                    .font(.system(size: 8, weight: .semibold)).tracking(0.5)
+                    .font(WoopTypography.emphasis(8)).tracking(0.5)
                     .foregroundStyle(ForgeColors.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -820,7 +820,7 @@ struct WorkoutRecordingCard: View {
     private func workoutStat(_ title: String, value: Int?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).font(WoopTypography.label(8)).tracking(0.7).foregroundStyle(ForgeColors.muted)
-            Text(value.map(String.init) ?? "—").font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit()
+            Text(value.map(String.init) ?? "—").font(WoopTypography.metricBold(14)).monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(9)
@@ -843,29 +843,29 @@ struct SleepDashboard: View {
                             .frame(width: 112)
                         VStack(alignment: .leading, spacing: 7) {
                             Text(health.sleepHours.map { String(format: "%.1f h", $0) } ?? "—")
-                                .font(.system(size: 34, weight: .medium, design: .rounded)).monospacedDigit()
-                            Text("Time asleep").font(.system(size: 12)).foregroundStyle(ForgeColors.muted)
+                                .font(WoopTypography.metric(34)).monospacedDigit()
+                            Text("Time asleep").font(WoopTypography.body(12)).foregroundStyle(ForgeColors.muted)
                             Text("Sleep score needs a verified sleep target and complete sleep data.")
-                                .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                                .font(WoopTypography.body(11)).foregroundStyle(ForgeColors.muted)
                         }
                     }
                     Divider().overlay(ForgeColors.stroke)
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("ESTIMATED SLEEP NEED").font(WoopTypography.label(9)).tracking(0.8).foregroundStyle(ForgeColors.muted)
-                            Text(String(format: "%.1f h", insights.sleepNeedHours)).font(.system(size: 23, weight: .semibold, design: .rounded))
+                            Text(String(format: "%.1f h", insights.sleepNeedHours)).font(WoopTypography.metricBold(23))
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 4) {
                             Text("SLEEP DEBT").font(WoopTypography.label(9)).tracking(0.8).foregroundStyle(ForgeColors.muted)
-                            Text(insights.sleepDebtHours.map { String(format: "%.1f h", $0) } ?? "—").font(.system(size: 23, weight: .semibold, design: .rounded))
+                            Text(insights.sleepDebtHours.map { String(format: "%.1f h", $0) } ?? "—").font(WoopTypography.metricBold(23))
                         }
                     }
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("28-DAY TYPICAL").font(WoopTypography.label(9)).tracking(0.8).foregroundStyle(ForgeColors.muted)
                             Text(insights.typicalSleepHours.map { String(format: "%.1f h", $0) } ?? "Building history")
-                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .font(WoopTypography.metricBold(18))
                         }
                         Spacer()
                         Text("Median main sleep session per wake day")
@@ -873,7 +873,7 @@ struct SleepDashboard: View {
                             .multilineTextAlignment(.trailing).frame(maxWidth: 130)
                     }
                     Text("PulseForge estimate · 8 h starting baseline with capped sleep-debt adjustment. The 28-day median is a sleep-pattern reference, not a personal sleep-need baseline; naps and calibrated strain are not yet connected.")
-                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                        .font(WoopTypography.body(10)).foregroundStyle(ForgeColors.muted)
                 }
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 22))
                 SectionHeader(title: "SLEEP STAGES")
@@ -885,7 +885,7 @@ struct SleepDashboard: View {
                     CompactMetric(title: "REM SLEEP", value: health.remSleepMinutes.map { String(format: "%.0f", $0) } ?? "—", unit: "min")
                 }
                 Text("Sleep stages are read from Apple Health. Debt is the rolling shortfall against an 8-hour target across completed nights with recorded sleep.")
-                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                    .font(WoopTypography.body(10)).foregroundStyle(ForgeColors.muted)
                 Spacer(minLength: 110)
             }
             .padding(18).padding(.top, 16)
@@ -1086,7 +1086,7 @@ struct GPSRunCard: View {
                 } else {
                     Button { run.startRun() } label: {
                         Label("START OUTDOOR RUN", systemImage: "figure.run")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(WoopTypography.label(12))
                             .frame(maxWidth: .infinity).padding(.vertical, 14)
                             .foregroundStyle(.black)
                             .background(ForgeColors.lime, in: Capsule())
