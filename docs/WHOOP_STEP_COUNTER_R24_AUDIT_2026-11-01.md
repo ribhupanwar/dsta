@@ -19,7 +19,9 @@ The binary contains two directly relevant type/model strings:
 
 The historical packet enum switch table at `0x108ebdb70` has an R24 branch target at `0x105ce8038` (dispatcher branch site `0x105ce7ff8`). The recovered lookup-table analysis identifies table input indexes **9** and **68** as selecting that branch. The field supplying the lookup index and its exact relationship to the on-wire frame still need confirmation.
 
-A related factory at `0x1008026fc` has five recorded call sites:
+A separate enum type-label/string builder at `0x1008026fc` is also present. Its disassembly constructs an `IMU Data` label and uses a second switch table at `0x108acfdee`; that table has seven inputs (11, 28, 92, 94, 148, 200, 202) selecting the `Processed Steps Data (R24)` label branch. This is a display/type-description path, **not evidence of a byte-level packet decoder**.
+
+The label builder has five recorded call sites:
 
 - `0x100249088` from `0x100248774`
 - `0x100a4e210` from `0x100a4deb4`
@@ -27,7 +29,7 @@ A related factory at `0x1008026fc` has five recorded call sites:
 - `0x105d03dec` from `0x105d03cac`
 - `0x105d04018` from `0x105ce95dc`
 
-The call at `0x105d03dec` is inside the recovered `0x105d03cac` caller. This establishes a concrete R24-related factory/caller chain to investigate; it does not yet reveal the packet's field offsets or step-count units.
+The call at `0x105d03dec` is inside the recovered `0x105d03cac` caller. These xrefs help locate the R24 type-description path but must not be mistaken for parser xrefs. The actual field decoder behind the historical packet dispatch at `0x105ce8038` remains to be recovered.
 
 ## Separate step-sample ingestion path
 
