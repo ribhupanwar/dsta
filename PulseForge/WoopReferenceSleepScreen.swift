@@ -2,24 +2,34 @@ import SwiftUI
 
 /// Sleep tab port using measured HealthKit sleep and transparent PulseForge estimates.
 struct WoopReferenceSleepScreen: View {
-    @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+    @EnvironmentObject private var whoopImport: WHOOPImportStore
 
-    private var totalSleep: String {
-        health.sleepHours.map { String(format: "%.1f", $0) } ?? "—"
+    private var latestNight: WHOOPImportedNight? { whoopImport.latestNight }
+    private var historyNights: [WHOOPImportedNight] { whoopImport.nights }
+    private var sleepHours: Double? { latestNight?.asleepMinutes.map { $0 / 60 } }
+    private var sleepNeedHours: Double? { latestNight?.sleepNeedMinutes.map { $0 / 60 } }
+    private var sleepDebtHours: Double? { latestNight?.sleepDebtMinutes.map { $0 / 60 } }
+    private var totalSleep: String { sleepHours.map { String(format: "%.1f", $0) } ?? "—" }
+    private var deepMinutes: Double? { latestNight?.deepMinutes }
+    private var remMinutes: Double? { latestNight?.remMinutes }
+    private var lightMinutes: Double? { latestNight?.lightMinutes }
+    private var awakeMinutes: Double? { latestNight?.awakeMinutes }
+
+    private var typicalSleepHours: Double? {
+        let values = historyNights.compactMap { $0.asleepMinutes }.sorted()
+        guard !values.isEmpty else { return nil }
+        return values[values.count / 2] / 60
     }
 
     private var sleepStageTotal: Double {
-        [health.deepSleepMinutes, health.remSleepMinutes, health.coreSleepMinutes, health.awakeMinutes]
-            .compactMap { $0 }
-            .filter { $0.isFinite && $0 > 0 }
-            .reduce(0, +)
+        [deepMinutes, remMinutes, lightMinutes, awakeMinutes]
+            .compactMap { $0 }.filter { $0.isFinite && $0 > 0 }.reduce(0, +)
     }
 
     private var hasSleepStages: Bool {
-        [health.deepSleepMinutes, health.remSleepMinutes, health.coreSleepMinutes, health.awakeMinutes]
-            .contains { ($0 ?? 0) > 0 }
+        [deepMinutes, remMinutes, lightMinutes, awakeMinutes].contains { ($0 ?? 0) > 0 }
     }
 
     var body: some View {
@@ -45,7 +55,7 @@ struct WoopReferenceSleepScreen: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("SLEEP").font(WoopTypography.label(11))
                     .tracking(2.2).foregroundStyle(WoopReplicaPalette.secondary)
-                Text("Last night").font(WoopTypography.emphasis(22))
+                Text(latestNight?.wakeOnset?.formatted(.dateTime.month(.abbreviated).day()) ?? "WHOOP history not imported").font(WoopTypography.emphasis(19))
                     .foregroundStyle(WoopReplicaPalette.primary)
             }
             Spacer()
@@ -73,7 +83,7 @@ struct WoopReferenceSleepScreen: View {
                 Spacer()
                 ZStack {
                     Circle().stroke(WoopReplicaPalette.homeTrack, lineWidth: 10)
-                    Circle().trim(from: 0, to: min(1, max(0, (health.sleepHours ?? 0) / max(1, insights.sleepNeedHours))))
+                    Circle().trim(from: 0, to: min(1, max(0, (sleepHours ?? 0) / max(1, sleepNeedHours ?? 8))))
                         .stroke(WoopReplicaPalette.sleep, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                         .animation(.easeOut(duration: 0.7), value: health.sleepHours)
@@ -84,11 +94,11 @@ struct WoopReferenceSleepScreen: View {
             }
             Rectangle().fill(WoopReplicaPalette.hairline).frame(height: 1)
             HStack {
-                metric("SLEEP NEED", value: String(format: "%.1f h", insights.sleepNeedHours))
+                metric("SLEEP NEED", value: sleepNeedHours.map { String(format: "%.1f h", $0) } ?? "—")
                 Spacer()
-                metric("SLEEP DEBT", value: insights.sleepDebtHours.map { String(format: "%.1f h", $0) } ?? "—")
+                metric("SLEEP DEBT", value: sleepDebtHours.map { String(format: "%.1f h", $0) } ?? "—")
                 Spacer()
-                metric("TYPICAL SLEEP", value: insights.typicalSleepHours.map { String(format: "%.1f h", $0) } ?? "—")
+                metric("TYPICAL SLEEP", value: typicalSleepHours.map { String(format: "%.1f h", $0) } ?? "—")
             }
         }
         .padding(20)
@@ -152,7 +162,7 @@ struct WoopReferenceSleepScreen: View {
                     Text("Estimated need").font(WoopTypography.body(13))
                         .foregroundStyle(WoopReplicaPalette.primary)
                     Spacer()
-                    Text(String(format: "%.1f hours", insights.sleepNeedHours))
+                    Text(sleepNeedHours.map { String(format: "%.1f hours", $0) } ?? "—")
                         .font(WoopTypography.metricBold(17))
                         .foregroundStyle(WoopReplicaPalette.primary)
                 }
@@ -164,7 +174,7 @@ struct WoopReferenceSleepScreen: View {
                     }
                 }.frame(height: 9)
                 Text(health.sleepHours == nil
-                     ? "Sleep data is not available in Apple Health yet."
+                     ? "Import a WHOOP export to populate historical sleep duration."
                      : "Measured sleep compared with your current estimated sleep need.")
                     .font(WoopTypography.body(10)).foregroundStyle(WoopReplicaPalette.secondary)
             }
@@ -178,18 +188,18 @@ struct WoopReferenceSleepScreen: View {
             sectionTitle("SLEEP STAGES")
             if hasSleepStages {
                 VStack(spacing: 0) {
-                    stageRow("Deep", value: health.deepSleepMinutes, color: WoopReplicaPalette.deepSleep, symbol: "moon.fill")
+                    stageRow("Deep", value: deepMinutes, color: WoopReplicaPalette.deepSleep, symbol: "moon.fill")
                     Divider().overlay(WoopReplicaPalette.hairline)
-                    stageRow("REM", value: health.remSleepMinutes, color: WoopReplicaPalette.remSleep, symbol: "brain.head.profile")
+                    stageRow("REM", value: remMinutes, color: WoopReplicaPalette.remSleep, symbol: "brain.head.profile")
                     Divider().overlay(WoopReplicaPalette.hairline)
-                    stageRow("Core", value: health.coreSleepMinutes, color: WoopReplicaPalette.coreSleep, symbol: "circle.fill")
+                    stageRow("Core", value: lightMinutes, color: WoopReplicaPalette.coreSleep, symbol: "circle.fill")
                     Divider().overlay(WoopReplicaPalette.hairline)
-                    stageRow("Awake", value: health.awakeMinutes, color: WoopReplicaPalette.muted, symbol: "sun.max")
+                    stageRow("Awake", value: awakeMinutes, color: WoopReplicaPalette.muted, symbol: "sun.max")
                 }
                 .padding(.horizontal, 15)
                 .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
             } else {
-                Text("Sleep-stage breakdown is not available in Apple Health yet.")
+                Text("WHOOP sleep-stage history will appear after importing your export.")
                     .font(WoopTypography.body(11))
                     .foregroundStyle(WoopReplicaPalette.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -225,13 +235,13 @@ struct WoopReferenceSleepScreen: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionTitle("SLEEP HISTORY")
             WoopHealthTrendChart(
-                values: insights.trendHistory.map { $0.sleepHours },
+                values: historyNights.map { $0.asleepMinutes.map { $0 / 60 } },
                 tint: WoopReplicaPalette.sleep,
                 unit: "hours",
                 height: 112
             )
-            if !insights.trendHistory.contains(where: { $0.sleepHours != nil }) {
-                Text("Sleep history will appear when Apple Health has date-wise sleep samples.")
+            if !historyNights.contains(where: { $0.asleepMinutes != nil }) {
+                Text("Your imported WHOOP sleep history appears here by night.")
                     .font(WoopTypography.body(10))
                     .foregroundStyle(WoopReplicaPalette.secondary)
             }
@@ -239,7 +249,7 @@ struct WoopReferenceSleepScreen: View {
     }
 
     private var explanation: some View {
-        Text("Sleep duration and stages are read from Apple Health. Sleep need and debt are PulseForge estimates, not WHOOP proprietary measurements.")
+        Text("Sleep duration, stages, sleep need and sleep debt are read from your imported WHOOP export. Values remain unavailable when the export has no measurement.")
             .font(WoopTypography.body(10)).lineSpacing(3)
             .foregroundStyle(WoopReplicaPalette.secondary)
             .padding(15)
