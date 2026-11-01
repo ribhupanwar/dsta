@@ -43,7 +43,7 @@ jobs:
           unzip -q "$FONT_ZIP" -d "$FONT_ROOT"
           test -s "$FONT_ROOT/PulseForge/SHA256SUMS.txt"
           (cd "$FONT_ROOT" && shasum -a 256 -c PulseForge/SHA256SUMS.txt)
-          FONT_COUNT="$(find "$FONT_ROOT/PulseForge" -maxdepth 1 -type f \\( -name '*.otf' -o -name '*.ttf' \\) | wc -l | tr -d ' ')"
+          FONT_COUNT="$(find "$FONT_ROOT/PulseForge" -maxdepth 1 -type f \( -name '*.otf' -o -name '*.ttf' \) | wc -l | tr -d ' ')"
           test "$FONT_COUNT" = "8"
           cp "$FONT_ROOT"/PulseForge/*.otf PulseForge/
           cp "$FONT_ROOT"/PulseForge/*.ttf PulseForge/
