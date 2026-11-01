@@ -116,25 +116,34 @@ final class TrainingInsightsStore: ObservableObject {
             let days = (0..<30).compactMap { offset -> Date? in
                 self.calendar.date(byAdding: .day, value: offset - 29, to: self.calendar.startOfDay(for: end))
             }
+            // Use the same overlap-safe session aggregation as the Sleep tab.
+            // HealthKit may contain overlapping samples from multiple sources;
+            // summing raw durations here would inflate the daily sleep trend.
+            let trendSleepIntervals = sleepSamples
+                .filter { asleepValues.contains($0.value) }
+                .map { DateInterval(start: $0.startDate, end: $0.endDate) }
+            let sleepSummary = SleepNightCalculator.summarize(
+                intervals: trendSleepIntervals,
+                now: end,
+                calendar: self.calendar,
+                targetMinutes: self.sleepTargetMinutes,
+                debtWindowNights: 7,
+                sessionGapMinutes: 90
+            )
+            let sleepByWakeDay = Dictionary(
+                uniqueKeysWithValues: sleepSummary.nights.map { ($0.wakeDate, $0.durationMinutes / 60) }
+            )
             let points = days.map { day -> DailyHealthTrend in
                 let nextDay = self.calendar.date(byAdding: .day, value: 1, to: day) ?? day.addingTimeInterval(86400)
                 let hrvValues = hrvSamples.filter { $0.endDate >= day && $0.endDate < nextDay }
                     .map { $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli)) }
                 let rhrValues = rhrSamples.filter { $0.endDate >= day && $0.endDate < nextDay }
                     .map { $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute())) }
-                let sleepIntervals = sleepSamples.filter {
-                    asleepValues.contains($0.value) && $0.endDate > day && $0.startDate < nextDay
-                }
-                let sleepSeconds = sleepIntervals.reduce(0.0) { total, sample in
-                    let clippedStart = max(day, sample.startDate)
-                    let clippedEnd = min(nextDay, sample.endDate)
-                    return total + max(0, clippedEnd.timeIntervalSince(clippedStart))
-                }
                 return DailyHealthTrend(
                     date: day,
                     hrvMilliseconds: hrvValues.isEmpty ? nil : hrvValues.reduce(0, +) / Double(hrvValues.count),
                     restingHeartRate: rhrValues.isEmpty ? nil : rhrValues.reduce(0, +) / Double(rhrValues.count),
-                    sleepHours: sleepSeconds > 0 ? sleepSeconds / 3600 : nil
+                    sleepHours: sleepByWakeDay[day]
                 )
             }
             completion(points)
