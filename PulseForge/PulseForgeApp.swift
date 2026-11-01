@@ -210,7 +210,7 @@ struct TodayDashboard: View {
                             Text(insights.recoveryScore.map { "\($0)%" } ?? "—")
                                 .font(.system(size: 43, weight: .medium, design: .rounded)).monospacedDigit()
                             Text(insights.recoveryStatus.uppercased())
-                                .font(.system(size: 9, weight: .bold)).tracking(0.8)
+                                .font(WoopTypography.label(9)).tracking(0.8)
                                 .foregroundStyle(recoveryTint)
                         }
                     }
@@ -220,7 +220,7 @@ struct TodayDashboard: View {
                             Text("RECOVERY DETAILS")
                             Image(systemName: "chevron.right")
                         }
-                        .font(.system(size: 9, weight: .bold)).tracking(0.9)
+                        .font(WoopTypography.label(9)).tracking(0.9)
                         .foregroundStyle(Color(red: 0.28, green: 0.78, blue: 0.92))
                     }
                     .buttonStyle(.plain)
@@ -248,7 +248,7 @@ struct TodayDashboard: View {
                 .padding(15).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 17))
                 ConnectPrompt()
                 Text("Scores are shown only when supported by available measurements. PulseForge estimates are not WHOOP scores.")
-                    .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                    .font(WoopTypography.body(9)).foregroundStyle(ForgeColors.muted)
                     .padding(.bottom, 105)
             }
             .padding(.horizontal, 17).padding(.top, 14)
@@ -334,7 +334,7 @@ struct ScoreRing: View {
             }
             .frame(width: 82, height: 82)
             Text(title)
-                .font(.system(size: 9, weight: .bold)).tracking(0.8)
+                .font(WoopTypography.label(9)).tracking(0.8)
                 .foregroundStyle(ForgeColors.muted)
                 .lineLimit(1).minimumScaleFactor(0.8)
         }
@@ -355,7 +355,7 @@ struct LiveHeartRateCard: View {
                     Image(systemName: "heart.fill").foregroundStyle(ForgeColors.lime)
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("WHOOP · LIVE HEART RATE").font(.system(size: 9, weight: .bold)).tracking(0.9).foregroundStyle(ForgeColors.muted)
+                    Text("WHOOP · LIVE HEART RATE").font(WoopTypography.label(9)).tracking(0.9).foregroundStyle(ForgeColors.muted)
                     Text(heartRate.map { "\($0) BPM" } ?? "Waiting for sensor")
                         .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
                 }
@@ -385,7 +385,7 @@ struct LiveHeartRateChartCard: View {
             let upper = min(220, max(lower + 20, high + 8))
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text(title).font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
+                    Text(title).font(WoopTypography.label(9)).tracking(1).foregroundStyle(ForgeColors.muted)
                     Spacer()
                     Text(visibleSamples.isEmpty ? "NO LIVE SAMPLES" : "\(visibleSamples.count) POINTS")
                         .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.lime)
@@ -455,11 +455,11 @@ struct WhoopRRCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Label("RR INTERVALS", systemImage: "waveform.path")
-                    .font(.system(size: 9, weight: .bold)).tracking(0.9)
+                    .font(WoopTypography.label(9)).tracking(0.9)
                     .foregroundStyle(ForgeColors.muted)
                 Spacer()
                 Text(intervals.isEmpty ? "WAITING" : (isRRFresh ? "LIVE DATA" : "STALE"))
-                    .font(.system(size: 9, weight: .bold))
+                    .font(WoopTypography.label(9))
                     .foregroundStyle(isRRFresh ? ForgeColors.lime : ForgeColors.muted)
             }
             HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -481,7 +481,7 @@ struct WhoopRRCard: View {
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Spacer()
                 Text(shortWindowRMSSD == nil ? "COLLECTING" : (isRRFresh ? "ESTIMATE" : "STALE"))
-                    .font(.system(size: 8, weight: .bold))
+                    .font(WoopTypography.label(8))
                     .foregroundStyle(shortWindowRMSSD == nil || !isRRFresh ? ForgeColors.muted : ForgeColors.lime)
             }
             Text(intervals.isEmpty
@@ -493,9 +493,9 @@ struct WhoopRRCard: View {
             Text(bluetooth.whoopRRSource + (bluetooth.whoopRRLastUpdatedAt.map {
                 " · last RR batch \(Int(max(0, Date().timeIntervalSince($0))))s ago"
             } ?? " · no RR batch timestamp"))
-                .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                .font(WoopTypography.body(9)).foregroundStyle(ForgeColors.muted)
             Text("RMSSD requires 30+ realtime intervals. Short-window estimate only; not WHOOP HRV, daily HRV or a Recovery input.")
-                .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                .font(WoopTypography.body(9)).foregroundStyle(ForgeColors.muted)
         }
         .padding(16)
         .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
@@ -565,14 +565,14 @@ struct WhoopMotionCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Label("WHOOP MOTION SENSOR", systemImage: "gyroscope")
-                        .font(.system(size: 9, weight: .bold)).tracking(0.9)
+                        .font(WoopTypography.label(9)).tracking(0.9)
                         .foregroundStyle(ForgeColors.muted)
                     Spacer()
                     Circle()
                         .fill(bluetooth.whoopIMULastFrameAt.map { context.date.timeIntervalSince($0) < 10 } == true ? ForgeColors.lime : ForgeColors.muted)
                         .frame(width: 7, height: 7)
                     Text(bluetooth.whoopIMULastFrameAt.map { context.date.timeIntervalSince($0) < 10 } == true ? "LIVE" : "WAITING")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(WoopTypography.label(9))
                         .foregroundStyle(ForgeColors.muted)
                 }
                 HStack(spacing: 10) {
@@ -591,7 +591,7 @@ struct WhoopMotionCard: View {
                 Text(bluetooth.whoopIMUStatus)
                     .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
                 Text("One-second signal variability is diagnostic only; sensor scale and activity classification are not yet calibrated.")
-                    .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                    .font(WoopTypography.body(9)).foregroundStyle(ForgeColors.muted)
             }
             .padding(16)
             .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
@@ -601,10 +601,10 @@ struct WhoopMotionCard: View {
 
     private func motionMetric(_ title: String, value: String, unit: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.system(size: 8, weight: .bold)).tracking(0.6).foregroundStyle(ForgeColors.muted)
+            Text(title).font(WoopTypography.label(8)).tracking(0.6).foregroundStyle(ForgeColors.muted)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(value).font(.system(size: 23, weight: .semibold, design: .rounded)).monospacedDigit()
-                Text(unit).font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                Text(unit).font(WoopTypography.body(9)).foregroundStyle(ForgeColors.muted)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -614,7 +614,7 @@ struct WhoopMotionCard: View {
 
     private func motionCount(_ title: String, value: Int) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 8, weight: .bold)).tracking(0.5).foregroundStyle(ForgeColors.muted)
+            Text(title).font(WoopTypography.label(8)).tracking(0.5).foregroundStyle(ForgeColors.muted)
             Text(value.formatted()).font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -649,32 +649,32 @@ struct WorkoutRecordingCard: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("WORKOUT RECORDING").font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
+                    Text("WORKOUT RECORDING").font(WoopTypography.label(9)).tracking(1).foregroundStyle(ForgeColors.muted)
                     Spacer()
                     Circle().fill(bluetooth.workoutIsRecording ? ForgeColors.lime : ForgeColors.muted).frame(width: 7, height: 7)
                     Text(bluetooth.workoutIsRecording ? "RECORDING" : "READY")
-                        .font(.system(size: 9, weight: .bold)).foregroundStyle(bluetooth.workoutIsRecording ? ForgeColors.lime : ForgeColors.muted)
+                        .font(WoopTypography.label(9)).foregroundStyle(bluetooth.workoutIsRecording ? ForgeColors.lime : ForgeColors.muted)
                 }
                 HStack(alignment: .center, spacing: 12) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("LIVE HEART RATE")
-                            .font(.system(size: 8, weight: .bold)).tracking(0.8)
+                            .font(WoopTypography.label(8)).tracking(0.8)
                             .foregroundStyle(ForgeColors.muted)
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Text(bluetooth.freshHeartRateBPM.map(String.init) ?? "—")
                                 .font(.system(size: 38, weight: .semibold, design: .rounded))
                                 .monospacedDigit()
                                 .foregroundStyle(bluetooth.freshHeartRateBPM == nil ? ForgeColors.muted : ForgeColors.lime)
-                            Text("BPM").font(.system(size: 9, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                            Text("BPM").font(WoopTypography.label(9)).foregroundStyle(ForgeColors.muted)
                         }
                         Text(bluetooth.connectedName == nil ? "BAND DISCONNECTED" : (bluetooth.freshHeartRateBPM == nil ? "WAITING FOR FRESH HR" : "WHOOP CONNECTED"))
-                            .font(.system(size: 8, weight: .bold)).tracking(0.5)
+                            .font(WoopTypography.label(8)).tracking(0.5)
                             .foregroundStyle(ForgeColors.muted)
                     }
                     Spacer(minLength: 4)
                     VStack(alignment: .trailing, spacing: 4) {
                         Text("ELAPSED")
-                            .font(.system(size: 8, weight: .bold)).tracking(0.8)
+                            .font(WoopTypography.label(8)).tracking(0.8)
                             .foregroundStyle(ForgeColors.muted)
                         Text(durationText(at: context.date))
                             .font(.system(size: 23, weight: .light, design: .rounded))
@@ -691,7 +691,7 @@ struct WorkoutRecordingCard: View {
                         Text("LAST SAVED SESSION · " + savedStart.formatted(date: .abbreviated, time: .shortened))
                             .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
                         Text("\(bluetooth.lastWorkoutWasAutomatic == true ? "AUTOMATIC" : "MANUAL") · \(bluetooth.lastWorkoutWasInterrupted ? "INTERRUPTED / PARTIAL" : "COMPLETED")")
-                            .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                            .font(WoopTypography.label(9)).tracking(0.5)
                             .foregroundStyle(bluetooth.lastWorkoutWasInterrupted ? ForgeColors.muted : ForgeColors.lime)
                     }
                 }
@@ -699,7 +699,7 @@ struct WorkoutRecordingCard: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("RECENT WORKOUTS")
-                                .font(.system(size: 9, weight: .bold)).tracking(1)
+                                .font(WoopTypography.label(9)).tracking(1)
                                 .foregroundStyle(ForgeColors.muted)
                             Spacer()
                             Text("\(bluetooth.workoutHistory.count) SAVED")
@@ -717,7 +717,7 @@ struct WorkoutRecordingCard: View {
                                         .foregroundStyle(session.wasInterrupted ? ForgeColors.muted : ForgeColors.lime)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(session.startedAt.formatted(date: .abbreviated, time: .shortened))
-                                            .font(.system(size: 10, weight: .semibold))
+                                            .font(WoopTypography.emphasis(10))
                                         Text("\(session.wasAutomatic ? "AUTO" : "MANUAL") · \(session.wasInterrupted ? "PARTIAL" : "SAVED") · \(session.heartRateSamples.count) HR SAMPLES")
                                             .font(.system(size: 8, weight: .medium)).foregroundStyle(ForgeColors.muted)
                                     }
@@ -726,7 +726,7 @@ struct WorkoutRecordingCard: View {
                                     Text(String(format: "%02d:%02d", seconds / 60, seconds % 60))
                                         .font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
                                     Image(systemName: expandedWorkoutID == session.id ? "chevron.up" : "chevron.down")
-                                        .font(.system(size: 9, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                                        .font(WoopTypography.label(9)).foregroundStyle(ForgeColors.muted)
                                 }
                                 .contentShape(Rectangle())
                             }
@@ -750,7 +750,7 @@ struct WorkoutRecordingCard: View {
                                     .frame(height: 105)
                                 } else {
                                     Text("Not enough saved HR samples for a graph.")
-                                        .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                                        .font(WoopTypography.body(9)).foregroundStyle(ForgeColors.muted)
                                 }
                                 HStack {
                                     Text("IMU SAMPLES · \(session.imuSamples.count)")
@@ -819,7 +819,7 @@ struct WorkoutRecordingCard: View {
     @ViewBuilder
     private func workoutStat(_ title: String, value: Int?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.system(size: 8, weight: .bold)).tracking(0.7).foregroundStyle(ForgeColors.muted)
+            Text(title).font(WoopTypography.label(8)).tracking(0.7).foregroundStyle(ForgeColors.muted)
             Text(value.map(String.init) ?? "—").font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -852,24 +852,24 @@ struct SleepDashboard: View {
                     Divider().overlay(ForgeColors.stroke)
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("ESTIMATED SLEEP NEED").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                            Text("ESTIMATED SLEEP NEED").font(WoopTypography.label(9)).tracking(0.8).foregroundStyle(ForgeColors.muted)
                             Text(String(format: "%.1f h", insights.sleepNeedHours)).font(.system(size: 23, weight: .semibold, design: .rounded))
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 4) {
-                            Text("SLEEP DEBT").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                            Text("SLEEP DEBT").font(WoopTypography.label(9)).tracking(0.8).foregroundStyle(ForgeColors.muted)
                             Text(insights.sleepDebtHours.map { String(format: "%.1f h", $0) } ?? "—").font(.system(size: 23, weight: .semibold, design: .rounded))
                         }
                     }
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("28-DAY TYPICAL").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                            Text("28-DAY TYPICAL").font(WoopTypography.label(9)).tracking(0.8).foregroundStyle(ForgeColors.muted)
                             Text(insights.typicalSleepHours.map { String(format: "%.1f h", $0) } ?? "Building history")
                                 .font(.system(size: 18, weight: .semibold, design: .rounded))
                         }
                         Spacer()
                         Text("Median main sleep session per wake day")
-                            .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                            .font(WoopTypography.body(9)).foregroundStyle(ForgeColors.muted)
                             .multilineTextAlignment(.trailing).frame(maxWidth: 130)
                     }
                     Text("PulseForge estimate · 8 h starting baseline with capped sleep-debt adjustment. The 28-day median is a sleep-pattern reference, not a personal sleep-need baseline; naps and calibrated strain are not yet connected.")
@@ -910,7 +910,7 @@ struct StrainDashboard: View {
                             Circle().stroke(ForgeColors.track, lineWidth: 9)
                             VStack(spacing: 2) {
                                 Text(insights.cardioLoadPoints.map { String(format: "%.0f", $0) } ?? "—")
-                                    .font(.system(size: 39, weight: .light, design: .rounded))
+                                    .font(WoopTypography.metric(39))
                                     .monospacedDigit()
                                 Text("LOAD PTS")
                                     .font(WoopTypography.label(8)).tracking(0.8)
@@ -932,7 +932,7 @@ struct StrainDashboard: View {
                 SectionHeader(title: "PERSONAL HEART-RATE SETUP")
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Measured maximum heart rate (bpm)")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(WoopTypography.body(12))
                     HStack(spacing: 9) {
                         TextField(measuredMaxHeartRate > 0 ? String(measuredMaxHeartRate) : "Enter measured max HR", text: $maxHeartRateDraft)
                             .keyboardType(.numberPad)
@@ -981,7 +981,7 @@ struct StrainDashboard: View {
                         Text(health.latestRunDurationMinutes.map { String(format: "%.0f min", $0) } ?? "—")
                     }
                 }
-                .font(.system(size: 13, weight: .medium))
+                .font(WoopTypography.body(13))
                 .padding(18).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
                 Text("Cardio-load points use workout HR samples and your saved measured max HR. WHOOP-style strain remains blank until its model is validated.")
                     .font(WoopTypography.body(10)).foregroundStyle(ForgeColors.muted)
@@ -1013,25 +1013,25 @@ struct GPSRunCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Label("OUTDOOR GPS RUN", systemImage: "location.fill")
-                        .font(.system(size: 9, weight: .bold)).tracking(0.9)
+                        .font(WoopTypography.label(9)).tracking(0.9)
                         .foregroundStyle(ForgeColors.muted)
                     Spacer()
                     Circle().fill(run.hasActiveRun ? ForgeColors.lime : ForgeColors.muted).frame(width: 7, height: 7)
                     Text(run.isPaused ? "PAUSED" : (run.hasActiveRun ? "LIVE" : "READY"))
-                        .font(.system(size: 9, weight: .bold))
+                        .font(WoopTypography.label(9))
                         .foregroundStyle(run.hasActiveRun ? ForgeColors.lime : ForgeColors.muted)
                 }
 
                 HStack(alignment: .lastTextBaseline, spacing: 6) {
                     Text(String(format: "%.2f", run.distanceKilometres))
-                        .font(.system(size: 48, weight: .semibold, design: .rounded))
+                        .font(WoopTypography.metric(48))
                         .monospacedDigit().foregroundStyle(.white)
-                    Text("KM").font(.system(size: 11, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                    Text("KM").font(WoopTypography.label(11)).foregroundStyle(ForgeColors.muted)
                     Spacer()
                     VStack(alignment: .trailing, spacing: 3) {
-                        Text("ELAPSED").font(.system(size: 8, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                        Text("ELAPSED").font(WoopTypography.label(8)).tracking(0.8).foregroundStyle(ForgeColors.muted)
                         Text(durationText(elapsed))
-                            .font(.system(size: 18, weight: .medium, design: .rounded))
+                            .font(WoopTypography.metric(18))
                             .monospacedDigit()
                     }
                 }
@@ -1044,19 +1044,19 @@ struct GPSRunCard: View {
 
                 HStack(spacing: 6) {
                     Image(systemName: "location.circle").foregroundStyle(ForgeColors.lime)
-                    Text(run.locationStatus).font(.system(size: 10, weight: .medium)).foregroundStyle(ForgeColors.muted)
+                    Text(run.locationStatus).font(WoopTypography.body(10)).foregroundStyle(ForgeColors.muted)
                     Spacer()
-                    Text("\(run.routePointCount) PTS").font(.system(size: 8, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                    Text("\(run.routePointCount) PTS").font(WoopTypography.label(8)).foregroundStyle(ForgeColors.muted)
                 }
 
                 if !run.splits.isEmpty {
                     VStack(spacing: 7) {
                         ForEach(run.splits.suffix(4)) { split in
                             HStack {
-                                Text("KM \(split.kilometre)").font(.system(size: 10, weight: .semibold))
+                                Text("KM \(split.kilometre)").font(WoopTypography.emphasis(10))
                                 Spacer()
                                 Text(paceText(split.paceSecondsPerKm) + " /KM")
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .font(WoopTypography.metricBold(11))
                                     .monospacedDigit().foregroundStyle(ForgeColors.lime)
                             }
                         }
@@ -1070,14 +1070,14 @@ struct GPSRunCard: View {
                         Button { run.pauseOrResume() } label: {
                             Label(run.isPaused ? "RESUME" : "PAUSE",
                                   systemImage: run.isPaused ? "play.fill" : "pause.fill")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(WoopTypography.label(11))
                                 .frame(maxWidth: .infinity).padding(.vertical, 13)
                                 .foregroundStyle(.black)
                                 .background(ForgeColors.lime, in: Capsule())
                         }
                         Button { run.finishRun() } label: {
                             Label("FINISH", systemImage: "stop.fill")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(WoopTypography.label(11))
                                 .frame(maxWidth: .infinity).padding(.vertical, 13)
                                 .foregroundStyle(.white)
                                 .background(Color.white.opacity(0.12), in: Capsule())
@@ -1094,7 +1094,7 @@ struct GPSRunCard: View {
                 }
 
                 Text(run.saveStatus)
-                    .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                    .font(WoopTypography.body(9)).foregroundStyle(ForgeColors.muted)
             }
             .padding(17)
             .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 20))
@@ -1104,10 +1104,10 @@ struct GPSRunCard: View {
 
     private func gpsMetric(_ title: String, value: String, unit: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 7, weight: .bold)).tracking(0.5).foregroundStyle(ForgeColors.muted)
+            Text(title).font(WoopTypography.label(7)).tracking(0.5).foregroundStyle(ForgeColors.muted)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(value).font(.system(size: 19, weight: .semibold, design: .rounded)).monospacedDigit()
-                Text(unit).font(.system(size: 7, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                Text(value).font(WoopTypography.metric(19)).monospacedDigit()
+                Text(unit).font(WoopTypography.label(7)).foregroundStyle(ForgeColors.muted)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1133,7 +1133,7 @@ struct WoopActivityDashboard: View {
                     }
                     Spacer()
                     Image(systemName: "figure.run")
-                        .font(.system(size: 19, weight: .medium))
+                        .font(WoopTypography.body(19))
                         .foregroundStyle(ForgeColors.lime)
                         .frame(width: 42, height: 42)
                         .background(ForgeColors.card, in: Circle())
@@ -1259,7 +1259,7 @@ struct RunningDashboard: View {
                         SectionHeader(title: "LAST 7 DAYS")
                         Spacer()
                         Text("\(health.weeklyRunCount) RUNS")
-                            .font(.system(size: 9, weight: .bold)).tracking(0.7)
+                            .font(WoopTypography.label(9)).tracking(0.7)
                             .foregroundStyle(ForgeColors.lime)
                     }
                     HStack(spacing: 10) {
@@ -1297,7 +1297,7 @@ struct RunningDashboard: View {
                 SectionHeader(title: "HEART RATE ZONES")
                 VStack(alignment: .leading, spacing: 13) {
                     HStack {
-                        Text("MAX HEART RATE").font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(ForgeColors.muted)
+                        Text("MAX HEART RATE").font(WoopTypography.label(9)).tracking(0.8).foregroundStyle(ForgeColors.muted)
                         Spacer()
                         Text(maxHeartRate > 0 ? "\(maxHeartRate) BPM" : "NOT SET")
                             .font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(ForgeColors.lime)
@@ -1337,7 +1337,7 @@ struct RunningDashboard: View {
                         Spacer()
                         Text("DISTANCE")
                     }
-                    .font(.system(size: 9, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                    .font(WoopTypography.label(9)).foregroundStyle(ForgeColors.muted)
                     Divider().overlay(ForgeColors.stroke)
                     if health.latestRunSplits.isEmpty {
                         Text("No distance split samples available")
@@ -1374,10 +1374,10 @@ struct RunHighlight: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(label).font(.system(size: 8, weight: .bold)).tracking(0.6).foregroundStyle(ForgeColors.muted)
+            Text(label).font(WoopTypography.label(8)).tracking(0.6).foregroundStyle(ForgeColors.muted)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(value).font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
-                Text(unit).font(.system(size: 8, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                Text(unit).font(WoopTypography.label(8)).foregroundStyle(ForgeColors.muted)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1418,7 +1418,7 @@ struct JournalPrompt: View {
                         .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
                 }
                 Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                Image(systemName: "chevron.right").font(WoopTypography.label(11)).foregroundStyle(ForgeColors.muted)
             }
             .foregroundStyle(.white)
             .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
@@ -1503,7 +1503,7 @@ struct WhoopBatteryInline: View {
                 .monospacedDigit()
                 .foregroundStyle(.white)
             Text("BATTERY")
-                .font(.system(size: 8, weight: .bold))
+                .font(WoopTypography.label(8))
                 .tracking(0.7)
                 .foregroundStyle(ForgeColors.muted)
         }
@@ -2070,7 +2070,7 @@ struct WorkoutHeartRateChart: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("BPM").font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
+                Text("BPM").font(WoopTypography.label(9)).tracking(1).foregroundStyle(ForgeColors.muted)
                 Spacer()
                 Text(points.isEmpty ? "NO WORKOUT SAMPLES" : "\(points.count) SAMPLES")
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(ForgeColors.muted)
@@ -2167,7 +2167,7 @@ struct HeaderView: View {
                     .foregroundStyle(WoopReplicaPalette.primary)
                 Spacer()
                 Image(systemName: "waveform.path.ecg")
-                    .font(.system(size: 19, weight: .medium))
+                    .font(WoopTypography.body(19))
                     .foregroundStyle(WoopReplicaPalette.sleep)
                     .frame(width: 40, height: 40)
                     .background(WoopReplicaPalette.surfaceRaised, in: Circle())
@@ -2204,7 +2204,7 @@ struct MetricTile: View {
             HStack {
                 Image(systemName: symbol).foregroundStyle(ForgeColors.lime)
                 Spacer()
-                Text(title).font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(ForgeColors.muted)
+                Text(title).font(WoopTypography.label(9)).tracking(1).foregroundStyle(ForgeColors.muted)
             }
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(value).font(.system(size: 29, weight: .semibold, design: .rounded))
@@ -2312,7 +2312,7 @@ struct ConnectPrompt: View {
                 Text("Connect a wearable to unlock your dashboard.").font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
             }
             Spacer()
-            Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(ForgeColors.muted)
+            Image(systemName: "chevron.right").font(WoopTypography.label(11)).foregroundStyle(ForgeColors.muted)
         }
         .padding(16).background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
     }
