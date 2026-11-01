@@ -25,8 +25,8 @@ final class HistoricalRecoveryMetricsTests: XCTestCase {
     }
 
     func testDoesNotBridgeMissingSecondOrEmptyRRRecord() {
-        var records = (0..<20).map { record(second: Double($0)) }
-        records += (21..<41).map { record(second: Double($0)) }
+        var records = (0..<14).map { record(second: Double($0)) }
+        records += (15..<29).map { record(second: Double($0)) }
         let result = HistoricalRecoveryMetrics.calculate(from: records)
         XCTAssertEqual(result.qualifyingHRVWindows, 0)
         XCTAssertNil(result.overnightRMSSDMilliseconds)
@@ -51,7 +51,7 @@ final class HistoricalRecoveryMetricsTests: XCTestCase {
     }
 
     func testRHRUsesLowestCoveredThirtyMinuteMeanAndIgnoresZeroSentinel() {
-        let records = (0...1800).map { second in
+        let records = (0...3600).map { second in
             record(second: Double(second), rr: [], hr: second < 900 ? 55 : 48)
         }
         let result = HistoricalRecoveryMetrics.calculate(from: records)
