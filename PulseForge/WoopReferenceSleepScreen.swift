@@ -2,7 +2,6 @@ import SwiftUI
 
 /// Sleep tab port using measured HealthKit sleep and transparent PulseForge estimates.
 struct WoopReferenceSleepScreen: View {
-    @EnvironmentObject private var insights: TrainingInsightsStore
     @EnvironmentObject private var bluetooth: WhoopBluetoothManager
     @EnvironmentObject private var whoopImport: WHOOPImportStore
 
