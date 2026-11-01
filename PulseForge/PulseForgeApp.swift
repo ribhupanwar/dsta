@@ -1552,7 +1552,7 @@ struct DeviceDashboard: View {
                                 .font(WoopTypography.emphasis(9))
                                 .foregroundStyle(ForgeColors.muted)
                             Text(bluetooth.lastHeartRateAt.map { "LAST HR · \($0.formatted(date: .omitted, time: .standard))" } ?? "NO HR PACKET RECEIVED")
-                                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                                .font(WoopTypography.metric(8))
                                 .foregroundStyle(ForgeColors.muted)
                         }
                         Spacer()
@@ -1603,7 +1603,7 @@ struct DeviceDashboard: View {
                             Text("This sends the documented realtime-HR OFF command, waits briefly for the strap response/Event 34, then automatically sends ON to restore live HR. HR may pause for about 1–2 seconds. Keep the band connected during the test.")
                         }
                         Text(bluetooth.whoopEventProbeStatus)
-                            .font(.system(size: 8, design: .monospaced))
+                            .font(WoopTypography.metric(8))
                             .foregroundStyle(ForgeColors.muted)
                     }
                     if !bluetooth.devices.isEmpty {
@@ -1614,42 +1614,42 @@ struct DeviceDashboard: View {
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(device.name).font(WoopTypography.emphasis(13))
                                             Text(device.id.uuidString.prefix(8))
-                                                .font(.system(size: 9, design: .monospaced)).foregroundStyle(ForgeColors.muted)
+                                                .font(WoopTypography.metric(9)).foregroundStyle(ForgeColors.muted)
                                             if !device.advertisedServices.isEmpty {
                                                 Text("ADV: " + device.advertisedServices.joined(separator: ", "))
-                                                    .font(.system(size: 8, design: .monospaced))
+                                                    .font(WoopTypography.metric(8))
                                                     .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
                                             }
                                             if !device.serviceDataEntries.isEmpty {
                                                 Text("Service data: " + device.serviceDataEntries.joined(separator: ", "))
-                                                    .font(.system(size: 8, design: .monospaced))
+                                                    .font(WoopTypography.metric(8))
                                                     .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
                                             }
                                             if !device.solicitedServices.isEmpty {
                                                 Text("Solicited: " + device.solicitedServices.joined(separator: ", "))
-                                                    .font(.system(size: 8, design: .monospaced))
+                                                    .font(WoopTypography.metric(8))
                                                     .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
                                             }
                                             if !device.overflowServices.isEmpty {
                                                 Text("Overflow: " + device.overflowServices.joined(separator: ", "))
-                                                    .font(.system(size: 8, design: .monospaced))
+                                                    .font(WoopTypography.metric(8))
                                                     .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
                                             }
                                             if let byteCount = device.manufacturerDataByteCount {
                                                 Text("Manufacturer data: \(byteCount) bytes")
-                                                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(ForgeColors.muted)
+                                                    .font(WoopTypography.metric(8)).foregroundStyle(ForgeColors.muted)
                                             }
                                             if let power = device.transmitPower {
                                                 Text("TX power: \(power) dBm")
-                                                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(ForgeColors.muted)
+                                                    .font(WoopTypography.metric(8)).foregroundStyle(ForgeColors.muted)
                                             }
                                             if let connectable = device.isConnectable {
                                                 Text(connectable ? "Connectable" : "Not connectable")
-                                                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(ForgeColors.muted)
+                                                    .font(WoopTypography.metric(8)).foregroundStyle(ForgeColors.muted)
                                             }
                                         }
                                         Spacer()
-                                        Text("\(device.rssi) dBm").font(.system(size: 10, design: .monospaced)).foregroundStyle(ForgeColors.muted)
+                                        Text("\(device.rssi) dBm").font(WoopTypography.metric(10)).foregroundStyle(ForgeColors.muted)
                                         Image(systemName: "chevron.right").font(WoopTypography.label(10))
                                     }
                                     .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
@@ -1671,7 +1671,7 @@ struct DeviceDashboard: View {
                             }
                         }
                         Text(bluetooth.lastBLEEvent)
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(WoopTypography.metric(10))
                             .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1680,7 +1680,7 @@ struct DeviceDashboard: View {
                         Text("NOTIFICATION CHANNEL STATUS")
                             .font(WoopTypography.label(9)).tracking(1).foregroundStyle(ForgeColors.lime)
                         Text(bluetooth.notificationDiagnostics.joined(separator: "\\n"))
-                            .font(.system(size: 8, design: .monospaced))
+                            .font(WoopTypography.metric(8))
                             .foregroundStyle(ForgeColors.muted)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1692,10 +1692,10 @@ struct DeviceDashboard: View {
                             Text("DISCOVERED GATT PROFILE")
                                 .font(WoopTypography.label(9)).tracking(1).foregroundStyle(ForgeColors.lime)
                             Text(bluetooth.gattCapabilitySummary)
-                                .font(.system(size: 9, design: .monospaced))
+                                .font(WoopTypography.metric(9))
                                 .foregroundStyle(ForgeColors.muted)
                             ForEach(Array(bluetooth.discoveredProfile.enumerated()), id: \.offset) { item in
-                                Text(item.element).font(.system(size: 9, design: .monospaced))
+                                Text(item.element).font(WoopTypography.metric(9))
                                     .foregroundStyle(ForgeColors.muted).textSelection(.enabled)
                             }
                         }
