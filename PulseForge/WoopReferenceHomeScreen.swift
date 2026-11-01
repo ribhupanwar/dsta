@@ -215,7 +215,7 @@ struct WoopReferenceHomeScreen: View {
 
     private var trend: some View {
         VStack(alignment: .leading, spacing: 9) {
-            section("30-DAY HEALTH TRENDS")
+            section("7-DAY HEALTH TRENDS")
             HStack(spacing: 9) {
                 trendMini("HRV", values: insights.trendHistory.map { $0.hrvMilliseconds }, tint: WoopReplicaPalette.sleep, unit: "ms")
                 trendMini("SLEEP", values: insights.trendHistory.map { $0.sleepHours }, tint: WoopReplicaPalette.sleep, unit: "h")
