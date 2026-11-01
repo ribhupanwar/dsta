@@ -35,7 +35,7 @@ struct WoopReferenceSleepScreen: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("SLEEP").font(.system(size: 11, weight: .bold, design: .rounded))
                     .tracking(2.2).foregroundStyle(WoopReplicaPalette.secondary)
-                Text("Last night").font(.system(size: 22, weight: .semibold))
+                Text("Last night").font(WoopTypography.emphasis(22))
                     .foregroundStyle(WoopReplicaPalette.primary)
             }
             Spacer()
@@ -51,12 +51,12 @@ struct WoopReferenceSleepScreen: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("TIME ASLEEP").font(.system(size: 9, weight: .bold)).tracking(1.2)
+                    Text("TIME ASLEEP").font(WoopTypography.label(9)).tracking(1.2)
                         .foregroundStyle(WoopReplicaPalette.secondary)
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text(totalSleep).font(.system(size: 48, weight: .medium, design: .rounded))
+                        Text(totalSleep).font(WoopTypography.metric(48))
                             .monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
-                        Text("HRS").font(.system(size: 10, weight: .bold))
+                        Text("HRS").font(WoopTypography.label(10))
                             .foregroundStyle(WoopReplicaPalette.secondary)
                     }
                 }
@@ -67,7 +67,7 @@ struct WoopReferenceSleepScreen: View {
                         .stroke(WoopReplicaPalette.sleep, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                         .animation(.easeOut(duration: 0.7), value: health.sleepHours)
-                    Image(systemName: "moon.zzz.fill").font(.system(size: 22))
+                    Image(systemName: "moon.zzz.fill").font(WoopTypography.body(22))
                         .foregroundStyle(WoopReplicaPalette.sleep)
                 }
                 .frame(width: 92, height: 92)
@@ -88,7 +88,7 @@ struct WoopReferenceSleepScreen: View {
 
     private func metric(_ title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 8, weight: .bold)).tracking(0.5)
+            Text(title).font(WoopTypography.label(8)).tracking(0.5)
                 .foregroundStyle(WoopReplicaPalette.secondary)
             Text(value).font(.system(size: 17, weight: .semibold, design: .rounded))
                 .monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
@@ -117,7 +117,7 @@ struct WoopReferenceSleepScreen: View {
                 Text(health.sleepHours == nil
                      ? "Sleep data is not available in Apple Health yet."
                      : "Measured sleep compared with your current estimated sleep need.")
-                    .font(.system(size: 10)).foregroundStyle(WoopReplicaPalette.secondary)
+                    .font(WoopTypography.body(10)).foregroundStyle(WoopReplicaPalette.secondary)
             }
             .padding(16)
             .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
@@ -143,7 +143,7 @@ struct WoopReferenceSleepScreen: View {
 
     private func stageRow(_ title: String, value: Double?, color: Color, symbol: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 12)).foregroundStyle(color).frame(width: 18)
+            Image(systemName: symbol).font(WoopTypography.body(12)).foregroundStyle(color).frame(width: 18)
             Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(WoopReplicaPalette.primary)
             Spacer()
             Text(value.map { String(format: "%.0f min", $0) } ?? "—")
@@ -160,10 +160,10 @@ struct WoopReferenceSleepScreen: View {
                 Image(systemName: "chart.bar.xaxis").font(.system(size: 22, weight: .light))
                     .foregroundStyle(WoopReplicaPalette.muted)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Your sleep trend is building").font(.system(size: 12, weight: .semibold))
+                    Text("Your sleep trend is building").font(WoopTypography.emphasis(12))
                         .foregroundStyle(WoopReplicaPalette.primary)
                     Text("A reliable trend will appear as more nightly HealthKit samples are collected.")
-                        .font(.system(size: 10)).foregroundStyle(WoopReplicaPalette.secondary)
+                        .font(WoopTypography.body(10)).foregroundStyle(WoopReplicaPalette.secondary)
                 }
                 Spacer(minLength: 0)
             }
@@ -174,7 +174,7 @@ struct WoopReferenceSleepScreen: View {
 
     private var explanation: some View {
         Text("Sleep duration and stages are read from Apple Health. Sleep need and debt are PulseForge estimates, not WHOOP proprietary measurements.")
-            .font(.system(size: 10)).lineSpacing(3)
+            .font(WoopTypography.body(10)).lineSpacing(3)
             .foregroundStyle(WoopReplicaPalette.secondary)
             .padding(15)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -182,7 +182,7 @@ struct WoopReferenceSleepScreen: View {
     }
 
     private func sectionTitle(_ value: String) -> some View {
-        Text(value).font(.system(size: 10, weight: .bold)).tracking(1.3)
+        Text(value).font(WoopTypography.label(10)).tracking(1.3)
             .foregroundStyle(WoopReplicaPalette.secondary)
     }
 }
