@@ -43,7 +43,7 @@ enum HistoricalRecoveryMetrics {
     ) -> [HistoricalRRPacketRecord] {
         let candidates = records.filter {
             $0.recordType == 47 && $0.revision == 18 &&
-            $0.decodeError == nil && $0.physiologicalTimestamp != nil
+            $0.physiologicalTimestamp != nil
         }.sorted {
             $0.physiologicalTimestamp! < $1.physiologicalTimestamp!
         }
@@ -96,7 +96,7 @@ enum HistoricalRecoveryMetrics {
         var previousTimestamp: TimeInterval?
         for record in records {
             guard let timestamp = record.physiologicalTimestamp?.timeIntervalSince1970 else { continue }
-            let hasRR = !record.intervalsMilliseconds.isEmpty
+            let hasRR = record.decodeError == nil && !record.intervalsMilliseconds.isEmpty
             let isContinuous = previousTimestamp.map { timestamp - $0 <= 1.5 && timestamp > $0 } ?? false
 
             if !hasRR {
