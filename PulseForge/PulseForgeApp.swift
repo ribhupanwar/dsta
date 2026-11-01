@@ -76,62 +76,83 @@ struct MainTabView: View {
 struct ForgeTabBar: View {
     @Binding var selected: ForgeTab
 
-    private let visibleTabs: [(String, String, ForgeTab)] = [
-        ("Home", "house.fill", .today),
-        ("Health", "heart.fill", .recovery),
-        ("Community", "person.2.fill", .community)
-    ]
-
-    private var isMoreSelection: Bool { selected == .sleep || selected == .strain || selected == .run || selected == .device }
+    private var isMoreSelection: Bool {
+        selected == .sleep || selected == .strain || selected == .run || selected == .device
+    }
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(visibleTabs.indices, id: \.self) { index in
-                let item = visibleTabs[index]
-                tabButton(title: item.0, symbol: item.1, tab: item.2)
-            }
-            Menu {
-                Button("Sleep") { selected = .sleep }
-                Button("Strain") { selected = .strain }
-                Button("Activity") { selected = .run }
-                Button("Device") { selected = .device }
-            } label: {
-                VStack(spacing: 5) {
-                    Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold))
-                    Text("More").font(WoopTypography.label(8)).lineLimit(1)
-                }
-                .foregroundColor(isMoreSelection ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .contentShape(Rectangle())
-            }
+            tabButton(title: "Home", symbol: "house.fill", tab: .today)
+            tabButton(title: "Health", symbol: "heart.fill", tab: .recovery)
+            tabButton(title: "Community", symbol: "person.2.fill", tab: .community)
+            moreMenu
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
-        .background(WoopReplicaPalette.surface, in: Capsule())
-        .overlay(Capsule().stroke(WoopReplicaPalette.hairline, lineWidth: 1))
+        .background(navBackground)
+        .overlay(navOutline)
         .shadow(color: .black.opacity(0.22), radius: 14, y: 5)
         .padding(.horizontal, 20)
         .padding(.bottom, 8)
     }
 
+    private var moreMenu: some View {
+        Menu {
+            Button("Sleep") { selected = .sleep }
+            Button("Strain") { selected = .strain }
+            Button("Activity") { selected = .run }
+            Button("Device") { selected = .device }
+        } label: {
+            moreMenuLabel
+        }
+    }
+
+    private var moreMenuLabel: some View {
+        VStack(spacing: 5) {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 16, weight: .semibold))
+            Text("More")
+                .font(WoopTypography.label(8))
+                .lineLimit(1)
+        }
+        .foregroundColor(moreForeground)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+    }
+
+    private var moreForeground: Color {
+        isMoreSelection ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary
+    }
+
+    private var navBackground: some View {
+        Capsule().fill(WoopReplicaPalette.surface)
+    }
+
+    private var navOutline: some View {
+        Capsule().stroke(WoopReplicaPalette.hairline, lineWidth: 1)
+    }
+
     private func tabButton(title: String, symbol: String, tab: ForgeTab) -> some View {
-        Button { selected = tab } label: {
-            VStack(spacing: 5) {
-                Image(systemName: symbol).font(.system(size: 16, weight: .semibold))
-                Text(title).font(WoopTypography.label(8)).lineLimit(1)
-            }
-            .foregroundColor(selected == tab ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background {
-                if selected == tab {
-                    Capsule().fill(WoopReplicaPalette.surfaceRaised)
-                }
-            }
-            .contentShape(Rectangle())
+        Button(action: { selected = tab }) {
+            tabButtonLabel(title: title, symbol: symbol, tab: tab)
         }
         .buttonStyle(.plain)
+    }
+
+    private func tabButtonLabel(title: String, symbol: String, tab: ForgeTab) -> some View {
+        VStack(spacing: 5) {
+            Image(systemName: symbol)
+                .font(.system(size: 16, weight: .semibold))
+            Text(title)
+                .font(WoopTypography.label(8))
+                .lineLimit(1)
+        }
+        .foregroundColor(selected == tab ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(selected == tab ? WoopReplicaPalette.surfaceRaised : Color.clear, in: Capsule())
+        .contentShape(Rectangle())
     }
 }
 
