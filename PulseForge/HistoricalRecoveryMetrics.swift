@@ -133,7 +133,7 @@ enum HistoricalRecoveryMetrics {
                 .map { $0.element }
             if neighbours.count >= 2, let localMedian = median(neighbours) {
                 let threshold = max(200.0, Double(localMedian) * 0.20)
-                if abs(Double(value - localMedian)) > threshold {
+                if abs(Double(value) - localMedian) > threshold {
                     rejected += 1
                     continue
                 }
