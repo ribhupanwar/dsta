@@ -2179,6 +2179,37 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
+    /// Enable the R10/R11 realtime stage used by the Build 195 movement-capture sequence.
+    private func sendWhoop5R10R11Enable(to peripheral: CBPeripheral) {
+        guard !whoop5AutoIMUStartRequested,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        whoop5AutoIMUStartRequested = true
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x3F, payload: [0x01])
+        whoop5PendingWrites.append("SEND_R10_R11_ON")
+        let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
+        recordVendorTimeline("SEND_R10_R11_REALTIME_ON write requested · opcode 3F · seq=\(sequence) · HEX: \(hex)")
+        whoopIMUStatus = "R10/R11 realtime request sent · awaiting response"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
+    /// Enable IMU mode only after command 63 is accepted.
+    private func sendWhoop5IMUModeEnable(to peripheral: CBPeripheral) {
+        guard !whoop5AutoIMUEnabled,
+              let command = whoop5CommandCharacteristic,
+              command.properties.contains(.write) else { return }
+        let sequence = whoop5NextCommandSequence
+        whoop5NextCommandSequence &+= 1
+        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 0x6A, payload: [0x01, 0x01])
+        whoop5PendingWrites.append("TOGGLE_IMU_MODE")
+        let hex = frame.map { String(format: "%02X", $0) }.joined(separator: " ")
+        recordVendorTimeline("TOGGLE_IMU_MODE_ON write requested · opcode 6A · seq=\(sequence) · payload=01 01 · HEX: \(hex)")
+        whoopIMUStatus = "IMU mode requested · awaiting command response"
+        peripheral.writeValue(frame, for: command, type: .withResponse)
+    }
+
     /// Gen5 outbound command envelope: CRC16-Modbus header + CRC32 padded inner.
     private func buildWhoop5CommandFrame(sequence: UInt8, opcode: UInt8, payload: [UInt8]) -> Data {
         var inner: [UInt8] = [0x23, sequence, opcode] + payload
