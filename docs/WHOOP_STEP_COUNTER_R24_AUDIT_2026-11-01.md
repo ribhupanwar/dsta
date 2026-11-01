@@ -61,7 +61,7 @@ The current UI branch now archives CRC-valid Type-47 frames that reach the uncla
 - Retention: newest 500 records on disk; latest 40 frames are included in the in-memory diagnostic snapshot
 - Stored fields: receipt time, GATT channel, packet type, revision byte, byte count, outer transport-CRC validation, complete raw frame hex, and an explicit raw-only classification
 
-R18 and R21 continue through their existing separate paths. This new archive targets unknown revisions such as the R24 candidate. It intentionally does not call any field decoder or create a step total. The purpose is to obtain real, CRC-valid frames for byte-for-byte correlation with the WHOOP IPA dispatcher.
+R18 and R21 continue through their existing separate paths. This new archive targets unknown revisions such as the R24 candidate. It intentionally does not call any field decoder or create a step total. The purpose is to obtain real, CRC-valid frames for byte-for-byte correlation with the WHOOP IPA dispatcher. The app's diagnostics panel exposes `diagnosticSnapshot` through its `EXPORT` ShareLink; export it after the WHOOP history sync while the app is still connected. The snapshot includes the most recent unclassified Type-47 raw frames and their channel/revision/length metadata.
 
 ## Next engineering sequence
 
