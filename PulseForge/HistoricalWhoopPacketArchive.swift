@@ -28,7 +28,7 @@ enum HistoricalWhoopPacketArchive {
     static func append(
         _ record: HistoricalWhoopPacketRecord,
         to fileURL: URL,
-        maximumRecords: Int = maximumRecords,
+        maximumRecords: Int = 500,
         fileManager: FileManager = .default
     ) throws -> Int {
         let limit = max(1, maximumRecords)
