@@ -24,7 +24,7 @@ jobs:
             --output input/Woop-Latest-Test.apk.zip
           unzip -l input/Woop-Latest-Test.apk.zip
           unzip -o input/Woop-Latest-Test.apk.zip -d input/extracted
-          find input/extracted -type f -iname '*.apk' -print
+          find input/extracted -type f -iname '*.apk' ! -path '*/__MACOSX/*' ! -name '._*' -print
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APK="$(find input/extracted -type f -iname '*.apk' | head -n 1)"
+          APK="$(find input/extracted -type f -iname '*.apk' ! -path '*/__MACOSX/*' ! -name '._*' | head -n 1)"
           test -n "$APK"
           mkdir -p output
           jadx --deobf --show-bad-code -d output/decompiled "$APK"
