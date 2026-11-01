@@ -215,4 +215,8 @@ private enum WoopReplicaPalette {
     static let recoveryLow = Color(red: 1, green: 0, blue: 38/255)
     static let recoveryMid = Color(red: 1, green: 222/255, blue: 0)
     static let recoveryHigh = Color(red: 0, green: 232/255, blue: 45/255)
+    static let sleep = Color(red: 91/255, green: 166/255, blue: 224/255)
+    static let deepSleep = Color(red: 75/255, green: 91/255, blue: 190/255)
+    static let remSleep = Color(red: 132/255, green: 105/255, blue: 220/255)
+    static let coreSleep = Color(red: 52/255, green: 153/255, blue: 221/255)
 }
