@@ -7,24 +7,28 @@ import Foundation
 struct HistoricalRRPacketRecord: Codable, Equatable {
     let receivedAt: Date
     let recordType: Int
+    /// Observed byte-9 marker for Type-47 records; its semantic role is not
+    /// assumed to be a revision until the original WHOOP parser is mapped.
     let revision: Int
-    /// Only populated after RR units have been independently verified.
+    /// Only populated after RR units and field offsets are verified.
     let intervalsMilliseconds: [Int]
-    /// Candidate v18 little-endian words, retained without claiming milliseconds.
+    /// Candidate words copied from a raw frame without claiming units.
     var rawRRWords: [Int]? = nil
+    /// Values previously labelled milliseconds by unverified builds. Preserved
+    /// separately so they can never be confused with raw UInt16 words.
+    var legacyUnverifiedRRValues: [Int]? = nil
     let rawFrameHex: String
-    /// Historical v18 heart rate from the band, if the frame validates.
+    /// Nil for current Type-47 v18 candidate layouts; no HR field is trusted yet.
     let heartRateBPM: Int?
-    /// Nil until an embedded physiological timestamp is independently decoded.
+    /// Nil until an embedded physiological timestamp is verified from WHOOP code.
     let physiologicalTimestamp: Date?
-    /// Present when a CRC-valid v18 frame could not be decoded as RR.
     let decodeError: String?
-    /// Explicit migration guard: only records written by the verified v18 decoder
-    /// may retain HR, RR milliseconds and physiological timestamps on reload.
+    /// True only when an original-WHOOP/device-verified layout and units are known.
     let physiologyLayoutVerified: Bool
 
     init(receivedAt: Date, recordType: Int, revision: Int,
          intervalsMilliseconds: [Int], rawRRWords: [Int]? = nil,
+         legacyUnverifiedRRValues: [Int]? = nil,
          rawFrameHex: String, heartRateBPM: Int?,
          physiologicalTimestamp: Date?, decodeError: String?,
          physiologyLayoutVerified: Bool = false) {
@@ -33,6 +37,7 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
         self.revision = revision
         self.intervalsMilliseconds = intervalsMilliseconds
         self.rawRRWords = rawRRWords
+        self.legacyUnverifiedRRValues = legacyUnverifiedRRValues
         self.rawFrameHex = rawFrameHex
         self.heartRateBPM = heartRateBPM
         self.physiologicalTimestamp = physiologicalTimestamp
@@ -42,7 +47,7 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case receivedAt, recordType, revision, intervalsMilliseconds
-        case rawRRWords, rawFrameHex, heartRateBPM, physiologicalTimestamp, decodeError
+        case rawRRWords, legacyUnverifiedRRValues, rawFrameHex, heartRateBPM, physiologicalTimestamp, decodeError
         case physiologyLayoutVerified
     }
 
@@ -53,58 +58,72 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
         revision = try values.decode(Int.self, forKey: .revision)
         let storedMilliseconds = try values.decodeIfPresent([Int].self, forKey: .intervalsMilliseconds) ?? []
         let storedRawWords = try values.decodeIfPresent([Int].self, forKey: .rawRRWords)
+        let storedLegacyValues = try values.decodeIfPresent([Int].self, forKey: .legacyUnverifiedRRValues)
         let storedHeartRate = try values.decodeIfPresent(Int.self, forKey: .heartRateBPM)
         let storedTimestamp = try values.decodeIfPresent(Date.self, forKey: .physiologicalTimestamp)
         let verifiedLayout = try values.decodeIfPresent(Bool.self, forKey: .physiologyLayoutVerified) ?? false
         rawFrameHex = try values.decode(String.self, forKey: .rawFrameHex)
 
-        // Re-decode legacy raw v18 frames during migration. Earlier builds saved
-        // CRC-valid rawFrameHex and candidate words but intentionally withheld
-        // their physiological fields. The verified decoder can now recover the
-        // exact unix/HR/RR values without asking the user to repeat the offload.
-        let migratedV18: Whoop5RRDecoder.HistoricalV18Biometrics?
-        if revision == 18 && !verifiedLayout,
-           rawFrameHex.count.isMultiple(of: 2) {
-            let chars = Array(rawFrameHex.utf8)
-            var bytes: [UInt8] = []
-            bytes.reserveCapacity(chars.count / 2)
-            var validHex = true
-            for index in stride(from: 0, to: chars.count, by: 2) {
-                guard let byte = UInt8(String(decoding: chars[index..<(index + 2)], as: UTF8.self), radix: 16) else {
-                    validHex = false
-                    break
+        if recordType == 47 && revision == 18 {
+            // WHOOP's original executable does not confirm the Type-47 v18
+            // RR/HR/time offsets or RR units. Downgrade even records an earlier
+            // PulseForge build marked verified. Keep raw words only after CRC
+            // validation; preserve old converted numbers in a separate field.
+            var candidateWordsFromFrame: [Int]?
+            if rawFrameHex.count.isMultiple(of: 2) {
+                let chars = Array(rawFrameHex.utf8)
+                var bytes: [UInt8] = []
+                bytes.reserveCapacity(chars.count / 2)
+                var validHex = true
+                for index in stride(from: 0, to: chars.count, by: 2) {
+                    guard let byte = UInt8(String(decoding: chars[index..<(index + 2)], as: UTF8.self), radix: 16) else {
+                        validHex = false
+                        break
+                    }
+                    bytes.append(byte)
                 }
-                bytes.append(byte)
+                if validHex, Whoop5FrameValidator.isValid(bytes) {
+                    candidateWordsFromFrame = try? Whoop5RRDecoder.decodeHistoricalV18CandidateRRWords(bytes)
+                }
             }
-            migratedV18 = validHex && Whoop5FrameValidator.isValid(bytes)
-                ? try? Whoop5RRDecoder.decodeHistoricalV18Biometrics(bytes)
-                : nil
-        } else {
-            migratedV18 = nil
-        }
-
-        if let migratedV18 {
-            intervalsMilliseconds = migratedV18.rrIntervalsMilliseconds
-            rawRRWords = migratedV18.rawRRWords
-            heartRateBPM = migratedV18.heartRateBPM
-            physiologicalTimestamp = migratedV18.timestamp
-            physiologyLayoutVerified = true
-        } else if revision == 18 && !verifiedLayout {
-            // Legacy v18 records whose raw frame cannot be decoded are retained
-            // as forensic raw words only; never trust the old ms/HR/time labels.
             intervalsMilliseconds = []
-            rawRRWords = storedRawWords ?? (storedMilliseconds.isEmpty ? nil : storedMilliseconds)
+            rawRRWords = candidateWordsFromFrame ?? storedRawWords
+            legacyUnverifiedRRValues = storedLegacyValues ?? (storedMilliseconds.isEmpty ? nil : storedMilliseconds)
             heartRateBPM = nil
             physiologicalTimestamp = nil
             physiologyLayoutVerified = false
         } else {
             intervalsMilliseconds = storedMilliseconds
             rawRRWords = storedRawWords
+            legacyUnverifiedRRValues = storedLegacyValues
             heartRateBPM = storedHeartRate
             physiologicalTimestamp = storedTimestamp
             physiologyLayoutVerified = verifiedLayout
         }
         decodeError = try values.decodeIfPresent(String.self, forKey: .decodeError)
+    }
+
+    /// Preserve an unmapped CRC-valid Type-47 frame verbatim. Byte 9 is stored
+    /// only as a candidate marker; it is not asserted to be a revision or R24 field.
+    static func unmappedType47Candidate(frame: [UInt8],
+                                        receivedAt: Date) -> HistoricalRRPacketRecord? {
+        guard frame.count > 9, frame[8] == 47,
+              Whoop5FrameValidator.isValid(frame) else { return nil }
+        let marker = Int(frame[9])
+        let rawHex = frame.map { String(format: "%02X", $0) }.joined()
+        return HistoricalRRPacketRecord(
+            receivedAt: receivedAt,
+            recordType: 47,
+            revision: marker,
+            intervalsMilliseconds: [],
+            rawRRWords: nil,
+            legacyUnverifiedRRValues: nil,
+            rawFrameHex: rawHex,
+            heartRateBPM: nil,
+            physiologicalTimestamp: nil,
+            decodeError: "Unmapped Type-47 raw frame · byte[9] candidate marker \(marker) · no field interpretation",
+            physiologyLayoutVerified: false
+        )
     }
 }
 
@@ -168,7 +187,9 @@ enum HistoricalRRPacketArchive {
     static func append(contentsOf newRecords: [HistoricalRRPacketRecord],
                        to fileURL: URL,
                        fileManager: FileManager = .default) throws -> Int {
-        guard !newRecords.isEmpty else { return load(from: fileURL).count }
+        guard !newRecords.isEmpty else {
+            return try loadThrowing(from: fileURL, fileManager: fileManager).count
+        }
         // A corrupt existing archive must never be mistaken for an empty
         // archive and silently overwritten by the next batch.
         var records = try loadThrowing(from: fileURL, fileManager: fileManager)

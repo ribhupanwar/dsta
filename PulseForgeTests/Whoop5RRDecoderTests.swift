@@ -26,31 +26,16 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame), [1135])
     }
 
-    func testConvertsWHOOP5Type40TicksToRoundedMilliseconds() throws {
-        let frame = bytes("AA011800010022E12802ECFFE36A8F4257016F04000000000000010023BAA03D")
-        // 0x046F = 1135 ticks; 1135 * 1000 / 1024 rounds to 1108 ms.
-        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(frame), [1108])
-    }
-
-    func testDecodesRRFromLatestWHOOP5042Type40DeviceCapture() throws {
-        // 2026-10-30 capture: HR 96 bpm, count 2, raw RR ticks 957 and 541.
+    func testLatestType40CapturePreservesRawCandidateWordsWithoutUnitConversion() throws {
         let frame = bytes("AA011800010022E12802462CE46A51586002BD031D020000000001006ABABCD5")
         XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame), [957, 541])
-        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(frame), [935, 528])
     }
-
-    func testOmitsZeroPaddingFromRealtimeRRIntervals() throws {
+    func testRealtimeCandidateWordsPreserveZeroPadding() throws {
         var frame = bytes("AA011800010022E128029EA0266AAE4762025B024B020000000001005ED515DC")
-        frame[18] = 0; frame[19] = 0
-        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(frame), [573])
+        frame[18] = 0
+        frame[19] = 0
+        XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame), [0, 587])
     }
-
-    func testRejectsOutOfRangeRealtimeRRTicks() {
-        var frame = bytes("AA011800010022E12802ECFFE36A8F4257016F04000000000000010023BAA03D")
-        frame[18] = 1; frame[19] = 0
-        XCTAssertThrowsError(try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(frame))
-    }
-
     func testRealtimeHRRejectsWrongCandidateByteRange() {
         var frame = bytes("AA011800010022E12802ECFFE36A8F4257016F04000000000000010023BAA03D")
         frame[16] = 0xF3
@@ -63,140 +48,61 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(try Whoop5RRDecoder.decodeHistoricalV18CandidateRRWords(frame), [602, 613])
     }
 
-    func testDecodesHardwareVerifiedHistoricalV18TimestampHRAndRRMilliseconds() throws {
-        // Real WHOOP 5 v18 frame independently cross-checked against the NOOP hardware capture.
-        let frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
-        let decoded = try Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame)
-        XCTAssertEqual(decoded.timestamp.timeIntervalSince1970, 1_780_916_150, accuracy: 0.001)
-        XCTAssertEqual(decoded.heartRateBPM, 102)
-        XCTAssertEqual(decoded.rawRRWords, [602, 613])
-        // Historical v18 values are already milliseconds, not Type-40 1/1024s ticks.
-        XCTAssertEqual(decoded.rrIntervalsMilliseconds, [602, 613])
-    }
-
-    func testDecodesHistoricalV18FromUsersRealArchiveCapture() throws {
+    func testUserHistoricalV18CaptureRetainsRRAndMotionFieldsAsCandidatesOnly() throws {
         let frame = bytes("AA01740001003FB12F128037170700FA9AE36A9939004B015F030000000000000000992C074B0000FF4034793C00005CBF71FD30BEC3B5FF3E6C01F200000000000000000031013B01F90C900A010C060C10000000000000000000000000000000000000000000000100A1B724230000001A30A8C00000002AC67557")
-        let decoded = try Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame)
-        XCTAssertEqual(decoded.timestamp.timeIntervalSince1970, 1_793_301_242, accuracy: 0.001)
-        XCTAssertEqual(decoded.heartRateBPM, 75)
-        XCTAssertEqual(decoded.rawRRWords, [863])
-        XCTAssertEqual(decoded.rrIntervalsMilliseconds, [863])
-        // Same frame also contains the independently mapped Gen5 v18
-        // cumulative motion counter at absolute bytes 57...58.
-        XCTAssertEqual(decoded.stepMotionCounter, 364)
-        XCTAssertEqual(decoded.stepCadenceRaw, 242)
-        XCTAssertEqual(decoded.activityClassRaw, 0)
-        let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame)
-        XCTAssertEqual(step.hardwareCounter, 0)
-        XCTAssertFalse(step.softwareOverride)
-        XCTAssertEqual(step.accumulationCounter, 364)
+        XCTAssertEqual(try Whoop5RRDecoder.decodeHistoricalV18CandidateRRWords(frame), [863])
+        let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounterCandidate(frame)
+        XCTAssertEqual(step.stepMotionCounterCandidate, 364)
+        XCTAssertEqual(step.hardwareCounterCandidate, 0)
+        XCTAssertFalse(step.softwareOverrideCandidate)
+        XCTAssertEqual(step.stepCadenceRawCandidate, 242)
+        XCTAssertEqual(step.activityClassRawCandidate, 0)
     }
-
-    func testDecodesGen5V18MotionCounterFromRealCRCValidFixture() throws {
-        // Real WHOOP 5 Gen5 v18 capture published as an independently decoded
-        // OpenStrap fixture; expected fields are read from the original bytes,
-        // not written into the fixture by this test.
+    func testOpenStrapV18MotionFieldMappingRemainsCandidateOnly() throws {
         let frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
-        let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame)
-        XCTAssertEqual(step.timestamp.timeIntervalSince1970, 1_780_916_150, accuracy: 0.001)
-        XCTAssertEqual(step.stepMotionCounter, 50)
-        XCTAssertEqual(step.hardwareCounter, 0)
-        XCTAssertFalse(step.softwareOverride)
-        XCTAssertEqual(step.accumulationCounter, 50)
-        XCTAssertEqual(step.stepCadenceRaw, 170)
-        XCTAssertEqual(step.activityClassRaw, 0)
+        let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounterCandidate(frame)
+        XCTAssertEqual(step.stepMotionCounterCandidate, 50)
+        XCTAssertEqual(step.hardwareCounterCandidate, 0)
+        XCTAssertFalse(step.softwareOverrideCandidate)
+        XCTAssertEqual(step.stepCadenceRawCandidate, 170)
+        XCTAssertEqual(step.activityClassRawCandidate, 0)
     }
-
-    func testBandAccumulatorDoesNotCountHardwareSoftwareSourceSwitch() throws {
-        let fixture = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
-        let start = Date(timeIntervalSince1970: 1_780_916_150)
-        let calendar = Calendar(identifier: .gregorian)
-
-        func sample(timestamp: Date, selected: Int, hardware: Int, override: Bool) throws -> WhoopBandStepCounter.Sample {
-            var frame = fixture
-            let seconds = UInt32(timestamp.timeIntervalSince1970)
-            for offset in 0..<4 {
-                frame[15 + offset] = UInt8((seconds >> (offset * 8)) & 0xff)
-            }
-            frame[57] = UInt8(selected & 0xff)
-            frame[58] = UInt8((selected >> 8) & 0xff)
-            frame[61] = UInt8(hardware & 0xff)
-            frame[62] = UInt8((hardware >> 8) & 0xff)
-            frame[64] = override ? 0x10 : 0
-            let decoded = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame)
-            return .init(timestamp: decoded.timestamp, counter: decoded.accumulationCounter)
-        }
-
-        var accumulator = WhoopBandStepCounter()
-        accumulator.ingest(try sample(timestamp: start, selected: 100, hardware: 0, override: false), calendar: calendar)
-        accumulator.ingest(try sample(timestamp: start.addingTimeInterval(1), selected: 900, hardware: 101, override: true), calendar: calendar)
-        accumulator.ingest(try sample(timestamp: start.addingTimeInterval(2), selected: 102, hardware: 0, override: false), calendar: calendar)
-
-        XCTAssertEqual(accumulator.steps(for: start, calendar: calendar), 2)
-        XCTAssertEqual(accumulator.latestSample?.counter, 102)
-    }
-
     func testRejectsUnknownStepCounterOverrideFlag() {
         var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
         frame[64] = 0x20
-        XCTAssertThrowsError(try Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame))
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeHistoricalV18StepCounterCandidate(frame))
     }
-
-    func testUsesHardwareCounterDuringSoftwareOverride() throws {
+    func testSoftwareOverrideFieldsRemainSeparateCandidates() throws {
         var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
-        // The selected/software counter is 900, while byte 61 retains the
-        // hardware counter 420 and byte 64 marks the software override.
         frame[57] = 0x84
         frame[58] = 0x03
         frame[61] = 0xA4
         frame[62] = 0x01
         frame[64] = 0x10
-
-        let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame)
-        XCTAssertEqual(step.stepMotionCounter, 900)
-        XCTAssertEqual(step.hardwareCounter, 420)
-        XCTAssertTrue(step.softwareOverride)
-        XCTAssertEqual(step.accumulationCounter, 420)
+        let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounterCandidate(frame)
+        XCTAssertEqual(step.stepMotionCounterCandidate, 900)
+        XCTAssertEqual(step.hardwareCounterCandidate, 420)
+        XCTAssertTrue(step.softwareOverrideCandidate)
     }
-
-    func testDecodesFullWidthGen5BandNativeStepCounterAndCompanionFields() throws {
+    func testV18MotionFieldCandidatesRetainRawValuesWithoutStepConversion() throws {
         var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
         frame[57] = 0x34
         frame[58] = 0x12
         frame[59] = 88
         frame[63] = 2
-
-        let decoded = try Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame)
-        XCTAssertEqual(decoded.stepMotionCounter, 0x1234)
-        XCTAssertEqual(decoded.stepCadenceRaw, 88)
-        XCTAssertEqual(decoded.activityClassRaw, 2)
+        let decoded = try Whoop5RRDecoder.decodeHistoricalV18StepCounterCandidate(frame)
+        XCTAssertEqual(decoded.stepMotionCounterCandidate, 0x1234)
+        XCTAssertEqual(decoded.stepCadenceRawCandidate, 88)
+        XCTAssertEqual(decoded.activityClassRawCandidate, 2)
     }
-
-    func testStepCounterRemainsReadableWhenRRWordIsInvalid() throws {
+    func testMotionFieldCandidatesRemainIndependentOfRRWordPlausibility() throws {
         var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
         frame[24] = 1
         frame[25] = 0
-        XCTAssertThrowsError(try Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame))
-        let steps = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(frame)
-        XCTAssertEqual(steps.stepMotionCounter, 50)
-        XCTAssertEqual(steps.timestamp.timeIntervalSince1970, 1_780_916_150, accuracy: 0.001)
+        XCTAssertEqual(try Whoop5RRDecoder.decodeHistoricalV18CandidateRRWords(frame).first, 1)
+        let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounterCandidate(frame)
+        XCTAssertEqual(step.stepMotionCounterCandidate, 50)
     }
-
-    func testHistoricalV18ZeroHeartRateMeansUnavailableButKeepsRR() throws {
-        var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
-        frame[22] = 0
-        let decoded = try Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame)
-        XCTAssertNil(decoded.heartRateBPM)
-        XCTAssertEqual(decoded.rrIntervalsMilliseconds, [602, 613])
-    }
-
-    func testHistoricalV18RejectsOutOfRangeRRMilliseconds() {
-        var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
-        frame[24] = 1
-        frame[25] = 0
-        XCTAssertThrowsError(try Whoop5RRDecoder.decodeHistoricalV18Biometrics(frame))
-    }
-
     func testRealtimeCandidateWithZeroCountReturnsEmptyWordList() throws {
         // A zero candidate count yields no words; never synthesize RR values.
         var frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")

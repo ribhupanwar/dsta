@@ -1,11 +1,10 @@
 import Foundation
 
-/// WHOOP 5.0 RR interval decoder. Type-40 layout is cross-checked against
-/// independent Gen5 protocol references and retained CRC-valid device captures.
-///
-/// Type-40: HR @16, count @17, RR UInt16 ticks @18+, unit 1/1024 second.
-/// The caller must validate the outer WHOOP frame CRC before calling. Historical
-/// v18 remains a separate candidate path and is not promoted by this decoder.
+/// Candidate field extraction for WHOOP 5.0 frames.
+/// The original WHOOP 5.75.0 executable does not yet confirm the Type-40 RR or
+/// Type-47 v18 offsets/units. Keep RR values as raw words; never infer milliseconds
+/// or physiological timestamps from these candidate layouts. The caller validates
+/// the complete outer frame CRC before parsing.
 enum Whoop5RRDecoder {
     enum DecodeError: Error, Equatable {
         case invalidFrame
@@ -16,26 +15,8 @@ enum Whoop5RRDecoder {
         case truncatedIntervals(expectedBytes: Int, availableBytes: Int)
     }
 
-    /// WHOOP 5.0 Type-47 / revision-18 historical biometric fields.
-    /// Timestamp/HR/RR fields are independently validated. Step-motion offsets
-    /// below remain provisional pending original WHOOP binary cross-reference
-    /// and device-correlated counter captures.
-    struct HistoricalV18Biometrics: Equatable {
-        let timestamp: Date
-        let heartRateBPM: Int?
-        let rawRRWords: [Int]
-        let rrIntervalsMilliseconds: [Int]
-        /// Gen5 v18 historical motion counter, UInt16 LE at frame offsets 57...58.
-        /// OpenStrap independently maps these bytes in real CRC-valid Gen5 v18
-        /// fixtures; exact producer semantics (steps vs. motion ticks) still
-        /// require ground-truth correlation on this strap/firmware.
-        let stepMotionCounter: Int
-        /// Raw companion fields retained for diagnostics; their exact semantics remain provisional.
-        let stepCadenceRaw: Int
-        let activityClassRaw: Int
-    }
-
-    /// Type-40 raw RR words (ticks @18+, 1/1024 second). CRC must be validated first.
+    /// Type-40 raw RR candidate words at secondary-reference offsets. Their units
+    /// and field mapping are not verified against the original WHOOP parser.
     static func decodeRealtimeCandidateRRWords(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 22, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
@@ -46,61 +27,37 @@ enum Whoop5RRDecoder {
         return try decodeRawWords(frame, countOffset: 17, wordsOffset: 18)
     }
 
-    /// Decode WHOOP 5.0 Type-40 RR ticks into integer milliseconds.
-    /// Zero is padding; incomplete words and out-of-range intervals are rejected.
-    /// Formula rounds to nearest ms: (ticks * 1000 + 512) / 1024.
-    static func decodeRealtimeRRIntervalsMilliseconds(_ frame: [UInt8]) throws -> [Int] {
-        let ticks = try decodeRealtimeCandidateRRWords(frame)
-        var intervals: [Int] = []
-        intervals.reserveCapacity(ticks.count)
-        for value in ticks {
-            if value == 0 { continue }
-            let milliseconds = (value * 1000 + 512) / 1024
-            guard (250...3000).contains(milliseconds) else {
-                throw DecodeError.invalidIntervalValue(milliseconds)
-            }
-            intervals.append(milliseconds)
-        }
-        return intervals
+    /// Experimental Type-40 motion-field candidates from NOOP/OpenStrap.
+    /// These offsets are not verified against WHOOP's original parser. No timestamp
+    /// is decoded and these values must never be accumulated into daily steps.
+    struct RealtimeStepCounterCandidate: Equatable {
+        let selectedCounterCandidate: Int
+        let hardwareCounterCandidate: Int
+        let cadenceRawCandidate: Int
+        let activityRawCandidate: Int
+        let softwareOverrideCandidate: Bool
     }
 
-    /// WHOOP 5/MG Type-40 step tuple from the NOOP/OpenStrap R18 protocol map.
-    /// The selected cumulative counter is u16le@57; hardware counter is u16le@61
-    /// when software override is active (byte 64 == 0x10). Timestamp is Unix u32le@10.
-    /// Cadence/activity are retained as raw diagnostics, never converted to steps.
-    struct RealtimeStepCounter: Equatable {
-        let timestamp: Date
-        let selectedCounter: Int
-        let hardwareCounter: Int
-        let cadenceRaw: Int
-        let activityRaw: Int
-        let softwareOverride: Bool
-    }
-
-    static func decodeRealtimeStepCounter(_ frame: [UInt8]) throws -> RealtimeStepCounter {
+    static func decodeRealtimeStepCounterCandidate(_ frame: [UInt8]) throws -> RealtimeStepCounterCandidate {
         guard frame.count >= 65, frame[0] == 0xAA, frame[1] == 0x01,
               Int(frame[8]) == 40 else { throw DecodeError.invalidFrame }
-        let seconds = UInt32(frame[10]) | (UInt32(frame[11]) << 8)
-            | (UInt32(frame[12]) << 16) | (UInt32(frame[13]) << 24)
-        guard seconds >= 1_577_836_800, seconds <= 4_102_444_800 else {
-            throw DecodeError.invalidFrame
-        }
         let selected = Int(frame[57]) | (Int(frame[58]) << 8)
         let hardware = Int(frame[61]) | (Int(frame[62]) << 8)
-        let override = frame[64] == 0x10
-        return RealtimeStepCounter(
-            timestamp: Date(timeIntervalSince1970: TimeInterval(seconds)),
-            selectedCounter: selected,
-            hardwareCounter: hardware,
-            cadenceRaw: Int(frame[59]),
-            activityRaw: Int(frame[63]),
-            softwareOverride: override
+        guard frame[64] == 0x00 || frame[64] == 0x10 else {
+            throw DecodeError.invalidFrame
+        }
+        return RealtimeStepCounterCandidate(
+            selectedCounterCandidate: selected,
+            hardwareCounterCandidate: hardware,
+            cadenceRawCandidate: Int(frame[59]),
+            activityRawCandidate: Int(frame[63]),
+            softwareOverrideCandidate: frame[64] == 0x10
         )
     }
 
-    /// Device-correlated WHOOP 5.0 REALTIME_DATA HR byte at absolute offset 16.
-    /// Correlated against 19 CRC-valid 32-byte WHOOP 5.0 device frames captured
-    /// 2026-10-30; candidate must still pass a conservative physiological bound.
+    /// Device-correlated Type-40 HR candidate at byte 16 from CRC-valid WHOOP 5.0
+    /// captures. This device correlation supports the live HR path, but is not a
+    /// recovered field-level parser from the original WHOOP executable.
     static func decodeRealtimeHeartRate(_ frame: [UInt8]) throws -> Int {
         guard frame.count >= 22, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
@@ -115,10 +72,9 @@ enum Whoop5RRDecoder {
         return bpm
     }
 
-    /// HISTORICAL_DATA v18 raw-word extraction (type 47):
-    /// version @9, verified RR count @23, RR little-endian words @24.
-    /// Values are retained unchanged; use decodeHistoricalV18Biometrics for
-    /// validated millisecond intervals and the embedded physiological timestamp.
+    /// Type-47 v18 candidate raw-word extraction using secondary-reference offsets.
+    /// Byte 9 is a candidate marker; count/word offsets are not verified by the
+    /// original WHOOP parser. Values are raw candidates, not milliseconds.
     static func decodeHistoricalV18CandidateRRWords(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 28, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
@@ -135,31 +91,19 @@ enum Whoop5RRDecoder {
         return try decodeRawWords(frame, countOffset: 23, wordsOffset: 24)
     }
 
-    /// Decode the Gen5 v18 motion counter independently from RR. OpenStrap
-    /// maps the same frame bytes as a cumulative step/motion counter in real
-    /// CRC-valid Gen5 v18 fixtures. Its exact producer semantics still need
-    /// ground-truth validation on this strap/firmware. A malformed RR word
-    /// must not discard an otherwise valid motion-counter sample.
-    struct HistoricalV18StepCounter: Equatable {
-        let timestamp: Date
-        /// Counter selected by the band at bytes 57...58 (hardware normally,
-        /// software when the override flag at byte 64 is active).
-        let stepMotionCounter: Int
-        /// Hardware counter retained at bytes 61...62 during software override.
-        let hardwareCounter: Int
-        let softwareOverride: Bool
-        let stepCadenceRaw: Int
-        let activityClassRaw: Int
-
-        /// Keep the accumulated source on the hardware counter across override
-        /// transitions, avoiding a false delta between software and hardware
-        /// counter domains.
-        var accumulationCounter: Int {
-            softwareOverride ? hardwareCounter : stepMotionCounter
-        }
+    /// Experimental Type-47 v18 motion-field candidates from OpenStrap.
+    /// WHOOP's original executable identifies a separate Historical Processed
+    /// Steps Packet (R24), but does not confirm these v18 offsets or their units.
+    /// This candidate decoder returns no timestamp and must not feed daily steps.
+    struct HistoricalV18StepCounterCandidate: Equatable {
+        let stepMotionCounterCandidate: Int
+        let hardwareCounterCandidate: Int
+        let softwareOverrideCandidate: Bool
+        let stepCadenceRawCandidate: Int
+        let activityClassRawCandidate: Int
     }
 
-    static func decodeHistoricalV18StepCounter(_ frame: [UInt8]) throws -> HistoricalV18StepCounter {
+    static func decodeHistoricalV18StepCounterCandidate(_ frame: [UInt8]) throws -> HistoricalV18StepCounterCandidate {
         guard frame.count >= 65, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
         }
@@ -169,117 +113,16 @@ enum Whoop5RRDecoder {
         guard Int(frame[9]) == 18 else {
             throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
         }
-        let seconds = UInt32(frame[15])
-            | (UInt32(frame[16]) << 8)
-            | (UInt32(frame[17]) << 16)
-            | (UInt32(frame[18]) << 24)
-        guard seconds >= 1_577_836_800, seconds <= 4_102_444_800 else {
-            throw DecodeError.invalidFrame
-        }
         guard frame[64] == 0x00 || frame[64] == 0x10 else {
             throw DecodeError.invalidFrame
         }
-        return HistoricalV18StepCounter(
-            timestamp: Date(timeIntervalSince1970: TimeInterval(seconds)),
-            stepMotionCounter: Int(frame[57]) | (Int(frame[58]) << 8),
-            hardwareCounter: Int(frame[61]) | (Int(frame[62]) << 8),
-            softwareOverride: frame[64] == 0x10,
-            stepCadenceRaw: Int(frame[59]),
-            activityClassRaw: Int(frame[63])
+        return HistoricalV18StepCounterCandidate(
+            stepMotionCounterCandidate: Int(frame[57]) | (Int(frame[58]) << 8),
+            hardwareCounterCandidate: Int(frame[61]) | (Int(frame[62]) << 8),
+            softwareOverrideCandidate: frame[64] == 0x10,
+            stepCadenceRawCandidate: Int(frame[59]),
+            activityClassRawCandidate: Int(frame[63])
         )
-    }
-
-    /// Decode hardware-verified WHOOP 5.0 Type-47 revision-18 biometrics.
-    /// Caller must validate the complete outer frame CRC before calling.
-    /// RR words are already milliseconds; unlike Type-40 ticks, do NOT scale by 1000/1024.
-    static func decodeHistoricalV18Biometrics(_ frame: [UInt8]) throws -> HistoricalV18Biometrics {
-        guard frame.count >= 64, frame[0] == 0xAA, frame[1] == 0x01 else {
-            throw DecodeError.invalidFrame
-        }
-        guard Int(frame[8]) == 47 else {
-            throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
-        }
-        guard Int(frame[9]) == 18 else {
-            throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
-        }
-
-        let seconds = UInt32(frame[15])
-            | (UInt32(frame[16]) << 8)
-            | (UInt32(frame[17]) << 16)
-            | (UInt32(frame[18]) << 24)
-        guard seconds >= 1_577_836_800, seconds <= 4_102_444_800 else {
-            throw DecodeError.invalidFrame
-        }
-
-        let rawHeartRate = Int(frame[22])
-        let heartRate: Int?
-        if rawHeartRate == 0 {
-            heartRate = nil // WHOOP uses zero for an unavailable/off-wrist HR sample.
-        } else {
-            guard (25...240).contains(rawHeartRate) else {
-                throw DecodeError.invalidIntervalValue(rawHeartRate)
-            }
-            heartRate = rawHeartRate
-        }
-
-        let words = try decodeHistoricalV18CandidateRRWords(frame)
-        let intervals = words.filter { $0 > 0 }
-        for value in intervals where !(250...3000).contains(value) {
-            throw DecodeError.invalidIntervalValue(value)
-        }
-
-        let stepCounter = try decodeHistoricalV18StepCounter(frame)
-        return HistoricalV18Biometrics(
-            timestamp: Date(timeIntervalSince1970: TimeInterval(seconds)),
-            heartRateBPM: heartRate,
-            rawRRWords: words,
-            rrIntervalsMilliseconds: intervals,
-            stepMotionCounter: stepCounter.stepMotionCounter,
-            stepCadenceRaw: stepCounter.stepCadenceRaw,
-            activityClassRaw: stepCounter.activityClassRaw
-        )
-    }
-
-    /// Legacy candidate-only timestamp helper retained for forensic comparisons.
-    /// Production code must use decodeHistoricalV18Biometrics, which validates
-    /// the full v18 layout and returns the timestamp with its HR/RR fields.
-    static func decodeCandidateHistoricalTimestampV18(_ frame: [UInt8]) throws -> Date {
-        guard frame.count >= 19, frame[0] == 0xAA, frame[1] == 0x01 else {
-            throw DecodeError.invalidFrame
-        }
-        guard Int(frame[8]) == 47 else {
-            throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
-        }
-        guard Int(frame[9]) == 18 else {
-            throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
-        }
-        let seconds = UInt32(frame[15])
-            | (UInt32(frame[16]) << 8)
-            | (UInt32(frame[17]) << 16)
-            | (UInt32(frame[18]) << 24)
-        guard seconds >= 1_577_836_800, seconds <= 4_102_444_800 else {
-            throw DecodeError.invalidFrame
-        }
-        return Date(timeIntervalSince1970: TimeInterval(seconds))
-    }
-
-    /// Legacy candidate-only HR helper retained for forensic comparisons.
-    /// Production code must use decodeHistoricalV18Biometrics.
-    static func decodeCandidateHistoricalHeartRateV18(_ frame: [UInt8]) throws -> Int {
-        guard frame.count >= 23, frame[0] == 0xAA, frame[1] == 0x01 else {
-            throw DecodeError.invalidFrame
-        }
-        guard Int(frame[8]) == 47 else {
-            throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
-        }
-        guard Int(frame[9]) == 18 else {
-            throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
-        }
-        let bpm = Int(frame[22])
-        guard (25...240).contains(bpm) else {
-            throw DecodeError.invalidIntervalValue(bpm)
-        }
-        return bpm
     }
 
     private static func decodeRawWords(_ frame: [UInt8], countOffset: Int,

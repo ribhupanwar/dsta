@@ -8,6 +8,23 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
             .appendingPathComponent("historical-rr.json")
     }
 
+    private func makeCRCValidType47Frame(marker: UInt8) -> [UInt8] {
+        let payload: [UInt8] = [47, marker, 0x00, 0x00]
+        let declaredLength = payload.count + 4
+        var frame: [UInt8] = [0xAA, 0x01, UInt8(declaredLength & 0xFF),
+                              UInt8((declaredLength >> 8) & 0xFF), 0x00, 0x01]
+        let headerCRC = Whoop5FrameValidator.crc16Modbus(frame)
+        frame.append(UInt8(headerCRC & 0xFF))
+        frame.append(UInt8((headerCRC >> 8) & 0xFF))
+        frame.append(contentsOf: payload)
+        let payloadCRC = Whoop5FrameValidator.crc32(payload)
+        frame.append(UInt8(payloadCRC & 0xFF))
+        frame.append(UInt8((payloadCRC >> 8) & 0xFF))
+        frame.append(UInt8((payloadCRC >> 16) & 0xFF))
+        frame.append(UInt8((payloadCRC >> 24) & 0xFF))
+        return frame
+    }
+
     func testPersistsAndReloadsHistoricalPacketWithReceiptTimeAndRawFrame() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
@@ -27,36 +44,27 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         XCTAssertEqual(HistoricalRRPacketArchive.load(from: url), [record])
     }
 
-    func testV18RetentionUsesVerifiedPhysiologicalTimeInsteadOfArrivalOrder() throws {
+    func testV18RetentionUsesReceiptTimeUntilPhysiologicalLayoutIsVerified() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
-
         let records = (0...HistoricalRRPacketArchive.maximumRecords).reversed().map { index in
             HistoricalRRPacketRecord(
                 receivedAt: Date(timeIntervalSince1970: TimeInterval(HistoricalRRPacketArchive.maximumRecords - index)),
-                recordType: 47,
-                revision: 18,
-                intervalsMilliseconds: [],
-                rawRRWords: [600 + (index % 100)],
-                rawFrameHex: String(format: "%06X", index),
+                recordType: 47, revision: 18, intervalsMilliseconds: [],
+                rawRRWords: [600 + (index % 100)], rawFrameHex: String(format: "%06X", index),
                 heartRateBPM: nil,
                 physiologicalTimestamp: Date(timeIntervalSince1970: TimeInterval(index)),
-                decodeError: nil,
-                physiologyLayoutVerified: true
+                decodeError: nil, physiologyLayoutVerified: false
             )
         }
-        XCTAssertEqual(
-            try HistoricalRRPacketArchive.append(contentsOf: records, to: url),
-            HistoricalRRPacketArchive.maximumRecords
-        )
-
+        XCTAssertEqual(try HistoricalRRPacketArchive.append(contentsOf: records, to: url),
+                       HistoricalRRPacketArchive.maximumRecords)
         let archived = try HistoricalRRPacketArchive.loadThrowing(from: url)
         XCTAssertEqual(archived.count, HistoricalRRPacketArchive.maximumRecords)
-        XCTAssertEqual(archived.first?.rawFrameHex, String(format: "%06X", HistoricalRRPacketArchive.maximumRecords))
-        XCTAssertEqual(archived.last?.rawFrameHex, "000001")
-        XCTAssertFalse(archived.contains { $0.rawFrameHex == "000000" })
+        XCTAssertEqual(archived.first?.rawFrameHex, String(format: "%06X", HistoricalRRPacketArchive.maximumRecords - 1))
+        XCTAssertEqual(archived.last?.rawFrameHex, "000000")
+        XCTAssertTrue(archived.allSatisfy { $0.physiologicalTimestamp == nil && !$0.physiologyLayoutVerified })
     }
-
     func testRepeatedHistoricalFrameReplayDoesNotDuplicateArchiveRecords() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
@@ -163,7 +171,7 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         XCTAssertNil(restored.physiologicalTimestamp)
     }
 
-    func testLegacyRawV18FrameMigratesToVerifiedPhysiology() throws {
+    func testLegacyRawV18FrameRemainsCandidateOnlyUntilWHOOPLayoutIsVerified() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let rawFrame = "aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817"
@@ -173,19 +181,17 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
           "rawFrameHex":"\(rawFrame)","heartRateBPM":80,
           "physiologicalTimestamp":"2026-10-29T23:59:00Z","decodeError":null}]
         """
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(legacy.utf8).write(to: url)
-
         let migrated = try XCTUnwrap(HistoricalRRPacketArchive.loadThrowing(from: url).first)
-        XCTAssertEqual(migrated.intervalsMilliseconds, [602, 613])
+        XCTAssertEqual(migrated.intervalsMilliseconds, [])
         XCTAssertEqual(migrated.rawRRWords, [602, 613])
-        XCTAssertEqual(migrated.heartRateBPM, 102)
-        XCTAssertEqual(migrated.physiologicalTimestamp, Date(timeIntervalSince1970: 1_780_916_150))
-        XCTAssertTrue(migrated.physiologyLayoutVerified)
+        XCTAssertEqual(migrated.legacyUnverifiedRRValues, [629, 794])
+        XCTAssertNil(migrated.heartRateBPM)
+        XCTAssertNil(migrated.physiologicalTimestamp)
+        XCTAssertFalse(migrated.physiologyLayoutVerified)
     }
-
-    func testLegacyV18MillisecondsFieldMigratesToUnverifiedRawWords() throws {
+    func testLegacyV18MillisecondsArePreservedSeparatelyFromRawWords() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let legacy = """
@@ -193,26 +199,22 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
           "intervalsMilliseconds":[629,794],"rawFrameHex":"AA01",
           "heartRateBPM":80,"physiologicalTimestamp":"2026-10-29T23:59:00Z","decodeError":null}]
         """
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(legacy.utf8).write(to: url)
-
         let migrated = try XCTUnwrap(HistoricalRRPacketArchive.load(from: url).first)
         XCTAssertEqual(migrated.intervalsMilliseconds, [])
-        XCTAssertEqual(migrated.rawRRWords, [629, 794])
+        XCTAssertNil(migrated.rawRRWords)
+        XCTAssertEqual(migrated.legacyUnverifiedRRValues, [629, 794])
         XCTAssertNil(migrated.heartRateBPM)
         XCTAssertNil(migrated.physiologicalTimestamp)
-
         let exported = try XCTUnwrap(HistoricalRRPacketArchive.exportJSON(from: url))
         let exportDecoder = JSONDecoder()
         exportDecoder.dateDecodingStrategy = .iso8601
-        let exportedRecord = try XCTUnwrap(exportDecoder.decode(
-            [HistoricalRRPacketRecord].self, from: Data(exported.utf8)
-        ).first)
+        let exportedRecord = try XCTUnwrap(exportDecoder.decode([HistoricalRRPacketRecord].self, from: Data(exported.utf8)).first)
+        XCTAssertEqual(exportedRecord.legacyUnverifiedRRValues, [629, 794])
         XCTAssertNil(exportedRecord.heartRateBPM)
         XCTAssertNil(exportedRecord.physiologicalTimestamp)
     }
-
     func testArchiveRecordSeparatesVerifiedMillisecondsFromRawWords() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
@@ -226,32 +228,28 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         let restored = try XCTUnwrap(HistoricalRRPacketArchive.load(from: url).first)
         XCTAssertEqual(restored.intervalsMilliseconds, [])
         XCTAssertEqual(restored.rawRRWords, [629, 794])
+        XCTAssertNil(restored.legacyUnverifiedRRValues)
     }
 
-    func testVerifiedV18PhysiologySurvivesArchiveReload() throws {
+    func testPreviouslyVerifiedV18FieldsAreDowngradedUntilWHOOPLayoutIsProven() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let timestamp = Date(timeIntervalSince1970: 1_780_916_150)
         let record = HistoricalRRPacketRecord(
-            receivedAt: timestamp.addingTimeInterval(3),
-            recordType: 47,
-            revision: 18,
-            intervalsMilliseconds: [602, 613],
-            rawRRWords: [602, 613],
-            rawFrameHex: "AA0174",
-            heartRateBPM: 102,
-            physiologicalTimestamp: timestamp,
-            decodeError: nil,
+            receivedAt: timestamp.addingTimeInterval(3), recordType: 47, revision: 18,
+            intervalsMilliseconds: [602, 613], rawRRWords: [602, 613], rawFrameHex: "AA0174",
+            heartRateBPM: 102, physiologicalTimestamp: timestamp, decodeError: nil,
             physiologyLayoutVerified: true
         )
         _ = try HistoricalRRPacketArchive.append(record, to: url)
         let restored = try XCTUnwrap(HistoricalRRPacketArchive.load(from: url).first)
-        XCTAssertEqual(restored.intervalsMilliseconds, [602, 613])
+        XCTAssertEqual(restored.intervalsMilliseconds, [])
         XCTAssertEqual(restored.rawRRWords, [602, 613])
-        XCTAssertEqual(restored.heartRateBPM, 102)
-        XCTAssertEqual(restored.physiologicalTimestamp, timestamp)
+        XCTAssertEqual(restored.legacyUnverifiedRRValues, [602, 613])
+        XCTAssertNil(restored.heartRateBPM)
+        XCTAssertNil(restored.physiologicalTimestamp)
+        XCTAssertFalse(restored.physiologyLayoutVerified)
     }
-
     func testLegacyV18FrameWithInvalidCRCDoesNotPromotePhysiology() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
@@ -276,9 +274,39 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         let migrated = try XCTUnwrap(HistoricalRRPacketArchive.loadThrowing(from: url).first)
         XCTAssertEqual(migrated.intervalsMilliseconds, [])
         XCTAssertEqual(migrated.rawRRWords, [863])
+        XCTAssertEqual(migrated.legacyUnverifiedRRValues, [863])
         XCTAssertNil(migrated.heartRateBPM)
         XCTAssertNil(migrated.physiologicalTimestamp)
         XCTAssertFalse(migrated.physiologyLayoutVerified)
+    }
+
+    func testUnmappedType47FramesAreRetainedRawWithoutR24FieldAssumptions() {
+        for marker in [UInt8(9), UInt8(68)] {
+            let frame = makeCRCValidType47Frame(marker: marker)
+            let record = HistoricalRRPacketRecord.unmappedType47Candidate(
+                frame: frame, receivedAt: Date(timeIntervalSince1970: 1_800_000_000)
+            )
+            XCTAssertNotNil(record)
+            XCTAssertEqual(record?.recordType, 47)
+            XCTAssertEqual(record?.revision, Int(marker))
+            XCTAssertEqual(record?.rawFrameHex, frame.map { String(format: "%02X", $0) }.joined())
+            XCTAssertEqual(record?.intervalsMilliseconds, [])
+            XCTAssertNil(record?.rawRRWords)
+            XCTAssertNil(record?.legacyUnverifiedRRValues)
+            XCTAssertNil(record?.heartRateBPM)
+            XCTAssertNil(record?.physiologicalTimestamp)
+            XCTAssertFalse(record?.physiologyLayoutVerified ?? true)
+        }
+    }
+
+    func testEmptyAppendDoesNotHideCorruptArchive() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let corrupt = Data("not-json".utf8)
+        try corrupt.write(to: url)
+        XCTAssertThrowsError(try HistoricalRRPacketArchive.append(contentsOf: [], to: url))
+        XCTAssertEqual(try Data(contentsOf: url), corrupt)
     }
 
     func testAppendDoesNotOverwriteCorruptExistingArchive() throws {

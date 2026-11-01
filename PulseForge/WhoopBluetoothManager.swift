@@ -92,36 +92,34 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopRRWindowMilliseconds: [Int] = []
     /// Short-window RMSSD from live type-40 RR only; never overnight HRV.
     @Published private(set) var whoopLiveRMSSDMilliseconds: Double?
-    /// Historical type-47/v18 intervals are kept separate from the live stream.
+    /// Remains empty until the original WHOOP historical RR layout and units are verified.
     @Published private(set) var whoopHistoricalRRIntervalsMilliseconds: [Int] = []
     @Published private(set) var whoopHistoricalRRLastUpdatedAt: Date?
     @Published private(set) var whoopHistoricalHeartRateBPM: Int?
     @Published private(set) var whoopHistoricalTimestampLastUpdatedAt: Date?
-    @Published private(set) var whoopHistoricalRRSource = "No historical WHOOP RR intervals decoded yet"
+    @Published private(set) var whoopHistoricalRRSource = "Waiting for original WHOOP historical RR layout verification"
     @Published private(set) var whoopHistorySyncStatus = "Waiting for WHOOP 5 historical sync request"
     @Published private(set) var whoopRRLastUpdatedAt: Date?
-    @Published private(set) var whoopRRSource = "No WHOOP RR intervals decoded yet"
+    @Published private(set) var whoopRRSource = "No verified WHOOP RR milliseconds decoded yet"
     @Published private(set) var whoopCommandResponseCount = 0
     @Published private(set) var whoopLastPacketType = "None"
     @Published private(set) var whoopBatteryPercent: Double?
     @Published private(set) var whoopBatteryLastUpdatedAt: Date?
-    /// WHOOP Gen5 v18 on-band cumulative counter converted to today's counter delta.
+    /// WHOOP R24 processed-steps total; nil until its original packet layout is mapped.
     @Published private(set) var whoopStepsToday: Int?
-    @Published private(set) var whoopStepsSourceStatus = "Waiting for WHOOP 5.0 step history"
+    @Published private(set) var whoopStepsSourceStatus = "Waiting for WHOOP Historical Processed Steps (R24) layout"
     @Published private(set) var whoopStepCounterLastUpdatedAt: Date?
     // Visible Type-40 step-signal diagnostics. Counter fields remain candidates until independently validated.
     @Published private(set) var stepSignalLastPacketType: Int?
     @Published private(set) var stepSignalLastPacketLength = 0
     @Published private(set) var stepSignalLastSeenAt: Date?
-    @Published private(set) var stepSignalLastOutcome = "Waiting for WHOOP Type-40 realtime packet"
+    @Published private(set) var stepSignalLastOutcome = "Waiting for WHOOP Type-40 candidate diagnostics"
     @Published private(set) var stepSignalSelectedCounter: Int?
     @Published private(set) var stepSignalHardwareCounter: Int?
     @Published private(set) var stepSignalCadence: Int?
     @Published private(set) var stepSignalActivity: Int?
     @Published private(set) var stepSignalSoftwareOverride: Bool?
     @Published private(set) var stepSignalFrameCount = 0
-    private var whoopBandStepCounter = WhoopBandStepCounter()
-    private var lastWhoopStepSnapshotPersistedAt: Date?
     private var lastWhoopStepTimelineAt: Date?
     private var lastHistoricalStepDiagnosticsAt: Date?
     @Published private(set) var whoopEventPacketCount = 0
@@ -356,10 +354,14 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         defaults.removeObject(forKey: DashboardHistoryKey.historicalRR)
         whoopHistoricalRRIntervalsMilliseconds = []
         whoopHistoricalRRLastUpdatedAt = nil
-        if let data = defaults.data(forKey: DashboardHistoryKey.rrSamples),
-           let samples = try? JSONDecoder().decode([PersistedRRIntervalSample].self, from: data) {
-            dashboardRRHistory = Array(samples.suffix(20_000))
-        }
+        // Old Type-40 RR history was converted using a secondary unit assumption.
+        // Discard those derived milliseconds; only raw candidate words remain usable.
+        defaults.removeObject(forKey: DashboardHistoryKey.rrSamples)
+        dashboardRRHistory.removeAll(keepingCapacity: true)
+        whoopRRWindowMilliseconds.removeAll(keepingCapacity: true)
+        whoopLiveRMSSDMilliseconds = nil
+        whoopRRLastUpdatedAt = nil
+        whoopRRSource = "No verified WHOOP RR milliseconds restored · Type-40 candidates remain raw"
         if let data = defaults.data(forKey: DashboardHistoryKey.standardRRSamples),
            let samples = try? JSONDecoder().decode([PersistedRRIntervalSample].self, from: data) {
             dashboardStandardRRHistory = Array(samples.suffix(20_000))
@@ -373,21 +375,17 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             whoopIMUHistorySamples = Array(samples.suffix(20_000))
             lastDashboardIMUPersistedSampleCount = whoopIMUHistorySamples.count
         }
-        restoreWhoopStepCounter()
+        resetUnverifiedStepCounter()
         // Never restore live BPM/freshness or calculate live RMSSD from old samples.
     }
 
-    /// Restore only a previously validated live Type-40 band-counter ledger.
-    /// The old v1 key may contain Type-47/v18 motion-field guesses; it is
-    /// intentionally not migrated into trusted daily steps. Raw history remains
-    /// available in the archive for protocol research.
-    private func restoreWhoopStepCounter() {
-        let defaults = UserDefaults.standard
-        if let data = defaults.data(forKey: DashboardHistoryKey.whoopSteps),
-           let snapshot = try? JSONDecoder().decode(WhoopBandStepCounter.Snapshot.self, from: data) {
-            whoopBandStepCounter.restore(snapshot)
-        }
-        publishWhoopStepCount()
+    /// The old v2 step ledger was fed by Type-47 v18 motion-field candidates.
+    /// Clear it until the original WHOOP R24 processed-steps packet is decoded.
+    private func resetUnverifiedStepCounter() {
+        UserDefaults.standard.removeObject(forKey: DashboardHistoryKey.whoopSteps)
+        whoopStepsToday = nil
+        whoopStepsSourceStatus = "Waiting for original WHOOP R24 processed-steps packet layout"
+        whoopStepCounterLastUpdatedAt = nil
     }
 
     private static func bytes(fromHex hex: String) -> [UInt8]? {
@@ -402,31 +400,6 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             bytes.append(value)
         }
         return bytes
-    }
-
-    private func recordWhoopStepSample(timestamp: Date, counter: Int, publish: Bool = true) {
-        whoopBandStepCounter.ingest(.init(
-            timestamp: timestamp,
-            counter: counter
-        ))
-        if publish {
-            publishWhoopStepCount()
-        }
-        if lastWhoopStepSnapshotPersistedAt.map({ Date().timeIntervalSince($0) >= 5 }) ?? true {
-            persistWhoopStepCounterSnapshot()
-        }
-    }
-
-    private func publishWhoopStepCount() {
-        whoopStepsToday = whoopBandStepCounter.steps(for: Date())
-        whoopStepsSourceStatus = whoopBandStepCounter.sourceStatus(for: Date())
-        whoopStepCounterLastUpdatedAt = whoopBandStepCounter.latestSample?.timestamp
-    }
-
-    private func persistWhoopStepCounterSnapshot() {
-        guard let data = try? JSONEncoder().encode(whoopBandStepCounter.snapshot()) else { return }
-        UserDefaults.standard.set(data, forKey: DashboardHistoryKey.whoopSteps)
-        lastWhoopStepSnapshotPersistedAt = Date()
     }
 
     var freshHeartRateBPM: Int? {
@@ -2433,40 +2406,30 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             recordVendorTimeline("WHOOP metadata observed · \(metadataName) · CRC valid")
             return "METADATA · \(metadataName) · CRC valid"
 
-        case 47: // HISTORICAL_DATA; contains several Gen5 layouts, not all of them IMU.
-            // WHOOP 5.0 v18 biometric offsets are hardware-verified:
-            // unix@15, HR@22, rr_count@23, RR UInt16 milliseconds @24+2*i.
-            // Preserve every CRC-valid frame while publishing only validated fields.
+        case 47: // HISTORICAL_DATA; retain unmapped Gen5 layouts for protocol research.
             if b.count > 9, b[9] == 18 {
-                whoopHistorySyncStatus = "Type-47 v18 historical frame received · decoding/archive in progress"
+                whoopHistorySyncStatus = "Type-47 v18 candidate frame received · original WHOOP field layout not verified"
                 let receivedAt = Date()
                 let rawHex = b.map { String(format: "%02X", $0) }.joined()
-                var decoded: Whoop5RRDecoder.HistoricalV18Biometrics?
+                var rawWords: [Int]?
                 var decodeError: String?
 
                 do {
-                    decoded = try Whoop5RRDecoder.decodeHistoricalV18Biometrics(b)
-                    if let decoded {
-                        whoopHistoricalRRIntervalsMilliseconds = decoded.rrIntervalsMilliseconds
-                        whoopHistoricalRRLastUpdatedAt = decoded.rrIntervalsMilliseconds.isEmpty ? nil : decoded.timestamp
-                        whoopHistoricalHeartRateBPM = decoded.heartRateBPM
-                        whoopHistoricalTimestampLastUpdatedAt = decoded.timestamp
-                        whoopHistoricalRRSource = "WHOOP Type-47 v18 · \(decoded.rrIntervalsMilliseconds.count) verified RR interval(s) · RR unit ms · physiological timestamp verified"
-                    }
+                    rawWords = try Whoop5RRDecoder.decodeHistoricalV18CandidateRRWords(b)
+                    let wordText = (rawWords ?? []).map(String.init).joined(separator: ",")
+                    whoopHistoricalRRSource = "Type-47 v18 raw RR candidates [\(wordText)] · offsets/units/HR/timestamp unverified"
                 } catch {
                     decodeError = String(describing: error)
-                    whoopHistoricalRRIntervalsMilliseconds = []
-                    whoopHistoricalRRLastUpdatedAt = nil
-                    whoopHistoricalHeartRateBPM = nil
-                    whoopHistoricalTimestampLastUpdatedAt = nil
-                    whoopHistoricalRRSource = "Historical v18 decode rejected · raw frame retained · \(error)"
+                    whoopHistoricalRRSource = "Type-47 v18 candidate-word extraction rejected · raw frame retained · \(error)"
                 }
+                whoopHistoricalRRIntervalsMilliseconds = []
+                whoopHistoricalRRLastUpdatedAt = nil
+                whoopHistoricalHeartRateBPM = nil
+                whoopHistoricalTimestampLastUpdatedAt = nil
 
-                // Gen5 v18 historical records carry the cumulative on-chip
-                // step/motion counter mapped independently by OpenStrap at frame
-                // offsets 57...58. Keep the ingest path lossless, but throttle
-                // SwiftUI publications and diagnostic timeline writes during bulk
-                // history backfill. Step semantics remain experimental.
+                // OpenStrap-derived motion fields remain visible as raw diagnostics
+                // only. The original WHOOP IPA identifies a separate R24 processed-
+                // steps packet; this v18 candidate must not update daily step totals.
                 let publishStepDiagnostics = lastHistoricalStepDiagnosticsAt.map {
                     receivedAt.timeIntervalSince($0) >= 1
                 } ?? true
@@ -2474,37 +2437,32 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     receivedAt.timeIntervalSince($0) >= 30
                 } ?? true
                 do {
-                    let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounter(b)
-                    recordWhoopStepSample(
-                        timestamp: step.timestamp,
-                        counter: step.accumulationCounter,
-                        publish: publishStepDiagnostics
-                    )
+                    let step = try Whoop5RRDecoder.decodeHistoricalV18StepCounterCandidate(b)
                     if publishStepDiagnostics {
                         lastHistoricalStepDiagnosticsAt = receivedAt
                         stepSignalLastPacketType = 47
                         stepSignalLastPacketLength = b.count
                         stepSignalLastSeenAt = receivedAt
-                        stepSignalSelectedCounter = step.stepMotionCounter
-                        stepSignalHardwareCounter = step.hardwareCounter
-                        stepSignalCadence = step.stepCadenceRaw
-                        stepSignalActivity = step.activityClassRaw
-                        stepSignalSoftwareOverride = step.softwareOverride
-                        stepSignalLastOutcome = "Historical v18 cumulative motion counter · experimental step source"
+                        stepSignalSelectedCounter = step.stepMotionCounterCandidate
+                        stepSignalHardwareCounter = step.hardwareCounterCandidate
+                        stepSignalCadence = step.stepCadenceRawCandidate
+                        stepSignalActivity = step.activityClassRawCandidate
+                        stepSignalSoftwareOverride = step.softwareOverrideCandidate
+                        stepSignalLastOutcome = "Type-47 v18 motion-field candidates only · not counted; WHOOP R24 parser pending"
                     }
                     if logStepTimeline {
                         lastWhoopStepTimelineAt = receivedAt
-                        recordVendorTimeline("WHOOP Type-47 v18 step source · selected=\(step.stepMotionCounter) · hardware=\(step.hardwareCounter) · override=\(step.softwareOverride) · accumulated=\(step.accumulationCounter) · cadenceRaw=\(step.stepCadenceRaw) · activityRaw=\(step.activityClassRaw) · timestamp=\(ISO8601DateFormatter().string(from: step.timestamp))")
+                        recordVendorTimeline("WHOOP Type-47 v18 motion-field candidates · selected=\(step.stepMotionCounterCandidate) · hardware=\(step.hardwareCounterCandidate) · override=\(step.softwareOverrideCandidate) · cadenceRaw=\(step.stepCadenceRawCandidate) · activityRaw=\(step.activityClassRawCandidate) · receivedAt=\(ISO8601DateFormatter().string(from: receivedAt))")
                     }
                 } catch {
                     if publishStepDiagnostics {
                         lastHistoricalStepDiagnosticsAt = receivedAt
                         stepSignalLastSeenAt = receivedAt
-                        stepSignalLastOutcome = "Historical v18 step-counter decode rejected · \(error)"
+                        stepSignalLastOutcome = "Type-47 v18 motion-field candidate rejected · not counted · \(error)"
                     }
                     if logStepTimeline {
                         lastWhoopStepTimelineAt = receivedAt
-                        recordVendorTimeline("WHOOP Type-47 v18 step-counter decode rejected · \(error) · raw frame retained")
+                        recordVendorTimeline("WHOOP Type-47 v18 motion-field candidate rejected · \(error) · raw frame retained")
                     }
                 }
 
@@ -2512,26 +2470,22 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     receivedAt: receivedAt,
                     recordType: 47,
                     revision: 18,
-                    intervalsMilliseconds: decoded?.rrIntervalsMilliseconds ?? [],
-                    rawRRWords: decoded?.rawRRWords,
+                    intervalsMilliseconds: [],
+                    rawRRWords: rawWords,
                     rawFrameHex: rawHex,
-                    heartRateBPM: decoded?.heartRateBPM,
-                    physiologicalTimestamp: decoded?.timestamp,
-                    decodeError: decodeError,
-                    physiologyLayoutVerified: decoded != nil
+                    heartRateBPM: nil,
+                    physiologicalTimestamp: nil,
+                    decodeError: decodeError ?? "Type-47 v18 RR/HR/time layout and units remain unverified",
+                    physiologyLayoutVerified: false
                 )
                 pendingHistoricalRRArchiveRecords.append(record)
                 if pendingHistoricalRRArchiveRecords.count >= historicalRRArchiveBatchSize {
                     _ = flushHistoricalRRArchive()
                 }
 
-                if let decoded {
-                    let hrText = decoded.heartRateBPM.map { "\($0) bpm" } ?? "HR unavailable/off-wrist"
-                    let rrText = decoded.rrIntervalsMilliseconds.map(String.init).joined(separator: ",")
-                    whoopHistorySyncStatus = "Type-47 v18 decoded · \(decoded.rrIntervalsMilliseconds.count) RR interval(s) · physiology timestamp \(ISO8601DateFormatter().string(from: decoded.timestamp))"
-                    return "HISTORICAL_DATA v18 · HR \(hrText) · RR [\(rrText)] ms · unix \(ISO8601DateFormatter().string(from: decoded.timestamp)) · CRC valid"
-                }
-                return "HISTORICAL_DATA v18 · raw frame retained · decode rejected · \(decodeError ?? "unknown error") · CRC valid"
+                let wordText = (rawWords ?? []).map(String.init).joined(separator: ",")
+                whoopHistorySyncStatus = "Type-47 v18 raw candidate retained · \(rawWords?.count ?? 0) RR word(s) · no ms/HR/time/steps promoted"
+                return "HISTORICAL_DATA v18 · raw RR candidates [\(wordText)] · physiology/steps withheld · CRC valid"
             }
 
             // WHOOP 5 R22 can carry the same 1,244-byte R21 IMU body inside
@@ -2576,10 +2530,19 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 }
             }
 
-            publishIMUStatusIfNeeded("Historical WHOOP 5 frame retained · \(b.count) bytes · inner revision \(b.count > 9 ? Int(b[9]) : -1) · R21 decode not matched")
-            return "HISTORICAL_DATA(0x2F) · \(b.count) bytes · raw retained"
+            if let record = HistoricalRRPacketRecord.unmappedType47Candidate(frame: b, receivedAt: Date()) {
+                pendingHistoricalRRArchiveRecords.append(record)
+                if pendingHistoricalRRArchiveRecords.count >= historicalRRArchiveBatchSize {
+                    _ = flushHistoricalRRArchive()
+                }
+                whoopHistorySyncStatus = "Unmapped Type-47 frame archived raw · byte[9] candidate marker \(record.revision)"
+                recordVendorTimeline("Unmapped Type-47 historical frame retained · candidate marker \(record.revision) · \(b.count) bytes · no field interpretation")
+                return "HISTORICAL_DATA · unmapped Type-47 raw frame retained · byte[9] candidate marker \(record.revision) · CRC valid"
+            }
+            publishIMUStatusIfNeeded("Historical WHOOP 5 frame retained · \(b.count) bytes · no verified layout match")
+            return "HISTORICAL_DATA · raw retained · no verified layout match"
 
-        case 40: // WHOOP 5.0 REALTIME_DATA · offsets correlated against 19 live device frames
+        case 40: // WHOOP 5.0 REALTIME_DATA · HR byte device-correlated; RR/motion fields remain candidates
             whoopRealtimePacketCount += 1
             let receivedAt = Date()
             let capturedAt = ISO8601DateFormatter().string(from: receivedAt)
@@ -2601,14 +2564,14 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
             // Only the extended candidate layout can currently expose step counters.
             do {
-                let step = try Whoop5RRDecoder.decodeRealtimeStepCounter(b)
-                stepSignalSelectedCounter = step.selectedCounter
-                stepSignalHardwareCounter = step.hardwareCounter
-                stepSignalCadence = step.cadenceRaw
-                stepSignalActivity = step.activityRaw
-                stepSignalSoftwareOverride = step.softwareOverride
-                stepSignalLastOutcome = "Extended Type-40 candidate decoded · awaiting counter movement / source validation"
-                recordVendorTimeline("WHOOP Type-40 step candidate · selected=\(step.selectedCounter) · hardware=\(step.hardwareCounter) · cadenceRaw=\(step.cadenceRaw) · activity=\(step.activityRaw) · softwareOverride=\(step.softwareOverride)")
+                let step = try Whoop5RRDecoder.decodeRealtimeStepCounterCandidate(b)
+                stepSignalSelectedCounter = step.selectedCounterCandidate
+                stepSignalHardwareCounter = step.hardwareCounterCandidate
+                stepSignalCadence = step.cadenceRawCandidate
+                stepSignalActivity = step.activityRawCandidate
+                stepSignalSoftwareOverride = step.softwareOverrideCandidate
+                stepSignalLastOutcome = "Type-40 motion-field candidates only · not counted; WHOOP R24 parser pending"
+                recordVendorTimeline("WHOOP Type-40 motion-field candidates · selected=\(step.selectedCounterCandidate) · hardware=\(step.hardwareCounterCandidate) · cadenceRaw=\(step.cadenceRawCandidate) · activity=\(step.activityRawCandidate) · softwareOverride=\(step.softwareOverrideCandidate)")
             } catch {
                 stepSignalLastOutcome = b.count < 65
                     ? "HR-only / short frame (\(b.count) bytes); step fields are not present"
@@ -2643,14 +2606,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 if rawWords.isEmpty {
                     whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · RR count is zero"
                 } else {
-                    // WHOOP 5.0 firmware 50.42.1 Type-40 RR values are
-                    // UInt16 ticks at 1/1024 second. Convert only after the
-                    // complete CRC-valid frame and declared count are checked.
-                    let intervals = try Whoop5RRDecoder.decodeRealtimeRRIntervalsMilliseconds(b)
-                    if !intervals.isEmpty {
-                        appendRRIntervals(intervals, source: "WHOOP 5.0 realtime")
-                    }
-                    whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · \(intervals.count) RR interval(s) · 1/1024s ticks → ms"
+                    let wordText = rawWords.map(String.init).joined(separator: ",")
+                    whoopRealtimeCandidateStatus = "Type-40 HR \(bpm) bpm · raw RR candidates [\(wordText)] · offsets/units unverified; not published as ms"
                 }
             } catch {
                 whoopRealtimeCandidateRRWords.removeAll(keepingCapacity: true)
