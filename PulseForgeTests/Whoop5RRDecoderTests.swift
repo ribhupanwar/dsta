@@ -25,6 +25,22 @@ final class Whoop5RRDecoderTests: XCTestCase {
         XCTAssertEqual(try Whoop5RRDecoder.decodeHistoricalV18(frame), [602, 613])
     }
 
+    func testDecodesHistoricalV18PhysiologicalTimestamp() {
+        // Timestamp fields are from the Gen5 shared historical header:
+        // frame[15...18] Unix seconds LE, frame[19...20] Q15 fraction.
+        let frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
+        let timestamp = Whoop5RRDecoder.decodeHistoricalV18Timestamp(frame)
+        XCTAssertNotNil(timestamp)
+        XCTAssertEqual(timestamp!.timeIntervalSince1970,
+                       1_780_920_246 + 0x4666 / 32768.0, accuracy: 0.0001)
+    }
+
+    func testHistoricalTimestampRejectsWrongRevision() {
+        var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
+        frame[9] = 17
+        XCTAssertNil(Whoop5RRDecoder.decodeHistoricalV18Timestamp(frame))
+    }
+
     func testRealtimePacketWithZeroRRCountReturnsNoIntervals() throws {
         // A valid type-40 HR frame may omit RR data; never synthesize RR values.
         var frame = bytes("aa011800010022e128029ea0266aae4762025b024b020000000001005ed515dc")
