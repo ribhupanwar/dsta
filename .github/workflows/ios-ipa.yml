@@ -7,6 +7,7 @@ on:
       - main
       - feature/woop-reference-ui-port
       - feature/motion-activation-probe
+      - ui/whoop-native-shell-v1
     paths:
       - "PulseForge/**"
       - "project.yml"
