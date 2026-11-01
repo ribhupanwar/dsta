@@ -698,6 +698,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             workoutDetectionStatus = "Workout recovered after app restart · partial data"
             persistWorkoutSession()
         }
+        restoreHistoricalMetricsFromArchive()
         #if targetEnvironment(simulator)
         // CoreBluetooth state restoration is unavailable in the CI simulator
         // host because its generated Info.plist may not carry bluetooth-central.
@@ -2494,6 +2495,29 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
         statusText = "Live HR · \(bpm) bpm · \(heartRateUpdateCount) update(s)"
     }
 
+    /// Restore previously archived band metrics at launch; no fresh BLE sync is required.
+    private func restoreHistoricalMetricsFromArchive() {
+        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+        let archiveURL = support.appendingPathComponent("PulseForge", isDirectory: true)
+            .appendingPathComponent("historical-whoop-rr-v1.json")
+        DispatchQueue.global(qos: .utility).async {
+            let records = HistoricalRRPacketArchive.load(from: archiveURL)
+            let result = HistoricalRecoveryMetrics.calculate(from: records)
+            let sleepSamples = records.compactMap(\.sleepStateRaw)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.whoopHistoricalRecoveryMetrics = result
+                self.whoopHistoricalSleepStateSampleCount = sleepSamples.count
+                self.whoopHistoricalLatestSleepStateRaw = sleepSamples.last
+                self.whoopHistoricalRecoveryMetricsStatus = records.isEmpty
+                    ? "No archived Gen5 history yet · connect WHOOP and sync history"
+                    : "Restored archive · \(result.qualifyingHRVWindows) valid HRV window(s) · \(result.validHeartRateSamples) HR samples"
+                if !records.isEmpty {
+                    self.whoopHistoricalRRSource = "Restored \(records.count) historical Gen5 packet(s) from this device"
+                }
+            }
+        }
+    }
     /// Recompute once the historical offload stream has been quiet for 15 seconds.
     /// This avoids rescanning a growing archive for every one-second packet.
     private func scheduleHistoricalMetricsRefresh(from archiveURL: URL) {
