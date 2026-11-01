@@ -76,7 +76,9 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
                 }
                 bytes.append(byte)
             }
-            migratedV18 = validHex ? try? Whoop5RRDecoder.decodeHistoricalV18Biometrics(bytes) : nil
+            migratedV18 = validHex && Whoop5FrameValidator.isValid(bytes)
+                ? try? Whoop5RRDecoder.decodeHistoricalV18Biometrics(bytes)
+                : nil
         } else {
             migratedV18 = nil
         }

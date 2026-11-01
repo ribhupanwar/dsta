@@ -252,6 +252,35 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         XCTAssertEqual(restored.physiologicalTimestamp, timestamp)
     }
 
+    func testLegacyV18FrameWithInvalidCRCDoesNotPromotePhysiology() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let validHex = "AA01740001003FB12F128037170700FA9AE36A9939004B015F030000000000000000992C074B0000FF4034793C00005CBF71FD30BEC3B5FF3E6C01F200000000000000000031013B01F90C900A010C060C10000000000000000000000000000000000000000000000100A1B724230000001A30A8C00000002AC67557"
+        var frame = stride(from: 0, to: validHex.count, by: 2).map { offset -> UInt8 in
+            let start = validHex.index(validHex.startIndex, offsetBy: offset)
+            let end = validHex.index(start, offsetBy: 2)
+            return UInt8(validHex[start..<end], radix: 16)!
+        }
+        frame[30] ^= 0x01 // Preserve header, invalidate the payload CRC.
+        let corruptHex = frame.map { String(format: "%02X", $0) }.joined()
+        let legacy = """
+        [{"receivedAt":"2026-10-30T00:00:00Z","recordType":47,"revision":18,
+          "intervalsMilliseconds":[863],"rawRRWords":[863],
+          "rawFrameHex":"\(corruptHex)","heartRateBPM":75,
+          "physiologicalTimestamp":"2026-10-29T19:14:02Z","decodeError":null}]
+        """
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try Data(legacy.utf8).write(to: url)
+
+        let migrated = try XCTUnwrap(HistoricalRRPacketArchive.loadThrowing(from: url).first)
+        XCTAssertEqual(migrated.intervalsMilliseconds, [])
+        XCTAssertEqual(migrated.rawRRWords, [863])
+        XCTAssertNil(migrated.heartRateBPM)
+        XCTAssertNil(migrated.physiologicalTimestamp)
+        XCTAssertFalse(migrated.physiologyLayoutVerified)
+    }
+
     func testAppendDoesNotOverwriteCorruptExistingArchive() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

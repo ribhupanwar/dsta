@@ -2756,40 +2756,15 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     }
 
     private func isValidWhoop5Frame(_ b: [UInt8]) -> Bool {
-        guard b.count >= 12, b[0] == 0xAA, b[1] == 0x01 else { return false }
-        let declared = Int(b[2]) | (Int(b[3]) << 8)
-        guard declared >= 4, 8 + declared == b.count else { return false }
-        let storedHeaderCRC = UInt16(b[6]) | (UInt16(b[7]) << 8)
-        guard crc16Modbus(Array(b[0..<6])) == storedHeaderCRC else { return false }
-        let payloadEnd = b.count - 4
-        let paddedInner = Array(b[8..<payloadEnd])
-        let storedPayloadCRC = UInt32(b[payloadEnd])
-            | (UInt32(b[payloadEnd + 1]) << 8)
-            | (UInt32(b[payloadEnd + 2]) << 16)
-            | (UInt32(b[payloadEnd + 3]) << 24)
-        return crc32(paddedInner) == storedPayloadCRC
+        Whoop5FrameValidator.isValid(b)
     }
 
     private func crc16Modbus(_ bytes: [UInt8]) -> UInt16 {
-        var crc: UInt16 = 0xFFFF
-        for byte in bytes {
-            crc ^= UInt16(byte)
-            for _ in 0..<8 {
-                crc = (crc & 1) == 1 ? (crc >> 1) ^ 0xA001 : (crc >> 1)
-            }
-        }
-        return crc
+        Whoop5FrameValidator.crc16Modbus(bytes)
     }
 
     private func crc32(_ bytes: [UInt8]) -> UInt32 {
-        var crc: UInt32 = 0xFFFFFFFF
-        for byte in bytes {
-            crc ^= UInt32(byte)
-            for _ in 0..<8 {
-                crc = (crc & 1) == 1 ? (crc >> 1) ^ 0xEDB88320 : (crc >> 1)
-            }
-        }
-        return crc ^ 0xFFFFFFFF
+        Whoop5FrameValidator.crc32(bytes)
     }
 
     /// Gen5 IMU mode toggle (0x6A), revision 1: [0x01, on/off].
