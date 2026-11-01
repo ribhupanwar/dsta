@@ -91,6 +91,24 @@ jobs:
             echo "- Signing: unsigned; install through SideStore/AltStore signing flow."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Validate exported IPA payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s PulseForge-unsigned.ipa
+          unzip -t PulseForge-unsigned.ipa
+          TEMP_DIR="$(mktemp -d)"
+          trap 'rm -rf "$TEMP_DIR"' EXIT
+          unzip -q PulseForge-unsigned.ipa -d "$TEMP_DIR"
+          APP="$TEMP_DIR/Payload/PulseForge.app"
+          test -d "$APP"
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
+          EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")"
+          test "$BUNDLE_ID" = "com.ribhupanwar.pulseforge"
+          test -s "$APP/$EXECUTABLE"
+          echo "Validated bundle: $BUNDLE_ID"
+          echo "Validated executable: $EXECUTABLE"
+
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
