@@ -1673,19 +1673,24 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "COMMAND_RESPONSE · TOGGLE_IMU_MODE(106) · \(resultName)"
             }
             if command == 145 {
-                if result == 1 && echoedSequence == 1 {
+                // GET_HELLO is the fixed CLIENT_HELLO handshake response. Its
+                // byte [9] is not a reliable host command-sequence echo on all
+                // captured Gen5 firmware responses (e.g. valid 124-byte reply
+                // reported 179 there). Validate success + complete body, then
+                // let sendRealtimeHrEnable's per-session guard ensure one ON.
+                if result == 1 {
                     let responseHex = b.map { String(format: "%02X", $0) }.joined(separator: " ")
-                    recordVendorTimeline("GET_HELLO response raw HEX · \(responseHex)")
+                    recordVendorTimeline("GET_HELLO response raw HEX · reported seq field \(echoedSequence) · \(responseHex)")
                 }
-                guard result == 1, echoedSequence == 1 else {
-                    return "COMMAND_RESPONSE · GET_HELLO · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
+                guard result == 1 else {
+                    return "COMMAND_RESPONSE · GET_HELLO · reported seq field \(echoedSequence) · result \(resultName) · CRC valid"
                 }
                 // Gen5 HELLO revision-1 semantic body spans 104 bytes.
                 guard b.count >= 121 else {
                     recordVendorTimeline("GET_HELLO response rejected · body too short · \(b.count) bytes")
                     return "COMMAND_RESPONSE · GET_HELLO success but body too short (\(b.count) bytes)"
                 }
-                recordVendorTimeline("GET_HELLO response accepted · sequence 1 · success · minimum body length met")
+                recordVendorTimeline("GET_HELLO response accepted · success · body length \(b.count) · requesting realtime HR")
                 whoopSessionPhase = "GET_HELLO response parsed · requesting realtime HR"
                 sendRealtimeHrEnable(to: peripheral)
                 return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR enable requested"
