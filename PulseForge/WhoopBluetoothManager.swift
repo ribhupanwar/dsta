@@ -147,6 +147,8 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var whoopIMULastRawFrameHex = "none"
     private var whoopIMURawFrameHistory: [String] = []
     @Published private(set) var liveWhoopIMUSamples: [WhoopIMUSample] = []
+    // Decoded Type-47 offload samples stay separate from realtime/workout data.
+    @Published private(set) var historicalWhoopIMUSamples: [WhoopIMUSample] = []
     @Published private(set) var workoutWhoopIMUSamples: [WhoopIMUSample] = []
     private var lastWhoopIMUPersistedSampleCount = 0
     // Keep high-rate sensor ingestion separate from SwiftUI publication.
@@ -1163,6 +1165,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMULastRawFrameHex = "none"
         whoopIMURawFrameHistory.removeAll()
         liveWhoopIMUSamples.removeAll()
+        historicalWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoopRRIntervalsMilliseconds.removeAll()
         whoopRRWindowMilliseconds.removeAll()
@@ -1277,6 +1280,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMUSampleCount = 0
         whoopIMULastFrameAt = nil
         liveWhoopIMUSamples.removeAll()
+        historicalWhoopIMUSamples.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoopRRIntervalsMilliseconds.removeAll()
         whoopRRWindowMilliseconds.removeAll()
@@ -1960,9 +1964,13 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         enqueueIMUDiagnostics(rawFrameHex: rawHex, status: "Historical Gen5 R21 buffer valid · no paired samples")
                         return "HISTORICAL_R21_IMU(0x2F) · no paired samples · CRC valid"
                     }
-                    // Historical offload is archived only. Never feed it into the
-                    // live dashboard or an active workout's realtime motion samples.
+                    // Keep historical display samples separate: they may populate the four
+                    // diagnostic metrics, but never enter realtime or workout buffers.
                     _ = DailyIMUMotionHistoryStore.shared.append(decoded)
+                    historicalWhoopIMUSamples.append(contentsOf: decoded)
+                    if historicalWhoopIMUSamples.count > 2000 {
+                        historicalWhoopIMUSamples.removeFirst(historicalWhoopIMUSamples.count - 2000)
+                    }
                     enqueueIMUDiagnostics(sampleCount: decoded.count, rawFrameHex: rawHex,
                                           status: "Historical Gen5 R21 history decoded · \(decoded.count) paired samples · archived · not live")
                     return "HISTORICAL_R21_IMU(0x2F) · decoded \(decoded.count) samples · CRC valid"
