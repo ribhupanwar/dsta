@@ -25,6 +25,7 @@ enum ForgeTab: String, CaseIterable {
     case strain = "Strain"
     case run = "Activity"
     case device = "WHOOP"
+    case community = "Community"
 
     var symbol: String {
         switch self {
@@ -56,6 +57,7 @@ struct MainTabView: View {
                 case .strain: StrainDashboard()
                 case .run: WoopActivityDashboard()
                 case .device: DeviceDashboard()
+                case .community: WoopCommunityScreen()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -73,28 +75,74 @@ struct MainTabView: View {
 struct ForgeTabBar: View {
     @Binding var selected: ForgeTab
 
+    private let visibleTabs: [(String, String, ForgeTab)] = [
+        ("Home", "house.fill", .today),
+        ("Health", "heart.fill", .recovery),
+        ("Community", "person.2.fill", .community)
+    ]
+
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(ForgeTab.allCases, id: \.self) { tab in
-                Button { selected = tab } label: {
-                    VStack(spacing: 5) {
-                        Image(systemName: tab.symbol).font(.system(size: 16, weight: .semibold))
-                        Text(tab.rawValue).font(.system(size: 8, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.75)
-                    }
-                    .foregroundStyle(selected == tab ? ForgeColors.lime : ForgeColors.muted)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+        HStack(spacing: 4) {
+            ForEach(visibleTabs, id: \.2) { item in
+                tabButton(title: item.0, symbol: item.1, tab: item.2)
+            }
+            Menu {
+                Button("Sleep", systemImage: "moon.zzz.fill") { selected = .sleep }
+                Button("Strain", systemImage: "flame.fill") { selected = .strain }
+                Button("Activity", systemImage: "figure.run") { selected = .run }
+                Button("Device", systemImage: "waveform.path.ecg") { selected = .device }
+            } label: {
+                VStack(spacing: 5) {
+                    Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold))
+                    Text("More").font(WoopTypography.label(8)).lineLimit(1)
                 }
-                .buttonStyle(.plain)
+                .foregroundStyle([ForgeTab.sleep, .strain, .run, .device].contains(selected) ? Color.white : WoopReplicaPalette.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(ForgeColors.card.opacity(0.97), in: Capsule())
-        .overlay(Capsule().stroke(ForgeColors.stroke, lineWidth: 1))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(WoopReplicaPalette.surface, in: Capsule())
+        .overlay(Capsule().stroke(WoopReplicaPalette.hairline, lineWidth: 1))
         .shadow(color: .black.opacity(0.22), radius: 14, y: 5)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 20)
         .padding(.bottom, 8)
+    }
+
+    private func tabButton(title: String, symbol: String, tab: ForgeTab) -> some View {
+        Button { selected = tab } label: {
+            VStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: 16, weight: .semibold))
+                Text(title).font(WoopTypography.label(8)).lineLimit(1)
+            }
+            .foregroundStyle(selected == tab ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background {
+                if selected == tab {
+                    Capsule().fill(WoopReplicaPalette.surfaceRaised)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct WoopCommunityScreen: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("COMMUNITY").font(WoopTypography.label(11)).tracking(1.8)
+                .foregroundStyle(WoopReplicaPalette.secondary)
+            Text("Community").font(WoopTypography.emphasis(24))
+                .foregroundStyle(WoopReplicaPalette.primary)
+            Text("Your community feed will appear here.")
+                .font(WoopTypography.body(12)).foregroundStyle(WoopReplicaPalette.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(WoopReplicaPalette.canvas.ignoresSafeArea())
     }
 }
 
