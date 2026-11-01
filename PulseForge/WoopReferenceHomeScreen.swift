@@ -74,7 +74,7 @@ struct WoopReferenceHomeScreen: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Text(title).font(WoopTypography.label(8)).tracking(0.7).foregroundStyle(WoopReplicaPalette.secondary)
-                Text(value).font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(tint)
+                Text(value).font(WoopTypography.metric(16)).monospacedDigit().foregroundStyle(tint)
             }.frame(maxWidth: .infinity).contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
@@ -85,7 +85,7 @@ struct WoopReferenceHomeScreen: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("DEVICE · LIVE HEART RATE").font(WoopTypography.label(8)).tracking(0.7).foregroundStyle(WoopReplicaPalette.secondary)
                 Text(bluetooth.freshHeartRateBPM.map { "\($0) BPM" } ?? "Waiting for wearable data")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
+                    .font(WoopTypography.emphasis(13)).monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
             }
             Spacer()
             Circle().fill(bluetooth.freshHeartRateBPM == nil ? WoopReplicaPalette.muted : WoopReplicaPalette.recoveryHigh).frame(width: 7, height: 7)
@@ -174,7 +174,7 @@ struct WoopReferenceHomeScreen: View {
     private func dayMetric(_ title: String, value: String) -> some View {
         VStack(spacing: 5) {
             Text(title).font(WoopTypography.label(7)).tracking(0.4).foregroundStyle(WoopReplicaPalette.secondary)
-            Text(value).font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
+            Text(value).font(WoopTypography.metric(16)).monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
         }.frame(maxWidth: .infinity)
     }
 
@@ -192,7 +192,7 @@ struct WoopReferenceHomeScreen: View {
                         }
                         Spacer()
                         Text(health.latestRunDistanceKm.map { String(format: "%.2f km", $0) } ?? "Distance —")
-                            .font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(WoopReplicaPalette.primary)
+                            .font(WoopTypography.emphasis(11)).foregroundStyle(WoopReplicaPalette.primary)
                     }
                     HStack(spacing: 14) {
                         activityMetric("DURATION", health.latestRunDurationMinutes.map { "\(Int($0.rounded())) min" } ?? "—")
@@ -209,7 +209,7 @@ struct WoopReferenceHomeScreen: View {
     private func activityMetric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(WoopTypography.label(7)).foregroundStyle(WoopReplicaPalette.muted)
-            Text(value).font(.system(size: 10, weight: .semibold, design: .rounded)).foregroundStyle(WoopReplicaPalette.secondary)
+            Text(value).font(WoopTypography.metricBold(10)).foregroundStyle(WoopReplicaPalette.secondary)
         }
     }
 
