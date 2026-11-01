@@ -38,10 +38,6 @@ struct WoopReferenceSleepScreen: View {
             .padding(.top, 14)
         }
         .background(WoopReplicaPalette.canvas.ignoresSafeArea())
-        .refreshable {
-            health.refresh()
-            insights.refresh()
-        }
     }
 
     private var header: some View {
