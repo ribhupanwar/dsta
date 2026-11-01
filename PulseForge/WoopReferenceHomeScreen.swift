@@ -11,8 +11,17 @@ struct WoopReferenceHomeScreen: View {
     @State private var showingLoad = false
     @State private var showingWHOOPImport = false
 
+    private var importedRecoveryScore: Int? {
+        whoopImport.latestNight?.recoveryScore.map { Int($0.rounded()) }
+    }
+    private var importedSleepHours: Double? {
+        whoopImport.latestNight?.asleepMinutes.map { $0 / 60 }
+    }
+    private var importedSleepNeedHours: Double? {
+        whoopImport.latestNight?.sleepNeedMinutes.map { $0 / 60 }
+    }
     private var recoveryTint: Color {
-        guard let score = insights.recoveryScore else { return WoopReplicaPalette.muted }
+        guard let score = importedRecoveryScore else { return WoopReplicaPalette.muted }
         return score >= 67 ? WoopReplicaPalette.recoveryHigh : (score >= 34 ? WoopReplicaPalette.recoveryMid : WoopReplicaPalette.recoveryLow)
     }
 
@@ -28,7 +37,7 @@ struct WoopReferenceHomeScreen: View {
                 myDay
                 activities
                 trend
-                Text("HealthKit measurements and PulseForge estimates are not WHOOP proprietary scores.")
+                Text("Recovery and Sleep history above are sourced from the imported WHOOP export. Missing WHOOP measurements remain blank.")
                     .font(WoopTypography.body(9)).foregroundStyle(WoopReplicaPalette.muted)
                     .padding(.bottom, 110)
             }
@@ -43,7 +52,7 @@ struct WoopReferenceHomeScreen: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showingRecovery = false } } }
             }
-            .environmentObject(health).environmentObject(insights).environmentObject(bluetooth)
+            .environmentObject(health).environmentObject(insights).environmentObject(bluetooth).environmentObject(whoopImport)
             .preferredColorScheme(.dark)
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
@@ -96,9 +105,9 @@ struct WoopReferenceHomeScreen: View {
 
     private var scoreStrip: some View {
         HStack(spacing: 0) {
-            stripMetric("RECOVERY", value: insights.recoveryScore.map { "\($0)%" } ?? "—", tint: recoveryTint) { showingRecovery = true }
+            stripMetric("RECOVERY", value: importedRecoveryScore.map { "\($0)%" } ?? "—", tint: recoveryTint) { showingRecovery = true }
             separator
-            stripMetric("SLEEP", value: health.sleepHours.map { String(format: "%.1f h", $0) } ?? "—", tint: WoopReplicaPalette.sleep) { showingSleep = true }
+            stripMetric("SLEEP", value: importedSleepHours.map { String(format: "%.1f h", $0) } ?? "—", tint: WoopReplicaPalette.sleep) { showingSleep = true }
             separator
             stripMetric("LOAD PTS", value: insights.cardioLoadPoints.map { String(format: "%.1f", $0) } ?? "—", tint: WoopReplicaPalette.recoveryMid) { showingLoad = true }
         }
@@ -154,8 +163,8 @@ struct WoopReferenceHomeScreen: View {
 
     private var scoreRings: some View {
         HStack(spacing: 8) {
-            ring("RECOVERY", value: insights.recoveryScore, tint: recoveryTint) { showingRecovery = true }
-            ring("SLEEP", value: health.sleepHours.map { Int(($0 / max(1, insights.sleepNeedHours) * 100).rounded()) }, tint: WoopReplicaPalette.sleep) { showingSleep = true }
+            ring("RECOVERY", value: importedRecoveryScore, tint: recoveryTint) { showingRecovery = true }
+            ring("SLEEP", value: importedSleepHours.flatMap { hours in importedSleepNeedHours.map { Int((hours / max(1, $0) * 100).rounded()) } }, tint: WoopReplicaPalette.sleep) { showingSleep = true }
             Button { showingLoad = true } label: {
                 VStack(spacing: 8) {
                     ZStack {
