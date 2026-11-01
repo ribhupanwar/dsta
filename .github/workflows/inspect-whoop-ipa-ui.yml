@@ -1,0 +1,112 @@
+name: Inspect WHOOP 5.75.0 IPA UI reference
+
+on:
+  push:
+    branches: [analysis/whoop-5-75-0-ipa-ui]
+    paths:
+      - ".github/workflows/inspect-whoop-ipa-ui.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-whoop-ui:
+    runs-on: macos-15
+    steps:
+      - name: Download and verify exact WHOOP 5.75.0 IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            "https://github.com/ribhupanwar/dsta/releases/download/whoop-5.75.0/pulseforge.ipa" \
+            --output /tmp/whoop-5.75.0.ipa
+          echo "8a5deedc59567612683feb77dd7348238de89437123946b3344bc6ff1e90af8a  /tmp/whoop-5.75.0.ipa" | shasum -a 256 -c -
+          unzip -tq /tmp/whoop-5.75.0.ipa
+          mkdir -p whoop-ui-reference
+
+      - name: Inventory app bundle and decode available UI resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, plistlib, zipfile
+          from pathlib import Path
+          ipa = Path("/tmp/whoop-5.75.0.ipa")
+          out = Path("whoop-ui-reference")
+          with zipfile.ZipFile(ipa) as z:
+              names = sorted(z.namelist())
+              app_prefixes = sorted({n.split(".app/",1)[0]+".app/" for n in names if ".app/" in n})
+              report = {"ipa":"WHOOP 5.75.0","archive_entries":len(names),"apps":[],"ui_resources":[]}
+              for prefix in app_prefixes:
+                  plist_path = prefix+"Info.plist"
+                  info = plistlib.loads(z.read(plist_path)) if plist_path in names else {}
+                  entries = [n for n in names if n.startswith(prefix)]
+                  app = {"bundle_path":prefix,"bundle_id":info.get("CFBundleIdentifier"),"version":info.get("CFBundleShortVersionString"),"build":info.get("CFBundleVersion"),"executable":info.get("CFBundleExecutable"),"entries":len(entries)}
+                  report["apps"].append(app)
+                  for n in entries:
+                      low=n.lower()
+                      if low.endswith((".nib",".storyboardc",".car",".strings",".stringsdict",".json",".plist",".ttf",".otf",".ttc")) or "/base.lproj/" in low:
+                          report["ui_resources"].append({"path":n,"size":z.getinfo(n).file_size})
+              (out/"bundle-inventory.json").write_text(json.dumps(report,indent=2))
+              (out/"all-archive-paths.txt").write_text("\n".join(names)+"\n")
+              (out/"ui-resource-inventory.json").write_text(json.dumps(report["ui_resources"],indent=2))
+              for app in report["apps"]:
+                  print(json.dumps(app))
+          PY
+          APP_PATH="$(python3 -c 'import json; d=json.load(open("whoop-ui-reference/bundle-inventory.json")); print(d["apps"][0]["bundle_path"].rstrip("/"))')"
+          mkdir -p /tmp/whoop-app
+          unzip -q /tmp/whoop-5.75.0.ipa "${APP_PATH}/*" -d /tmp/whoop-app
+          APP="/tmp/whoop-app/${APP_PATH}"
+          echo "$APP" > /tmp/whoop-app-path.txt
+          find "$APP" -type f \( -name '*.nib' -o -name '*.storyboardc' -o -name '*.car' -o -name '*.strings' -o -name '*.stringsdict' \) -print > whoop-ui-reference/ui-resource-paths.txt
+
+      - name: Decode NIB and storyboard structures when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install github.com/tokenbleed/nibkit@latest
+          mkdir -p whoop-ui-reference/nibkit
+          APP="$(cat /tmp/whoop-app-path.txt)"
+          while IFS= read -r resource; do
+            rel="${resource#"$APP"/}"
+            dest="whoop-ui-reference/nibkit/${rel//\//_}"
+            if [[ "$resource" == *.nib ]]; then
+              nibkit info "$resource" > "${dest}.info.txt" 2>&1 || true
+              nibkit classes "$resource" > "${dest}.classes.txt" 2>&1 || true
+              nibkit wiring "$resource" > "${dest}.wiring.txt" 2>&1 || true
+            fi
+          done < whoop-ui-reference/ui-resource-paths.txt
+          find "$APP" -name '*.strings' -type f -print0 | while IFS= read -r -d '' f; do
+            name="$(basename "$(dirname "$f")")_$(basename "$f")"
+            plutil -p "$f" > "whoop-ui-reference/${name}.txt" 2>&1 || cp "$f" "whoop-ui-reference/${name}.txt"
+          done
+
+      - name: Extract asset catalog metadata and executable UI symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(cat /tmp/whoop-app-path.txt)"
+          mkdir -p whoop-ui-reference/assets
+          find "$APP" -name Assets.car -type f -print0 | while IFS= read -r -d '' car; do
+            name="$(basename "$(dirname "$car")")"
+            xcrun --sdk iphoneos assetutil --info "$car" > "whoop-ui-reference/assets/${name}-assetutil.json" 2>&1 || true
+          done
+          EXEC="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")"
+          BIN="$APP/$EXEC"
+          strings -a "$BIN" > whoop-ui-reference/executable-strings.txt
+          nm -m "$BIN" > whoop-ui-reference/executable-symbols.txt 2>&1 || true
+          otool -ov "$BIN" > whoop-ui-reference/objc-metadata.txt 2>&1 || true
+          grep -Ei 'SwiftUI|View|Dashboard|Recovery|Sleep|Strain|Activity|Workout|HeartRate|HRV|Navigation|TabView|Chart|Metric|Score|Device|Community' whoop-ui-reference/executable-strings.txt > whoop-ui-reference/ui-related-strings.txt || true
+          cat > whoop-ui-reference/README.md <<'EOF'
+          # WHOOP 5.75.0 UI reference extraction
+          Source: pinned release asset pulseforge.ipa (SHA-256 verified).
+          This is static inspection of a compiled iOS application. It inventories resources and extracts available strings, symbols, asset metadata, and NIB wiring. SwiftUI view source and exact runtime constraints are not guaranteed to be recoverable. Extracted proprietary assets/code are for analysis only and must not be copied into Woop; implement clean-room equivalents and preserve Woop fonts.
+          EOF
+
+      - name: Upload WHOOP 5.75.0 UI reference report
+        uses: actions/upload-artifact@v4
+        with:
+          name: whoop-5.75.0-ipa-ui-reference
+          path: whoop-ui-reference/
+          retention-days: 14
