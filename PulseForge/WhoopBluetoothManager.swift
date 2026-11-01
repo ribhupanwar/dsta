@@ -149,6 +149,9 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var liveWhoopIMUSamples: [WhoopIMUSample] = []
     // Decoded Type-47 offload samples stay separate from realtime/workout data.
     @Published private(set) var historicalWhoopIMUSamples: [WhoopIMUSample] = []
+    @Published private(set) var whoopHistoricalPacketArchiveStatus = "No unclassified Type-47 frames archived"
+    @Published private(set) var whoopHistoricalPacketLastRawFrameHex = "none"
+    private var whoopHistoricalPacketHistory: [String] = []
     @Published private(set) var workoutWhoopIMUSamples: [WhoopIMUSample] = []
     private var lastWhoopIMUPersistedSampleCount = 0
     // Keep high-rate sensor ingestion separate from SwiftUI publication.
@@ -893,6 +896,10 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
             "WHOOP IMU recent CRC-valid raw frames (oldest first):",
         ]
         lines.append(contentsOf: whoopIMURawFrameHistory.isEmpty ? ["  none"] : whoopIMURawFrameHistory.map { "  \($0)" })
+        lines.append("WHOOP unclassified Type-47 archive: \(whoopHistoricalPacketArchiveStatus)")
+        lines.append("WHOOP latest unclassified Type-47 raw frame hex: \(whoopHistoricalPacketLastRawFrameHex)")
+        lines.append("WHOOP unclassified Type-47 recent raw frames (oldest first):")
+        lines.append(contentsOf: whoopHistoricalPacketHistory.isEmpty ? ["  none"] : whoopHistoricalPacketHistory.map { "  \($0)" })
         lines.append(contentsOf: [
             "WHOOP protocol diagnosis: \(whoopProtocolDiagnostics)",
             "WHOOP packet counts · realtime: \(whoopRealtimePacketCount) · command responses: \(whoopCommandResponseCount)",
@@ -1166,6 +1173,9 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         whoopIMURawFrameHistory.removeAll()
         liveWhoopIMUSamples.removeAll()
         historicalWhoopIMUSamples.removeAll()
+        whoopHistoricalPacketArchiveStatus = "No unclassified Type-47 frames archived"
+        whoopHistoricalPacketLastRawFrameHex = "none"
+        whoopHistoricalPacketHistory.removeAll()
         whoopIMUStatus = "Waiting for WHOOP motion stream"
         whoopRRIntervalsMilliseconds.removeAll()
         whoopRRWindowMilliseconds.removeAll()
@@ -1980,8 +1990,46 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 }
             }
 
-            enqueueIMUDiagnostics(status: "Historical WHOOP 5 frame retained · \(b.count) bytes · inner revision \(b.count > 9 ? Int(b[9]) : -1) · R21 decode not matched")
-            return "HISTORICAL_DATA(0x2F) · \(b.count) bytes · raw retained"
+            // Preserve unclassified Type-47 revisions (including the R24
+            // steps candidate) as raw data. Do not guess payload offsets.
+            let receivedAt = Date()
+            let revision = b.count > 9 ? Int(b[9]) : nil
+            let rawHex = b.map { String(format: "%02X", $0) }.joined()
+            whoopHistoricalPacketLastRawFrameHex = rawHex
+            let timestamp = ISO8601DateFormatter().string(from: receivedAt)
+            whoopHistoricalPacketHistory.append(
+                "type=47 · \(timestamp) · channel=\(channel) · revision=\(revision.map(String.init) ?? "unknown") · \(b.count) bytes · \(rawHex)"
+            )
+            if whoopHistoricalPacketHistory.count > 40 {
+                whoopHistoricalPacketHistory.removeFirst(whoopHistoricalPacketHistory.count - 40)
+            }
+
+            let record = HistoricalWhoopPacketRecord(
+                receivedAt: receivedAt,
+                channel: channel,
+                packetType: type,
+                revision: revision,
+                byteCount: b.count,
+                transportCRCValidated: true,
+                rawFrameHex: rawHex,
+                classification: "unclassified historical Type-47 revision; raw only"
+            )
+            if let support = FileManager.default.urls(
+                for: .applicationSupportDirectory, in: .userDomainMask
+            ).first {
+                let archiveURL = support
+                    .appendingPathComponent("PulseForge", isDirectory: true)
+                    .appendingPathComponent("historical-whoop-type47-v1.json")
+                do {
+                    let count = try HistoricalWhoopPacketArchive.append(record, to: archiveURL)
+                    whoopHistoricalPacketArchiveStatus = "Archived \(count) unclassified Type-47 frame(s) · latest revision \(revision.map(String.init) ?? "unknown") · CRC valid"
+                } catch {
+                    whoopHistoricalPacketArchiveStatus = "Type-47 raw frame captured · archive failed · \(error.localizedDescription)"
+                }
+            } else {
+                whoopHistoricalPacketArchiveStatus = "Type-47 raw frame captured · local archive unavailable"
+            }
+            return "HISTORICAL_DATA(0x2F) · \(b.count) bytes · revision \(revision.map(String.init) ?? "unknown") · raw archived · CRC valid"
 
         case 40: // REALTIME_DATA; WHOOP 5 offsets: HR@16, RR count@17, RR u16-ms words@18+
             whoopRealtimePacketCount += 1
