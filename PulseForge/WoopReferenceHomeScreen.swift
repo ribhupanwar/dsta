@@ -25,7 +25,7 @@ struct WoopReferenceHomeScreen: View {
                 activities
                 trend
                 Text("HealthKit measurements and PulseForge estimates are not WHOOP proprietary scores.")
-                    .font(.system(size: 9)).foregroundStyle(WoopReplicaPalette.muted)
+                    .font(WoopTypography.body(9)).foregroundStyle(WoopReplicaPalette.muted)
                     .padding(.bottom, 110)
             }
             .padding(.horizontal, 16).padding(.top, 12)
@@ -43,13 +43,13 @@ struct WoopReferenceHomeScreen: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 5) {
-                Text("PULSEFORGE").font(.system(size: 11, weight: .bold)).tracking(2).foregroundStyle(WoopReplicaPalette.secondary)
+                Text("PULSEFORGE").font(WoopTypography.label(11)).tracking(2).foregroundStyle(WoopReplicaPalette.secondary)
                 Text(Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                    .font(.system(size: 21, weight: .semibold)).foregroundStyle(WoopReplicaPalette.primary)
+                    .font(WoopTypography.emphasis(21)).foregroundStyle(WoopReplicaPalette.primary)
             }
             Spacer()
             Button { health.refresh(); insights.refresh() } label: {
-                Image(systemName: "arrow.clockwise").font(.system(size: 15, weight: .semibold))
+                Image(systemName: "arrow.clockwise").font(WoopTypography.emphasis(15))
                     .foregroundStyle(WoopReplicaPalette.secondary).frame(width: 40, height: 40)
                     .background(WoopReplicaPalette.surfaceRaised, in: Circle())
             }.buttonStyle(.plain)
@@ -73,7 +73,7 @@ struct WoopReferenceHomeScreen: View {
     private func stripMetric(_ title: String, value: String, tint: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 6) {
-                Text(title).font(.system(size: 8, weight: .bold)).tracking(0.7).foregroundStyle(WoopReplicaPalette.secondary)
+                Text(title).font(WoopTypography.label(8)).tracking(0.7).foregroundStyle(WoopReplicaPalette.secondary)
                 Text(value).font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(tint)
             }.frame(maxWidth: .infinity).contentShape(Rectangle())
         }.buttonStyle(.plain)
@@ -83,7 +83,7 @@ struct WoopReferenceHomeScreen: View {
         HStack(spacing: 10) {
             Image(systemName: "waveform.path.ecg").foregroundStyle(WoopReplicaPalette.sleep)
             VStack(alignment: .leading, spacing: 3) {
-                Text("DEVICE · LIVE HEART RATE").font(.system(size: 8, weight: .bold)).tracking(0.7).foregroundStyle(WoopReplicaPalette.secondary)
+                Text("DEVICE · LIVE HEART RATE").font(WoopTypography.label(8)).tracking(0.7).foregroundStyle(WoopReplicaPalette.secondary)
                 Text(bluetooth.freshHeartRateBPM.map { "\($0) BPM" } ?? "Waiting for wearable data")
                     .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
             }
@@ -109,10 +109,10 @@ struct WoopReferenceHomeScreen: View {
                         Circle().trim(from: 0, to: CGFloat(min(100, max(0, value))) / 100)
                             .stroke(tint, style: StrokeStyle(lineWidth: 6, lineCap: .round)).rotationEffect(.degrees(-90))
                     }
-                    Text(value.map(String.init) ?? "—").font(.system(size: 22, weight: .medium, design: .rounded))
+                    Text(value.map(String.init) ?? "—").font(WoopTypography.metric(22))
                         .monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
                 }.frame(width: 68, height: 68)
-                Text(title).font(.system(size: 8, weight: .bold)).tracking(0.6).foregroundStyle(WoopReplicaPalette.secondary)
+                Text(title).font(WoopTypography.label(8)).tracking(0.6).foregroundStyle(WoopReplicaPalette.secondary)
             }.frame(maxWidth: .infinity).contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
@@ -133,11 +133,11 @@ struct WoopReferenceHomeScreen: View {
 
     private func monitor(_ title: String, value: String, unit: String, symbol: String) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            Label(title, systemImage: symbol).font(.system(size: 8, weight: .bold)).tracking(0.3)
+            Label(title, systemImage: symbol).font(WoopTypography.label(8)).tracking(0.3)
                 .foregroundStyle(WoopReplicaPalette.secondary).lineLimit(1).minimumScaleFactor(0.7)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(value).font(.system(size: 24, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
-                Text(unit).font(.system(size: 9)).foregroundStyle(WoopReplicaPalette.secondary)
+                Text(value).font(WoopTypography.metric(24)).monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
+                Text(unit).font(WoopTypography.body(9)).foregroundStyle(WoopReplicaPalette.secondary)
             }
         }.frame(maxWidth: .infinity, minHeight: 72, alignment: .leading).padding(12)
             .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 15))
@@ -158,7 +158,7 @@ struct WoopReferenceHomeScreen: View {
 
     private func dayMetric(_ title: String, value: String) -> some View {
         VStack(spacing: 5) {
-            Text(title).font(.system(size: 7, weight: .bold)).tracking(0.4).foregroundStyle(WoopReplicaPalette.secondary)
+            Text(title).font(WoopTypography.label(7)).tracking(0.4).foregroundStyle(WoopReplicaPalette.secondary)
             Text(value).font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
         }.frame(maxWidth: .infinity)
     }
@@ -169,11 +169,11 @@ struct WoopReferenceHomeScreen: View {
             if let date = health.latestRunDate {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(spacing: 9) {
-                        Image(systemName: "figure.run").font(.system(size: 17)).foregroundStyle(WoopReplicaPalette.sleep)
+                        Image(systemName: "figure.run").font(WoopTypography.body(17)).foregroundStyle(WoopReplicaPalette.sleep)
                             .frame(width: 36, height: 36).background(WoopReplicaPalette.surfaceInset, in: Circle())
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Running").font(.system(size: 12, weight: .semibold)).foregroundStyle(WoopReplicaPalette.primary)
-                            Text(date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())).font(.system(size: 9)).foregroundStyle(WoopReplicaPalette.secondary)
+                            Text("Running").font(WoopTypography.emphasis(12)).foregroundStyle(WoopReplicaPalette.primary)
+                            Text(date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())).font(WoopTypography.body(9)).foregroundStyle(WoopReplicaPalette.secondary)
                         }
                         Spacer()
                         Text(health.latestRunDistanceKm.map { String(format: "%.2f km", $0) } ?? "Distance —")
@@ -193,7 +193,7 @@ struct WoopReferenceHomeScreen: View {
 
     private func activityMetric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 7, weight: .bold)).foregroundStyle(WoopReplicaPalette.muted)
+            Text(title).font(WoopTypography.label(7)).foregroundStyle(WoopReplicaPalette.muted)
             Text(value).font(.system(size: 10, weight: .semibold, design: .rounded)).foregroundStyle(WoopReplicaPalette.secondary)
         }
     }
@@ -207,14 +207,14 @@ struct WoopReferenceHomeScreen: View {
 
     private func section(_ title: String, trailing: String? = nil) -> some View {
         HStack {
-            Text(title).font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(WoopReplicaPalette.secondary)
+            Text(title).font(WoopTypography.label(9)).tracking(1).foregroundStyle(WoopReplicaPalette.secondary)
             Spacer()
-            if let trailing { Text(trailing).font(.system(size: 8, weight: .bold)).foregroundStyle(WoopReplicaPalette.muted) }
+            if let trailing { Text(trailing).font(WoopTypography.label(8)).foregroundStyle(WoopReplicaPalette.muted) }
         }
     }
 
     private func emptyCard(_ message: String) -> some View {
-        Text(message).font(.system(size: 11)).lineSpacing(3).foregroundStyle(WoopReplicaPalette.secondary)
+        Text(message).font(WoopTypography.body(11)).lineSpacing(3).foregroundStyle(WoopReplicaPalette.secondary)
             .frame(maxWidth: .infinity, minHeight: 65, alignment: .leading).padding(13)
             .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 15))
     }
