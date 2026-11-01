@@ -74,3 +74,17 @@ R18 and R21 continue through their existing separate paths. This new archive tar
 ## Build/CI note
 
 The iOS CI font-extraction step was incorrectly searching an iOS WHOOP archive for Android-style `res/font/*.ttf` / `*.otf` paths. That assumption produced the #610 failure before Xcode project discovery/build. The step has been replaced with an optional bundled-font check so CI can proceed without misclassifying the IPA archive.
+
+
+## Follow-up Mach-O audit run #42 — 2026-11-01 15:06 UTC
+
+A fresh targeted audit artifact was generated from the same pinned WHOOP 5.75.0 binary (whoop-ipa-mach-o-protocol-audit, workflow run #42). It confirms the distinction between the R24 enum/type label and a parser:
+
+- At 0x105ce7fb8, the historical packet classifier masks its input to one byte (and x8, x0, #0xff), indexes the lookup table at 0x108ebdb70 with ldrb, and branches through the selected target. The R24 branch at 0x105ce8038 returns the R24 enum case and the string label. This identifies a one-byte classifier input, but does not prove which byte of the transport frame supplies it.
+- At 0x100802720, a separate IMU-data type-label builder masks its input to one byte and indexes the table at 0x108acfdee. Its R24 case returns the label and enum value. This remains metadata/type-description logic, not the R24 field reader.
+- The second xref at 0x105cf6378 is a collection of known historical packet type labels used by an analytics/model path. It is not a byte-level decode routine.
+- The step_count model ingestion code around 0x10036dcb4 was traced further. Its associated processing function at 0x10036e4a4 references the HealthKit symbol _HKQuantityTypeIdentifierStepCount at 0x10036ea68, alongside other HealthKit quantity types. This supports treating that path as a HealthKit-backed sample/model ingestion path; it does not establish that the R24 BLE packet is decoded there.
+
+**Result:** the latest static audit narrows the R24 discriminator to a one-byte argument passed into a lookup-table classifier, but still does not identify the transport-frame offset or the R24 record reader. No trustworthy R24 counter offset, integer width, endianness, unit, or reset semantics has been recovered. The native WHOOP step counter is therefore still **not cracked**. The raw Type-47 capture archive remains the required bridge between static disassembly and actual band traffic.
+
+Artifact provenance: GitHub Actions run #42, commit 53dbd8e15671b29aa50b9ac2f14fab8d938136fa, artifact whoop-ipa-mach-o-protocol-audit.
