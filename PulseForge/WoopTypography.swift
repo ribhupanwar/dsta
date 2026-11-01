@@ -14,7 +14,8 @@ enum WoopTypography {
 
     /// WHOOP's standard UI text face, verified against the APK's Proxima Nova regular binary.
     static func body(_ size: CGFloat) -> Font { proximaRegular(size) }
-    static func label(_ size: CGFloat) -> Font { dinProBold(size) }
-    static func metric(_ size: CGFloat) -> Font { dDinRegular(size) }
+    static func label(_ size: CGFloat) -> Font { proximaBold(size) }
+    static func metric(_ size: CGFloat) -> Font { dinProMedium(size) }
+    static func metricBold(_ size: CGFloat) -> Font { dinProBold(size) }
     static func emphasis(_ size: CGFloat) -> Font { proximaSemibold(size) }
 }
