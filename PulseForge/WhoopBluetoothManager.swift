@@ -1709,7 +1709,35 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 recordVendorTimeline("GET_HELLO response accepted · success · body length \(b.count) · requesting realtime HR")
                 whoopSessionPhase = "GET_HELLO response parsed · requesting realtime HR"
                 sendRealtimeHrEnable(to: peripheral)
-                return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · CRC valid · realtime HR enable requested"
+                // WHOOP 5 history requires a valid strap RTC before the flash store is served.
+                // Mirror NOOP's hardware-tested order: SET_CLOCK(146), GET_CLOCK(147),
+                // GET_DATA_RANGE(34), then SEND_HISTORICAL_DATA(22).
+                let now = UInt32(max(0, Date().timeIntervalSince1970))
+                let clockPayload: [UInt8] = [
+                    UInt8(now & 0xFF), UInt8((now >> 8) & 0xFF),
+                    UInt8((now >> 16) & 0xFF), UInt8((now >> 24) & 0xFF),
+                    0, 0, 0, 0
+                ]
+                let historyCommands: [(UInt8, [UInt8], String)] = [
+                    (146, clockPayload, "SET_CLOCK"),
+                    (147, [], "GET_CLOCK"),
+                    (34, [0x00], "GET_DATA_RANGE"),
+                    (22, [0x00], "SEND_HISTORICAL_DATA")
+                ]
+                if let commandCharacteristic = whoop5CommandCharacteristic,
+                   commandCharacteristic.properties.contains(.write) {
+                    for (opcode, payload, name) in historyCommands {
+                        let sequence = whoop5NextCommandSequence
+                        whoop5NextCommandSequence &+= 1
+                        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: opcode, payload: payload)
+                        whoop5PendingWrites.append("HISTORY_\\(name)")
+                        peripheral.writeValue(frame, for: commandCharacteristic, type: .withResponse)
+                        recordVendorTimeline("WHOOP history setup write · \\(name)(\\(opcode)) · seq=\\(sequence)")
+                    }
+                } else {
+                    recordVendorTimeline("WHOOP history setup skipped · command characteristic not writable")
+                }
+                return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · realtime HR + history setup requested"
             }
             if command == 3 {
                 if let offSequence = whoopEventProbeOffSequence,
@@ -1739,6 +1767,26 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · motion capture already requested"
             }
             return "COMMAND_RESPONSE · command \(command) · seq echo \(echoedSequence) · result \(resultName) · CRC valid"
+
+        case 49, 56: // WHOOP 5 METADATA / PUFFIN_METADATA.
+            guard b.count >= 29 else { return "METADATA · truncated · CRC valid" }
+            let metadataType = Int(b[10])
+            if metadataType == 2 { // HISTORY_END; ack the exact 8-byte cursor block.
+                guard let commandCharacteristic = whoop5CommandCharacteristic,
+                      commandCharacteristic.properties.contains(.write) else {
+                    return "HISTORY_END · cursor seen · command characteristic unavailable"
+                }
+                let endData = Array(b[21..<29])
+                let sequence = whoop5NextCommandSequence
+                whoop5NextCommandSequence &+= 1
+                let ack = buildWhoop5CommandFrame(sequence: sequence, opcode: 23,
+                                                  payload: [0x01] + endData)
+                whoop5PendingWrites.append("HISTORY_ACK")
+                peripheral.writeValue(ack, for: commandCharacteristic, type: .withResponse)
+                recordVendorTimeline("HISTORY_END ACK queued · cmd=23 · seq=\\(sequence) · cursor=\\(endData.map { String(format: "%02X", $0) }.joined())")
+                return "METADATA HISTORY_END · cursor ACK queued · CRC valid"
+            }
+            return "METADATA · subtype=\\(metadataType) · CRC valid"
 
         case 43: // Gen5 R21 realtime IMU buffer (0x2B); same v21 layout as historical 0x2F.
             whoopIMUFrameCount += 1
@@ -2525,6 +2573,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 whoopIMUStatus = "STOP_RAW_DATA write acknowledged · awaiting strap response"
                 recordVendorTimeline("STOP_RAW_DATA write callback · acknowledged by CoreBluetooth")
             }
+            return
+        }
+        if kind.hasPrefix("HISTORY_") {
+            recordVendorTimeline("\\(kind) write callback · \\(error == nil ? "CoreBluetooth acknowledged" : "failed · \\(error!.localizedDescription)")")
             return
         }
         if kind == "REALTIME_HR_OFF_PROBE" {
