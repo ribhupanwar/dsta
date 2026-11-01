@@ -70,6 +70,14 @@ struct MainTabView: View {
         .onChange(of: health.isAuthorized) { _, authorized in
             if authorized { insights.refresh() }
         }
+        .task {
+            // The HealthKit permission sheet was previously reachable only
+            // from the Device tab. Request it on first launch so HRV/RHR and
+            // other Apple Health metrics can actually begin populating.
+            if !health.isAuthorized {
+                await health.requestAccess()
+            }
+        }
     }
 }
 
