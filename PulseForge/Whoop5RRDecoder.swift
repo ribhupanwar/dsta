@@ -25,7 +25,7 @@ enum Whoop5RRDecoder {
         guard Int(frame[8]) == 40 else {
             throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
         }
-        return try decodeWords(frame, countOffset: 17, wordsOffset: 18)
+        return try decodeWords(frame, countOffset: 17, wordsOffset: 18, maximumCount: 32, signedWords: false, validRange: 250...3000)
     }
 
     /// Candidate HISTORICAL_DATA v18 layout (type 47), currently NOOP-fixture-derived:
@@ -41,7 +41,7 @@ enum Whoop5RRDecoder {
         guard Int(frame[9]) == 18 else {
             throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
         }
-        return try decodeWords(frame, countOffset: 23, wordsOffset: 24)
+        return try decodeWords(frame, countOffset: 23, wordsOffset: 24, maximumCount: 4, signedWords: true, validRange: 200...2500)
     }
 
     /// Gen5 historical header timestamp: unix seconds @ frame[15...18]
@@ -62,9 +62,11 @@ enum Whoop5RRDecoder {
     }
 
     private static func decodeWords(_ frame: [UInt8], countOffset: Int,
-                                    wordsOffset: Int) throws -> [Int] {
+                                    wordsOffset: Int, maximumCount: Int,
+                                    signedWords: Bool,
+                                    validRange: ClosedRange<Int>) throws -> [Int] {
         let count = Int(frame[countOffset])
-        guard count <= 32 else { throw DecodeError.invalidIntervalCount(count) }
+        guard count <= maximumCount else { throw DecodeError.invalidIntervalCount(count) }
         let required = count * 2
         let available = max(0, frame.count - 4 - wordsOffset) // exclude trailing CRC32
         guard available >= required else {
@@ -72,11 +74,13 @@ enum Whoop5RRDecoder {
         }
         let intervals = (0..<count).map { index -> Int in
             let offset = wordsOffset + index * 2
-            return Int(frame[offset]) | (Int(frame[offset + 1]) << 8)
+            let raw = Int(frame[offset]) | (Int(frame[offset + 1]) << 8)
+            if signedWords && raw >= 0x8000 { return raw - 0x10000 }
+            return raw
         }
-        // Broad physiological guardrail: retain plausible bradycardic and
-        // high-rate intervals while rejecting zero/padding and corrupt words.
-        guard let invalid = intervals.first(where: { !(250...3000).contains($0) }) else {
+        // Gen5 v18 has four signed i16 RR slots. Match the reference decoder's
+        // accepted physiological range; do not consume following fields as RR.
+        guard let invalid = intervals.first(where: { !validRange.contains($0) }) else {
             return intervals
         }
         throw DecodeError.invalidIntervalValue(invalid)
