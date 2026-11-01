@@ -149,6 +149,32 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var liveWhoopIMUSamples: [WhoopIMUSample] = []
     @Published private(set) var workoutWhoopIMUSamples: [WhoopIMUSample] = []
     private var lastWhoopIMUPersistedSampleCount = 0
+    // Keep high-rate sensor ingestion separate from SwiftUI publication.
+    private var pendingLiveIMUSamples: [WhoopIMUSample] = []
+    private var liveIMUPublishScheduled = false
+    private let liveIMUPublishInterval: TimeInterval = 0.25
+
+    private func enqueueLiveIMUSamplesForUI(_ samples: [WhoopIMUSample]) {
+        guard !samples.isEmpty else { return }
+        pendingLiveIMUSamples.append(contentsOf: samples)
+        guard !liveIMUPublishScheduled else { return }
+        liveIMUPublishScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + liveIMUPublishInterval) { [weak self] in
+            guard let self else { return }
+            let batch = self.pendingLiveIMUSamples
+            self.pendingLiveIMUSamples.removeAll(keepingCapacity: true)
+            self.liveIMUPublishScheduled = false
+            guard !batch.isEmpty else { return }
+            self.liveWhoopIMUSamples.append(contentsOf: batch)
+            if self.liveWhoopIMUSamples.count > 2000 {
+                self.liveWhoopIMUSamples.removeFirst(self.liveWhoopIMUSamples.count - 2000)
+            }
+            // If samples arrived during publication, schedule the next bounded update.
+            if !self.pendingLiveIMUSamples.isEmpty {
+                self.enqueueLiveIMUSamplesForUI([])
+            }
+        }
+    }
 
     var freshHeartRateBPM: Int? {
         guard connectedName != nil, let lastHeartRateAt,
@@ -1791,10 +1817,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 }
                 // Persist every decoded packet independently of workout recording.
                 _ = DailyIMUMotionHistoryStore.shared.append(decoded)
-                liveWhoopIMUSamples.append(contentsOf: decoded)
-                if liveWhoopIMUSamples.count > 2000 {
-                    liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 2000)
-                }
+                enqueueLiveIMUSamplesForUI(decoded)
                 if workoutIsRecording {
                     workoutWhoopIMUSamples.append(contentsOf: decoded)
                 }
@@ -1900,22 +1923,12 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         whoopIMUStatus = "Historical Gen5 R21 buffer valid · no paired samples"
                         return "HISTORICAL_R21_IMU(0x2F) · no paired samples · CRC valid"
                     }
-                    // Persist every decoded packet independently of workout recording.
-                _ = DailyIMUMotionHistoryStore.shared.append(decoded)
-                liveWhoopIMUSamples.append(contentsOf: decoded)
-                    if liveWhoopIMUSamples.count > 2000 {
-                        liveWhoopIMUSamples.removeFirst(liveWhoopIMUSamples.count - 2000)
-                    }
-                    if workoutIsRecording {
-                        workoutWhoopIMUSamples.append(contentsOf: decoded)
-                    }
+                    // Historical offload is archived only. Never feed it into the
+                    // live dashboard or an active workout's realtime motion samples.
+                    _ = DailyIMUMotionHistoryStore.shared.append(decoded)
                     whoopIMUSampleCount += decoded.count
-                    if workoutIsRecording,
-                       workoutWhoopIMUSamples.count - lastWhoopIMUPersistedSampleCount >= 500 {
-                        persistWorkoutSession()
-                    }
-                    whoopIMUStatus = "Gen5 R21 offload decoded · \(decoded.count) paired samples · 100 Hz"
-                    recordVendorTimeline("HISTORICAL R21 IMU decoded · \(decoded.count) samples · type 47 · 100 Hz")
+                    whoopIMUStatus = "Gen5 R21 history decoded · \(decoded.count) paired samples · archived · not live"
+                    recordVendorTimeline("HISTORICAL R21 IMU archived · \(decoded.count) samples · type 47 · 100 Hz")
                     return "HISTORICAL_R21_IMU(0x2F) · decoded \(decoded.count) samples · CRC valid"
                 } catch {
                     whoopIMUStatus = "Historical Gen5 R21 candidate rejected · \(error) · raw retained"
