@@ -88,10 +88,13 @@ struct ForgeTabBar: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 4)
-        .padding(.bottom, 18)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) { Rectangle().fill(ForgeColors.stroke).frame(height: 1) }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(ForgeColors.card.opacity(0.97), in: Capsule())
+        .overlay(Capsule().stroke(ForgeColors.stroke, lineWidth: 1))
+        .shadow(color: .black.opacity(0.22), radius: 14, y: 5)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 8)
     }
 }
 
@@ -2065,10 +2068,11 @@ struct ConnectPrompt: View {
 }
 
 enum ForgeColors {
-    static let background = Color(red: 0.018, green: 0.035, blue: 0.065)
-    static let card = Color(red: 0.035, green: 0.075, blue: 0.12)
-    static let track = Color(red: 0.08, green: 0.16, blue: 0.23)
-    static let stroke = Color(red: 0.12, green: 0.31, blue: 0.43).opacity(0.62)
-    static let muted = Color(red: 0.57, green: 0.68, blue: 0.77)
-    static let lime = Color(red: 0.12, green: 0.78, blue: 0.88)
+    // Shared WHOOP-reference visual tokens used by every PulseForge tab.
+    static let background = Color(red: 16/255, green: 20/255, blue: 24/255)
+    static let card = Color(red: 41/255, green: 54/255, blue: 62/255)
+    static let track = Color(red: 43/255, green: 48/255, blue: 52/255)
+    static let stroke = Color(red: 43/255, green: 48/255, blue: 52/255)
+    static let muted = Color(red: 176/255, green: 181/255, blue: 186/255)
+    static let lime = Color(red: 0, green: 232/255, blue: 45/255)
 }
