@@ -86,7 +86,7 @@ struct WoopReferenceSleepScreen: View {
                     Circle().trim(from: 0, to: min(1, max(0, (sleepHours ?? 0) / max(1, sleepNeedHours ?? 8))))
                         .stroke(WoopReplicaPalette.sleep, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                         .rotationEffect(.degrees(-90))
-                        .animation(.easeOut(duration: 0.7), value: health.sleepHours)
+                        .animation(.easeOut(duration: 0.7), value: sleepHours)
                     Image(systemName: "moon.zzz.fill").font(WoopTypography.body(22))
                         .foregroundStyle(WoopReplicaPalette.sleep)
                 }
@@ -170,10 +170,10 @@ struct WoopReferenceSleepScreen: View {
                     ZStack(alignment: .leading) {
                         Capsule().fill(WoopReplicaPalette.homeTrack)
                         Capsule().fill(WoopReplicaPalette.sleep)
-                            .frame(width: proxy.size.width * min(1, max(0, (health.sleepHours ?? 0) / max(1, insights.sleepNeedHours))))
+                            .frame(width: proxy.size.width * min(1, max(0, (sleepHours ?? 0) / max(1, sleepNeedHours ?? 8))))
                     }
                 }.frame(height: 9)
-                Text(health.sleepHours == nil
+                Text(sleepHours == nil
                      ? "Import a WHOOP export to populate historical sleep duration."
                      : "Measured sleep compared with your current estimated sleep need.")
                     .font(WoopTypography.body(10)).foregroundStyle(WoopReplicaPalette.secondary)
