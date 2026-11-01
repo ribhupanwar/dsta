@@ -130,7 +130,7 @@ enum HistoricalRecoveryMetrics {
             let upper = min(values.endIndex - 1, index + 2)
             let neighbours = values[lower...upper].enumerated()
                 .filter { lower + $0.offset != index && (300...2000).contains($0.element) }
-                .map(\.element)
+                .map { $0.element }
             if neighbours.count >= 2, let localMedian = median(neighbours) {
                 let threshold = max(200.0, Double(localMedian) * 0.20)
                 if abs(Double(value - localMedian)) > threshold {
