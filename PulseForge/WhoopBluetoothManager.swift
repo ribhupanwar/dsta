@@ -1944,7 +1944,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 do {
                     rr = try Whoop5RRDecoder.decodeHistoricalV18(b)
                     if rr.isEmpty {
-                        decodeError = "Candidate v18 layout decoded zero RR intervals"
+                        // A valid record may carry HR without an RR beat in this
+                        // one-second bucket. Preserve it for the RHR time series.
+                        whoopHistoricalRRSource = "Historical v18 HR-only record decoded"
                     } else {
                         // Historical/offloaded intervals must never replace the
                         // live type-40 RR window or its freshness timestamp.
@@ -1977,6 +1979,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         let count = try HistoricalRRPacketArchive.append(record, to: archiveURL)
                         if let decodeError {
                             whoopHistoricalRRSource = "Type-47 v18 raw frame archived · candidate RR decode rejected · \(decodeError) · packets \(count)"
+                        } else if rr.isEmpty {
+                            whoopHistoricalRRSource = "Type-47 v18 HR-only record archived · physiological timestamp decoded · packets \(count)"
                         } else {
                             whoopHistoricalRRSource = "Type-47 v18 RR candidate archived · \(rr.count) intervals · physiological timestamp decoded · packets \(count)"
                         }
