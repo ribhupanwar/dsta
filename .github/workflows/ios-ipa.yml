@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feature/woop-reference-ui-port
     paths:
       - "PulseForge/**"
       - "project.yml"
