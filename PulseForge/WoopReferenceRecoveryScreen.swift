@@ -6,6 +6,7 @@ import HealthKit
 struct WoopReferenceRecoveryScreen: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
     @State private var selectedRange = "WEEK"
 
     private var score: Int? { insights.recoveryScore }
@@ -22,6 +23,7 @@ struct WoopReferenceRecoveryScreen: View {
                 header
                 hero
                 metrics
+                whoopBandMetrics
                 trendSection
                 explanation
                 Color.clear.frame(height: 112)
@@ -109,6 +111,36 @@ struct WoopReferenceRecoveryScreen: View {
                 metricTile(title: "SLEEP NEED", value: String(format: "%.1f", insights.sleepNeedHours), unit: "hours · estimate", symbol: "bed.double")
             }
         }
+    }
+
+    private var whoopBandMetrics: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("WHOOP BAND · HISTORICAL", trailing: "GEN5")
+            HStack(spacing: 10) {
+                metricTile(
+                    title: "BAND RMSSD",
+                    value: bluetooth.whoopHistoricalRecoveryMetrics?.overnightRMSSDMilliseconds.map { String(format: "%.1f", $0) } ?? "—",
+                    unit: "ms · estimate",
+                    symbol: "waveform.path.ecg"
+                )
+                metricTile(
+                    title: "BAND RHR",
+                    value: bluetooth.whoopHistoricalRecoveryMetrics?.restingHeartRateBPM.map { String(format: "%.1f", $0) } ?? "—",
+                    unit: "bpm · estimate",
+                    symbol: "heart"
+                )
+            }
+            Text(bluetooth.whoopHistoricalRecoveryMetricsStatus)
+                .font(WoopTypography.body(10))
+                .foregroundStyle(WoopReplicaPalette.secondary)
+            Text("Band values are independently calculated from archived Gen5 RR/HR samples. They are not WHOOP's official nightly HRV, RHR or Recovery score.")
+                .font(WoopTypography.body(9))
+                .lineSpacing(2)
+                .foregroundStyle(WoopReplicaPalette.muted)
+        }
+        .padding(15)
+        .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
+        .overlay(RoundedRectangle(cornerRadius: 17).stroke(WoopReplicaPalette.hairline, lineWidth: 1))
     }
 
     private func metricTile(title: String, value: String, unit: String, symbol: String) -> some View {
