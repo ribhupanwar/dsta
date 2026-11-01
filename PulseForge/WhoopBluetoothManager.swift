@@ -1930,7 +1930,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
 
         case 47: // HISTORICAL_DATA; contains several Gen5 layouts, not all of them IMU.
             // Preserve every CRC-valid v18 frame before trusting the candidate RR offsets.
-            // Receipt time is forensic metadata only; physiological time remains nil.
+            // Receipt time is forensic metadata only; use the embedded Gen5 timestamp for physiology.
             if b.count > 9, b[9] == 18 {
                 let receivedAt = Date()
                 let rawHex = b.map { String(format: "%02X", $0) }.joined()
@@ -1957,6 +1957,8 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     recordType: 47,
                     revision: 18,
                     intervalsMilliseconds: rr,
+                    heartRateBpm: Whoop5RRDecoder.decodeHistoricalV18HeartRate(b),
+                    sleepStateRaw: Whoop5RRDecoder.decodeHistoricalV18SleepStateRaw(b),
                     rawFrameHex: rawHex,
                     physiologicalTimestamp: Whoop5RRDecoder.decodeHistoricalV18Timestamp(b),
                     decodeError: decodeError
@@ -1972,7 +1974,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                         if let decodeError {
                             whoopHistoricalRRSource = "Type-47 v18 raw frame archived · candidate RR decode rejected · \(decodeError) · packets \(count)"
                         } else {
-                            whoopHistoricalRRSource = "Type-47 v18 RR candidate archived · \(rr.count) intervals · receipt time only · packets \(count)"
+                            whoopHistoricalRRSource = "Type-47 v18 RR candidate archived · \(rr.count) intervals · physiological timestamp decoded · packets \(count)"
                         }
                     } catch {
                         whoopHistoricalRRSource = "Historical v18 raw frame captured · archive failed · \(error.localizedDescription)"
