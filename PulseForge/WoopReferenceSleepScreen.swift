@@ -4,6 +4,7 @@ import SwiftUI
 struct WoopReferenceSleepScreen: View {
     @EnvironmentObject private var health: HealthDataStore
     @EnvironmentObject private var insights: TrainingInsightsStore
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
 
     private var totalSleep: String {
         health.sleepHours.map { String(format: "%.1f", $0) } ?? "—"
@@ -26,6 +27,7 @@ struct WoopReferenceSleepScreen: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 sleepHero
+                whoopBandSleepData
                 sleepNeed
                 stages
                 consistency
@@ -105,6 +107,45 @@ struct WoopReferenceSleepScreen: View {
             Text(value).font(WoopTypography.metricBold(17))
                 .monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
         }
+    }
+
+    private var whoopBandSleepData: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack {
+                sectionTitle("WHOOP BAND DATA")
+                Spacer()
+                Text("GEN5 · RAW")
+                    .font(WoopTypography.label(8))
+                    .tracking(0.8)
+                    .foregroundStyle(WoopReplicaPalette.muted)
+            }
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(bluetooth.whoopHistoricalSleepStateSampleCount)")
+                    .font(WoopTypography.metric(27))
+                    .monospacedDigit()
+                    .foregroundStyle(WoopReplicaPalette.primary)
+                Text("sleep-state samples received")
+                    .font(WoopTypography.body(10))
+                    .foregroundStyle(WoopReplicaPalette.secondary)
+                Spacer()
+                if let raw = bluetooth.whoopHistoricalLatestSleepStateRaw {
+                    Text(String(format: "0x%02X", raw))
+                        .font(WoopTypography.metricBold(15))
+                        .monospacedDigit()
+                        .foregroundStyle(WoopReplicaPalette.sleep)
+                }
+            }
+            Text(bluetooth.whoopHistoricalRRSource)
+                .font(WoopTypography.body(10))
+                .foregroundStyle(WoopReplicaPalette.secondary)
+            Text("Raw sleep-state bytes are being retained for protocol analysis. Deep, REM and Core labels stay disabled until their Gen5 state mapping is verified against real WHOOP sleep records.")
+                .font(WoopTypography.body(9))
+                .lineSpacing(2)
+                .foregroundStyle(WoopReplicaPalette.muted)
+        }
+        .padding(15)
+        .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
+        .overlay(RoundedRectangle(cornerRadius: 17).stroke(WoopReplicaPalette.hairline, lineWidth: 1))
     }
 
     private var sleepNeed: some View {
