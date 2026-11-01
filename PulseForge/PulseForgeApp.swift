@@ -49,7 +49,7 @@ struct MainTabView: View {
             Group {
                 switch selected {
                 case .today: WoopReferenceRecoveryScreen()
-                case .sleep: SleepDashboard()
+                case .sleep: WoopReferenceSleepScreen()
                 case .strain: StrainDashboard()
                 case .run: RunningDashboard()
                 case .device: DeviceDashboard()
