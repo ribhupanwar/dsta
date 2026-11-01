@@ -134,6 +134,11 @@ enum HistoricalRRPacketArchive {
     static let maximumRecords = 100_000
     static let maximumRecordsForOtherRevisions = 500
 
+    private struct RetentionGroup: Hashable {
+        let recordType: Int
+        let revision: Int
+    }
+
     /// Throwing read for diagnostics and recovery flows that must distinguish a
     /// missing archive from a corrupt or inaccessible one. A missing file is a
     /// valid empty archive; decoding and I/O failures are surfaced to the caller.
@@ -205,9 +210,16 @@ enum HistoricalRRPacketArchive {
             return seenFrames.insert(identity).inserted
         }
 
-        for revision in Set(newRecords.map { $0.revision }) {
-            let matchingIndices = records.indices.filter { records[$0].revision == revision }
-            let limit = revision == 18 ? maximumRecords : maximumRecordsForOtherRevisions
+        let retentionGroups = Set(newRecords.map {
+            RetentionGroup(recordType: $0.recordType, revision: $0.revision)
+        })
+        for group in retentionGroups {
+            let matchingIndices = records.indices.filter {
+                records[$0].recordType == group.recordType &&
+                    records[$0].revision == group.revision
+            }
+            let limit = group.recordType == 47 && group.revision == 18
+                ? maximumRecords : maximumRecordsForOtherRevisions
             let excess = matchingIndices.count - limit
             guard excess > 0 else { continue }
 

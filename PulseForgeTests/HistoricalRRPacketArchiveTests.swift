@@ -347,4 +347,38 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         XCTAssertTrue(HistoricalRRPacketArchive.load(from: url).isEmpty)
         XCTAssertEqual(try Data(contentsOf: url), corrupt)
     }
+    func testRetentionSeparatesPacketTypesThatShareTheSameRevisionMarker() throws {
+        let url = temporaryURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        var records: [HistoricalRRPacketRecord] = []
+        for index in 0...HistoricalRRPacketArchive.maximumRecordsForOtherRevisions {
+            records.append(HistoricalRRPacketRecord(
+                receivedAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                recordType: 40, revision: 18, intervalsMilliseconds: [],
+                rawFrameHex: "TYPE40-\(index)", heartRateBPM: nil,
+                physiologicalTimestamp: nil, decodeError: "candidate only"
+            ))
+            records.append(HistoricalRRPacketRecord(
+                receivedAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                recordType: 47, revision: 18, intervalsMilliseconds: [],
+                rawFrameHex: "TYPE47-\(index)", heartRateBPM: nil,
+                physiologicalTimestamp: nil, decodeError: "candidate only"
+            ))
+        }
+
+        let retainedCount = try HistoricalRRPacketArchive.append(contentsOf: records, to: url)
+        let archived = try HistoricalRRPacketArchive.loadThrowing(from: url)
+        let type40 = archived.filter { $0.recordType == 40 && $0.revision == 18 }
+        let type47 = archived.filter { $0.recordType == 47 && $0.revision == 18 }
+
+        XCTAssertEqual(retainedCount, 2 * HistoricalRRPacketArchive.maximumRecordsForOtherRevisions + 1)
+        XCTAssertEqual(type40.count, HistoricalRRPacketArchive.maximumRecordsForOtherRevisions)
+        XCTAssertEqual(type40.first?.rawFrameHex, "TYPE40-1")
+        XCTAssertEqual(type40.last?.rawFrameHex, "TYPE40-500")
+        XCTAssertEqual(type47.count, HistoricalRRPacketArchive.maximumRecordsForOtherRevisions + 1)
+        XCTAssertEqual(type47.first?.rawFrameHex, "TYPE47-0")
+        XCTAssertEqual(type47.last?.rawFrameHex, "TYPE47-500")
+    }
+
 }
