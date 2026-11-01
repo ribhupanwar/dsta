@@ -200,9 +200,21 @@ struct WoopReferenceHomeScreen: View {
 
     private var trend: some View {
         VStack(alignment: .leading, spacing: 9) {
-            section("RECOVERY · EFFORT TREND")
-            emptyCard("Daily history is not loaded yet. Trend lines will appear when date-wise measurements are available.")
+            section("30-DAY HEALTH TRENDS")
+            HStack(spacing: 9) {
+                trendMini("HRV", values: insights.trendHistory.map { $0.hrvMilliseconds }, tint: WoopReplicaPalette.sleep, unit: "ms")
+                trendMini("SLEEP", values: insights.trendHistory.map { $0.sleepHours }, tint: WoopReplicaPalette.sleep, unit: "h")
+            }
         }
+    }
+
+    private func trendMini(_ title: String, values: [Double?], tint: Color, unit: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(WoopTypography.label(8)).tracking(0.7)
+                .foregroundStyle(WoopReplicaPalette.secondary)
+            WoopHealthTrendChart(values: Array(values.suffix(7)), tint: tint, unit: unit, height: 54, rangeLabel: "7D")
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func section(_ title: String, trailing: String? = nil) -> some View {
