@@ -174,7 +174,7 @@ struct ForgeTabBar: View {
     }
 }
 
-struct WoopCommunityScreen: View {
+struct LegacyWoopCommunityScreen: View {
     @State private var selectedSection = "MY TEAMS"
 
     var body: some View {
