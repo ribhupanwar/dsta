@@ -131,10 +131,11 @@ jobs:
           mkdir -p "$FONT_CHECK/PulseForge"
           cp "$RUNNER_TEMP/PulseForge-fonts.SHA256SUMS.txt" "$FONT_CHECK/PulseForge/SHA256SUMS.txt"
           while IFS= read -r line; do
-            FONT_NAME="${line#*  }"
-            FONT_NAME="${FONT_NAME##*/}"
+            FONT_REL="${line#*  }"
+            FONT_NAME="${FONT_REL##*/}"
             test -s "$APP/$FONT_NAME"
-            cp "$APP/$FONT_NAME" "$FONT_CHECK/PulseForge/$FONT_NAME"
+            mkdir -p "$FONT_CHECK/$(dirname "$FONT_REL")"
+            cp "$APP/$FONT_NAME" "$FONT_CHECK/$FONT_REL"
           done < "$FONT_CHECK/PulseForge/SHA256SUMS.txt"
           (cd "$FONT_CHECK" && shasum -a 256 -c PulseForge/SHA256SUMS.txt)
           python3 - "$APP/Info.plist" <<'PY'
