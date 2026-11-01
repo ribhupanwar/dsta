@@ -1387,8 +1387,34 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         peripheral.discoverServices(nil)
     }
 
+    private func isPeerRemovedPairingInformation(_ error: Error?) -> Bool {
+        guard let error else { return false }
+        let bridged = error as NSError
+        // CBErrorPeerRemovedPairingInformation is CoreBluetooth error code 14.
+        return bridged.domain == "CBErrorDomain" && bridged.code == 14
+    }
+
+    private func stopReconnectAfterPairingReset(_ peripheral: CBPeripheral, error: Error?) {
+        reconnectWorkItem?.cancel()
+        reconnectWorkItem = nil
+        automaticReconnectScanAttemptReset()
+        UserDefaults.standard.removeObject(forKey: rememberedPeripheralKey)
+        clearConnectionState()
+        statusText = "WHOOP pairing information was reset · tap Scan to reconnect"
+        lastBLEEvent = "Peer removed pairing information · automatic retries stopped · manual scan required"
+    }
+
+    private func automaticReconnectScanAttemptReset() {
+        automaticReconnectAttempt = 0
+        cancelAutomaticReconnectScan()
+    }
+
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        if isPeerRemovedPairingInformation(error) {
+            stopReconnectAfterPairingReset(peripheral, error: error)
+            return
+        }
         let shouldRetry = UserDefaults.standard.string(forKey: rememberedPeripheralKey) == peripheral.identifier.uuidString
         connectionTimeoutWorkItem?.cancel()
         connectionTimeoutWorkItem = nil
@@ -1404,6 +1430,10 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        if isPeerRemovedPairingInformation(error) {
+            stopReconnectAfterPairingReset(peripheral, error: error)
+            return
+        }
         let wasRememberedDevice =
             UserDefaults.standard.string(forKey: rememberedPeripheralKey) == peripheral.identifier.uuidString
         clearConnectionState()
