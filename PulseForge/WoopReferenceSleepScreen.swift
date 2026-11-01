@@ -1,0 +1,188 @@
+import SwiftUI
+
+/// Sleep tab port using measured HealthKit sleep and transparent PulseForge estimates.
+struct WoopReferenceSleepScreen: View {
+    @EnvironmentObject private var health: HealthDataStore
+    @EnvironmentObject private var insights: TrainingInsightsStore
+
+    private var totalSleep: String {
+        health.sleepHours.map { String(format: "%.1f", $0) } ?? "—"
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 20) {
+                header
+                sleepHero
+                sleepNeed
+                stages
+                consistency
+                explanation
+                Color.clear.frame(height: 108)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+        }
+        .background(WoopReplicaPalette.canvas.ignoresSafeArea())
+        .refreshable {
+            health.refresh()
+            insights.refresh()
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("SLEEP").font(.system(size: 11, weight: .bold, design: .rounded))
+                    .tracking(2.2).foregroundStyle(WoopReplicaPalette.secondary)
+                Text("Last night").font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(WoopReplicaPalette.primary)
+            }
+            Spacer()
+            Image(systemName: "moon.stars")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(WoopReplicaPalette.secondary)
+                .frame(width: 42, height: 42)
+                .background(WoopReplicaPalette.surfaceRaised, in: Circle())
+        }
+    }
+
+    private var sleepHero: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("TIME ASLEEP").font(.system(size: 9, weight: .bold)).tracking(1.2)
+                        .foregroundStyle(WoopReplicaPalette.secondary)
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(totalSleep).font(.system(size: 48, weight: .medium, design: .rounded))
+                            .monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
+                        Text("HRS").font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(WoopReplicaPalette.secondary)
+                    }
+                }
+                Spacer()
+                ZStack {
+                    Circle().stroke(WoopReplicaPalette.homeTrack, lineWidth: 10)
+                    Circle().trim(from: 0, to: min(1, max(0, (health.sleepHours ?? 0) / max(1, insights.sleepNeedHours))))
+                        .stroke(WoopReplicaPalette.sleep, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(.easeOut(duration: 0.7), value: health.sleepHours)
+                    Image(systemName: "moon.zzz.fill").font(.system(size: 22))
+                        .foregroundStyle(WoopReplicaPalette.sleep)
+                }
+                .frame(width: 92, height: 92)
+            }
+            Rectangle().fill(WoopReplicaPalette.hairline).frame(height: 1)
+            HStack {
+                metric("SLEEP NEED", value: String(format: "%.1f h", insights.sleepNeedHours))
+                Spacer()
+                metric("SLEEP DEBT", value: insights.sleepDebtHours.map { String(format: "%.1f h", $0) } ?? "—")
+                Spacer()
+                metric("7-DAY AVG", value: insights.typicalSleepHours.map { String(format: "%.1f h", $0) } ?? "—")
+            }
+        }
+        .padding(20)
+        .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 23))
+        .overlay(RoundedRectangle(cornerRadius: 23).stroke(WoopReplicaPalette.hairline, lineWidth: 1))
+    }
+
+    private func metric(_ title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.system(size: 8, weight: .bold)).tracking(0.5)
+                .foregroundStyle(WoopReplicaPalette.secondary)
+            Text(value).font(.system(size: 17, weight: .semibold, design: .rounded))
+                .monospacedDigit().foregroundStyle(WoopReplicaPalette.primary)
+        }
+    }
+
+    private var sleepNeed: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle("SLEEP NEED")
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Estimated need").font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(WoopReplicaPalette.primary)
+                    Spacer()
+                    Text(String(format: "%.1f hours", insights.sleepNeedHours))
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .foregroundStyle(WoopReplicaPalette.primary)
+                }
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(WoopReplicaPalette.homeTrack)
+                        Capsule().fill(WoopReplicaPalette.sleep)
+                            .frame(width: proxy.size.width * min(1, max(0, (health.sleepHours ?? 0) / max(1, insights.sleepNeedHours))))
+                    }
+                }.frame(height: 9)
+                Text(health.sleepHours == nil
+                     ? "Sleep data is not available in Apple Health yet."
+                     : "Measured sleep compared with your current estimated sleep need.")
+                    .font(.system(size: 10)).foregroundStyle(WoopReplicaPalette.secondary)
+            }
+            .padding(16)
+            .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
+        }
+    }
+
+    private var stages: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle("SLEEP STAGES")
+            VStack(spacing: 0) {
+                stageRow("Deep", value: health.deepSleepMinutes, color: WoopReplicaPalette.deepSleep, symbol: "moon.fill")
+                Divider().overlay(WoopReplicaPalette.hairline)
+                stageRow("REM", value: health.remSleepMinutes, color: WoopReplicaPalette.remSleep, symbol: "brain.head.profile")
+                Divider().overlay(WoopReplicaPalette.hairline)
+                stageRow("Core", value: health.coreSleepMinutes, color: WoopReplicaPalette.coreSleep, symbol: "circle.fill")
+                Divider().overlay(WoopReplicaPalette.hairline)
+                stageRow("Awake", value: health.awakeMinutes, color: WoopReplicaPalette.muted, symbol: "sun.max")
+            }
+            .padding(.horizontal, 15)
+            .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
+        }
+    }
+
+    private func stageRow(_ title: String, value: Double?, color: Color, symbol: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 12)).foregroundStyle(color).frame(width: 18)
+            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(WoopReplicaPalette.primary)
+            Spacer()
+            Text(value.map { String(format: "%.0f min", $0) } ?? "—")
+                .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                .foregroundStyle(WoopReplicaPalette.secondary)
+        }
+        .padding(.vertical, 13)
+    }
+
+    private var consistency: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle("SLEEP HISTORY")
+            HStack(spacing: 10) {
+                Image(systemName: "chart.bar.xaxis").font(.system(size: 22, weight: .light))
+                    .foregroundStyle(WoopReplicaPalette.muted)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Your sleep trend is building").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(WoopReplicaPalette.primary)
+                    Text("A reliable trend will appear as more nightly HealthKit samples are collected.")
+                        .font(.system(size: 10)).foregroundStyle(WoopReplicaPalette.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
+        }
+    }
+
+    private var explanation: some View {
+        Text("Sleep duration and stages are read from Apple Health. Sleep need and debt are PulseForge estimates, not WHOOP proprietary measurements.")
+            .font(.system(size: 10)).lineSpacing(3)
+            .foregroundStyle(WoopReplicaPalette.secondary)
+            .padding(15)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(WoopReplicaPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 15))
+    }
+
+    private func sectionTitle(_ value: String) -> some View {
+        Text(value).font(.system(size: 10, weight: .bold)).tracking(1.3)
+            .foregroundStyle(WoopReplicaPalette.secondary)
+    }
+}
