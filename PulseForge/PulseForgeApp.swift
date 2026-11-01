@@ -1857,6 +1857,7 @@ struct DeviceDashboard: View {
 final class HealthDataStore: ObservableObject {
     @Published private(set) var isAuthorized = false
     @Published private(set) var heartRate: Int?
+    @Published private(set) var stepsToday: Int?
     @Published private(set) var hrvMilliseconds: Double?
     @Published private(set) var restingHeartRate: Int?
     @Published private(set) var respiratoryRate: Double?
@@ -1888,6 +1889,8 @@ final class HealthDataStore: ObservableObject {
         group.enter()
         loadHealthMetrics { group.leave() }
         group.enter()
+        loadTodaySteps { group.leave() }
+        group.enter()
         loadSleepDuration { group.leave() }
         group.enter()
         loadLatestRun { group.leave() }
@@ -1907,7 +1910,7 @@ final class HealthDataStore: ObservableObject {
         // that are actually available instead of force-unwrapping them.
         var readTypes = Set<HKObjectType>()
         let quantityIdentifiers: [HKQuantityTypeIdentifier] = [
-            .heartRate, .heartRateVariabilitySDNN, .restingHeartRate,
+            .heartRate, .heartRateVariabilitySDNN, .restingHeartRate, .stepCount,
             .respiratoryRate, .oxygenSaturation, .distanceWalkingRunning
         ]
         for identifier in quantityIdentifiers {
@@ -1963,6 +1966,26 @@ final class HealthDataStore: ObservableObject {
             let sample = samples?.first as? HKQuantitySample
             let value = sample.map { $0.quantity.doubleValue(for: unit) * multiplier }
             Task { @MainActor in completion(value) }
+        }
+        store.execute(query)
+    }
+
+    /// Today's cumulative step total from Apple Health. This is a HealthKit fallback,
+    /// not a decoded WHOOP proprietary step-counter value.
+    private func loadTodaySteps(completion: @escaping () -> Void) {
+        guard let type = HKObjectType.quantityType(forIdentifier: .stepCount) else {
+            stepsToday = nil
+            completion()
+            return
+        }
+        let start = Calendar.current.startOfDay(for: Date())
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate)
+        let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: .cumulativeSum) { [weak self] _, statistics, _ in
+            let count = statistics?.sumQuantity()?.doubleValue(for: .count())
+            Task { @MainActor in
+                self?.stepsToday = count.map { Int($0.rounded()) }
+                completion()
+            }
         }
         store.execute(query)
     }
