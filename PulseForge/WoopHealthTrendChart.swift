@@ -88,7 +88,7 @@ struct WoopHealthTrendChart: View {
             HStack {
                 Text(rangeLabel)
                 Spacer()
-                Text("15 DAYS")
+                Text("MIDPOINT")
                 Spacer()
                 Text("LATEST")
             }
