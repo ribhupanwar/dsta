@@ -56,6 +56,23 @@ final class Whoop5RRDecoderTests: XCTestCase {
         }
     }
 
+    func testHistoricalV18RejectsMoreThanFourRRSlots() {
+        var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
+        frame[23] = 5
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeHistoricalV18(frame)) { error in
+            XCTAssertEqual(error as? Whoop5RRDecoder.DecodeError, .invalidIntervalCount(5))
+        }
+    }
+
+    func testHistoricalV18RejectsSignedNegativeRRSlot() {
+        var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
+        frame[24] = 0x00
+        frame[25] = 0x80
+        XCTAssertThrowsError(try Whoop5RRDecoder.decodeHistoricalV18(frame)) { error in
+            XCTAssertEqual(error as? Whoop5RRDecoder.DecodeError, .invalidIntervalValue(-32768))
+        }
+    }
+
     func testHistoricalDecoderRejectsUnknownLayoutVersion() {
         var frame = bytes("aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817")
         frame[9] = 17
