@@ -66,7 +66,7 @@ final class WHOOPImportStore: ObservableObject {
             }
             var parsed = Self.parseNights(cyclesCSV)
             if let sleepsCSV = csv["sleeps.csv"] {
-                let sleepRows = Self.parseNights(sleepsCSV)
+                let sleepRows = Self.parseNights(sleepsCSV, excludingNaps: true)
                 for sleep in sleepRows {
                     if let index = parsed.firstIndex(where: { Self.sameNight($0, sleep) }) {
                         parsed[index] = Self.mergingSleep(sleep, into: parsed[index])
@@ -126,7 +126,7 @@ final class WHOOPImportStore: ObservableObject {
         }
     }
 
-    nonisolated private static func parseNights(_ csv: String) -> [WHOOPImportedNight] {
+    nonisolated private static func parseNights(_ csv: String, excludingNaps: Bool = false) -> [WHOOPImportedNight] {
         let rows = CSV.decode(csv)
         guard let header = rows.first else { return [] }
         let keys = header.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
@@ -140,6 +140,7 @@ final class WHOOPImportStore: ObservableObject {
             let zone = value("cycle timezone") ?? "UTC"
             func date(_ key: String) -> Date? { value(key).flatMap { parseDate($0, zone: zone) } }
             func number(_ key: String) -> Double? { value(key).flatMap(Double.init) }
+            if excludingNaps, ["true", "1", "yes"].contains(value("nap")?.lowercased() ?? "false") { return nil }
             return WHOOPImportedNight(
                 cycleStart: date("cycle start time"),
                 sleepOnset: date("sleep onset"),
