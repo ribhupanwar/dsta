@@ -1,5 +1,11 @@
 import SwiftUI
 
+private struct LocalCommunityTeam: Identifiable {
+    let name: String
+    let focus: String
+    var id: String { focus + "|" + name }
+}
+
 /// Local-first Community UI. Teams are saved on this device only until a backend exists.
 struct WoopCommunityScreen: View {
     @AppStorage("pulseforge.community.localTeams") private var storedTeams = ""
@@ -8,8 +14,12 @@ struct WoopCommunityScreen: View {
     @State private var teamName = ""
     @State private var teamFocus = "Running"
 
-    private var teams: [String] {
-        storedTeams.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+    private var teams: [LocalCommunityTeam] {
+        storedTeams.split(separator: "\n").compactMap { line in
+            let parts = line.split(separator: "|", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { return nil }
+            return LocalCommunityTeam(name: parts[1], focus: parts[0])
+        }
     }
 
     var body: some View {
@@ -97,7 +107,7 @@ struct WoopCommunityScreen: View {
                     message: "Create a training group and keep its details on this device. Shared membership and live team feeds need a Community service."
                 )
             } else {
-                ForEach(teams, id: \.self) { team in
+                ForEach(teams) { team in
                     HStack(spacing: 12) {
                         Image(systemName: "figure.run")
                             .font(.system(size: 17, weight: .medium))
@@ -108,7 +118,7 @@ struct WoopCommunityScreen: View {
                             Text(team)
                                 .font(WoopTypography.emphasis(14))
                                 .foregroundStyle(WoopReplicaPalette.primary)
-                            Text("LOCAL TEAM · \(teamFocus.uppercased())")
+                            Text("LOCAL TEAM · \(team.focus.uppercased())")
                                 .font(WoopTypography.label(8)).tracking(0.7)
                                 .foregroundStyle(WoopReplicaPalette.secondary)
                         }
@@ -229,7 +239,8 @@ struct WoopCommunityScreen: View {
                     Button("Save") {
                         let cleaned = teamName.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !cleaned.isEmpty else { return }
-                        storedTeams = (teams + [cleaned]).joined(separator: "\n")
+                        let safeName = cleaned.replacingOccurrences(of: "|", with: "-").replacingOccurrences(of: "\n", with: " ")
+                        storedTeams = (teams.map { "\($0.focus)|\($0.name)" } + ["\(teamFocus)|\(safeName)"]).joined(separator: "\n")
                         teamName = ""
                         showingCreateTeam = false
                         selectedSection = "MY TEAMS"
