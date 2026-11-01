@@ -1635,6 +1635,22 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             let result = Int(b[12])
             let resultName = [0: "FAILURE", 1: "SUCCESS", 2: "PENDING", 3: "UNSUPPORTED"][result] ?? "UNKNOWN(\(result))"
             recordVendorTimeline("COMMAND_RESPONSE · cmd=\(command) · hostSeq=\(echoedSequence) · responseCounter=\(responseCounter) · result=\(resultName) · frame=\(b.count) bytes · CRC valid")
+            if command == 63, whoop5R10R11Sequence == UInt8(echoedSequence) {
+                if result == 2 {
+                    whoopIMUStatus = "R10/R11 realtime command pending · awaiting final response"
+                    return "COMMAND_RESPONSE · SEND_R10_R11_REALTIME(63) · PENDING"
+                }
+                whoop5R10R11Sequence = nil
+                guard result == 1 else {
+                    whoop5AutoIMUStartRequested = false
+                    whoopIMUStatus = "R10/R11 realtime command rejected · \(resultName)"
+                    recordVendorTimeline("SEND_R10_R11_REALTIME(63) response · \(resultName)")
+                    return "COMMAND_RESPONSE · SEND_R10_R11_REALTIME(63) · \(resultName)"
+                }
+                recordVendorTimeline("SEND_R10_R11_REALTIME(63) SUCCESS · requesting TOGGLE_IMU_MODE(106)")
+                sendWhoop5IMUModeEnable(to: peripheral)
+                return "COMMAND_RESPONSE · SEND_R10_R11_REALTIME(63) SUCCESS · IMU mode enable queued"
+            }
             if command == 81,
                let expectedSequence = whoop5RawStartSequence,
                echoedSequence == Int(expectedSequence) {
@@ -1716,9 +1732,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 // Do not deadlock motion startup on the optional event notification:
                 // arm the bounded, hardware-validated raw-data sequence after HR ON succeeds.
                 if !whoop5AutoIMUStartRequested && !whoop5AutoIMUEnabled {
-                    recordVendorTimeline("IMU startup · REALTIME_HR_ON(3) SUCCESS · Event 33 absent; requesting bounded START_RAW_DATA [01]")
-                    sendWhoop5RawDataStart(to: peripheral)
-                    return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · START_RAW_DATA(81) requested"
+                    recordVendorTimeline("IMU startup · REALTIME_HR_ON(3) SUCCESS · Event 33 absent; requesting Build 195 R10/R11 stage")
+                    sendWhoop5R10R11Enable(to: peripheral)
+                    return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · SEND_R10_R11_REALTIME(63) requested"
                 }
                 return "COMMAND_RESPONSE · REALTIME_HR_ON(3) SUCCESS · motion capture already requested"
             }
@@ -1967,9 +1983,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                    whoop5RawStartSequence == nil,
                    whoop5IMUModeSequence == nil {
                     recordVendorTimeline("IMU startup gate · Event 33 confirmed · requesting START_RAW_DATA [01]")
-                    sendWhoop5RawDataStart(to: peripheral)
+                    sendWhoop5R10R11Enable(to: peripheral)
                 }
-                return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid · realtime HR active; Gen5 IMU startup gate evaluated"
+                return "EVENT · BLE_REALTIME_HR_ON(33) · CRC valid · realtime HR active; Build 195 R10/R11 startup gate evaluated"
             }
             if eventID == 34 {
                 whoopEvent34Count += 1
