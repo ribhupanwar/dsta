@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APK="$(find input/extracted -type f -iname '*.apk' ! -path '*/__MACOSX/*' ! -name '._*' | head -n 1)"
+          APK="$(find input/extracted -type f -iname '*.apk' ! -path '*/__MACOSX/*' ! -name '._*' -print -quit)"
           test -n "$APK"
           mkdir -p output
           set +e
@@ -62,16 +62,20 @@ jobs:
             echo "SHA-256: $(sha256sum "$APK" | awk '{print $1}')"
             echo
             echo '## Manifest / package inventory'
-            find output/decompiled -maxdepth 4 -type f | head -200
+            find output/decompiled -maxdepth 4 -type f -print > output/decompiled-files.txt
+            sed -n '1,200p' output/decompiled-files.txt
             echo
             echo '## APK manifest and DEX inventory'
-            find output/smali -maxdepth 3 -type f | head -200
+            find output/smali -maxdepth 3 -type f -print > output/smali-files.txt
+            sed -n '1,200p' output/smali-files.txt
             echo
             echo '## Step / motion / sensor / cadence references'
-            grep -RniE 'step.?count|step.?detector|pedometer|cadence|stride|accelerometer|gyroscope|sensor.TYPE|TYPE_STEP|stepCount|walking|running|motion' output/decompiled output/smali --include='*.java' --include='*.smali' --include='*.xml' | head -3000 || true
+            grep -RniE 'step.?count|step.?detector|pedometer|cadence|stride|accelerometer|gyroscope|sensor.TYPE|TYPE_STEP|stepCount|walking|running|motion' output/decompiled output/smali --include='*.java' --include='*.smali' --include='*.xml' > output/step-motion-matches.txt || true
+            sed -n '1,3000p' output/step-motion-matches.txt
             echo
             echo '## BLE / GATT references'
-            grep -RniE 'BluetoothGatt|BluetoothLeScanner|BluetoothGattCharacteristic|notify|indicate|UUID|onCharacteristicChanged' output/decompiled output/smali --include='*.java' --include='*.smali' --include='*.xml' | head -2000 || true
+            grep -RniE 'BluetoothGatt|BluetoothLeScanner|BluetoothGattCharacteristic|notify|indicate|UUID|onCharacteristicChanged' output/decompiled output/smali --include='*.java' --include='*.smali' --include='*.xml' > output/ble-matches.txt || true
+            sed -n '1,2000p' output/ble-matches.txt
           } > output/ANALYSIS-INDEX.md
           cat output/ANALYSIS-INDEX.md
       - name: Upload decompiled source and index
