@@ -54,7 +54,7 @@ struct MainTabView: View {
                 case .recovery: WoopReferenceRecoveryScreen()
                 case .sleep: WoopReferenceSleepScreen()
                 case .strain: StrainDashboard()
-                case .run: RunningDashboard()
+                case .run: WoopActivityDashboard()
                 case .device: DeviceDashboard()
                 }
             }
@@ -1035,6 +1035,132 @@ struct GPSRunCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(9)
         .background(ForgeColors.track.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// WHOOP-inspired Activity surface. Live recording and all measurements remain PulseForge-owned.
+struct WoopActivityDashboard: View {
+    @EnvironmentObject private var health: HealthDataStore
+    @EnvironmentObject private var bluetooth: WhoopBluetoothManager
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 15) {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("ACTIVITY").font(.system(size: 10, weight: .bold)).tracking(1.8)
+                            .foregroundStyle(ForgeColors.muted)
+                        Text("Your activities").font(.system(size: 23, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    Spacer()
+                    Image(systemName: "figure.run")
+                        .font(.system(size: 19, weight: .medium))
+                        .foregroundStyle(ForgeColors.lime)
+                        .frame(width: 42, height: 42)
+                        .background(ForgeColors.card, in: Circle())
+                }
+
+                GPSRunCard()
+                WorkoutRecordingCard(bluetooth: bluetooth)
+
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack {
+                        SectionHeader(title: "LAST 7 DAYS")
+                        Spacer()
+                        Text("\(health.weeklyRunCount) RUNS")
+                            .font(.system(size: 9, weight: .bold)).tracking(0.7)
+                            .foregroundStyle(ForgeColors.lime)
+                    }
+                    HStack(spacing: 10) {
+                        RunHighlight(value: health.weeklyRunDistanceKm.map { String(format: "%.1f", $0) } ?? "—",
+                                     unit: "KM", label: "DISTANCE")
+                        RunHighlight(value: health.weeklyRunDurationMinutes.map { String(format: "%.0f", $0) } ?? "—",
+                                     unit: "MIN", label: "DURATION")
+                        RunHighlight(value: String(health.weeklyRunCount), unit: "RUNS", label: "SESSIONS")
+                    }
+                    Text("Completed running workouts synced from Apple Health.")
+                        .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                }
+                .padding(16)
+                .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 19))
+                .overlay(RoundedRectangle(cornerRadius: 19).stroke(ForgeColors.stroke, lineWidth: 1))
+
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeader(title: "LATEST ACTIVITY")
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Running").font(.system(size: 16, weight: .semibold))
+                            Text(health.latestRunDate?.formatted(date: .abbreviated, time: .shortened) ?? "No run synced")
+                                .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                        }
+                        Spacer()
+                        Image(systemName: "figure.run")
+                            .font(.system(size: 19)).foregroundStyle(ForgeColors.lime)
+                            .frame(width: 40, height: 40)
+                            .background(ForgeColors.track, in: Circle())
+                    }
+                    HStack(spacing: 10) {
+                        RunHighlight(value: health.latestRunDistanceKm.map { String(format: "%.2f", $0) } ?? "—",
+                                     unit: "KM", label: "DISTANCE")
+                        RunHighlight(value: health.latestRunPaceMinutesPerKm.map { String(format: "%.2f", $0) } ?? "—",
+                                     unit: "MIN/KM", label: "AVG PACE")
+                        RunHighlight(value: health.latestRunDurationMinutes.map { String(format: "%.0f", $0) } ?? "—",
+                                     unit: "MIN", label: "TIME")
+                    }
+                    Divider().overlay(ForgeColors.stroke)
+                    HStack(spacing: 10) {
+                        CompactMetric(title: "AVERAGE HR", value: health.latestRunAverageHeartRate.map(String.init) ?? "—", unit: "bpm")
+                        CompactMetric(title: "HR SAMPLES", value: health.latestRunHeartRateSampleCount.formatted(), unit: "points")
+                    }
+                }
+                .padding(16)
+                .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 19))
+                .overlay(RoundedRectangle(cornerRadius: 19).stroke(ForgeColors.stroke, lineWidth: 1))
+
+                SectionHeader(title: "HEART RATE")
+                WorkoutHeartRateChart(points: health.latestRunHeartRatePoints)
+                SectionHeader(title: "PACE & SPLITS")
+                VStack(spacing: 10) {
+                    HStack {
+                        Text("KM")
+                        Spacer()
+                        Text("PACE")
+                        Spacer()
+                        Text("DISTANCE")
+                    }
+                    .font(.system(size: 9, weight: .bold)).foregroundStyle(ForgeColors.muted)
+                    Divider().overlay(ForgeColors.stroke)
+                    if health.latestRunSplits.isEmpty {
+                        Text("No distance split samples available")
+                            .font(.system(size: 11)).foregroundStyle(ForgeColors.muted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        ForEach(health.latestRunSplits) { split in
+                            HStack {
+                                Text(split.label).frame(width: 42, alignment: .leading)
+                                Spacer()
+                                Text(split.paceText).monospacedDigit()
+                                Spacer()
+                                Text(String(format: "%.2f km", split.distanceKm))
+                                    .foregroundStyle(ForgeColors.muted)
+                            }
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                        }
+                    }
+                }
+                .padding(16)
+                .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 19))
+                .overlay(RoundedRectangle(cornerRadius: 19).stroke(ForgeColors.stroke, lineWidth: 1))
+
+                Text("Only synced workout measurements are displayed. Live GPS recording is separate from Apple Health history.")
+                    .font(.system(size: 9)).foregroundStyle(ForgeColors.muted)
+                Color.clear.frame(height: 105)
+            }
+            .padding(.horizontal, 17)
+            .padding(.top, 14)
+        }
+        .refreshable { health.refresh() }
     }
 }
 
