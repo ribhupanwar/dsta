@@ -35,6 +35,7 @@ enum ForgeTab: String, CaseIterable {
         case .strain: "flame.fill"
         case .run: "figure.run"
         case .device: "waveform.path.ecg"
+        case .community: "person.2.fill"
         }
     }
 }
@@ -81,6 +82,8 @@ struct ForgeTabBar: View {
         ("Community", "person.2.fill", .community)
     ]
 
+    private var isMoreSelection: Bool { selected == .sleep || selected == .strain || selected == .run || selected == .device }
+
     var body: some View {
         HStack(spacing: 4) {
             ForEach(visibleTabs.indices, id: \.self) { index in
@@ -97,7 +100,7 @@ struct ForgeTabBar: View {
                     Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold))
                     Text("More").font(WoopTypography.label(8)).lineLimit(1)
                 }
-                .foregroundStyle([ForgeTab.sleep, .strain, .run, .device].contains(selected) ? Color.white : WoopReplicaPalette.secondary)
+                .foregroundStyle(isMoreSelection ? WoopReplicaPalette.primary : WoopReplicaPalette.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .contentShape(Rectangle())
