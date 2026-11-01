@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feature/woop-reference-ui-port
+      - feature/motion-activation-probe
     paths:
       - "PulseForge/**"
       - "project.yml"
