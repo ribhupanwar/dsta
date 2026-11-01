@@ -35,12 +35,17 @@ jobs:
         run: |
           set -euo pipefail
           archive="Whoop.zip"
-          if [[ ! -f "$archive" ]]; then
-            echo "::error::Whoop.zip is missing; refusing to substitute fonts."
-            exit 1
-          fi
+          test -f "$archive" || { echo "::error::Whoop.zip missing"; exit 1; }
           mkdir -p PulseForge/Resources/Fonts
-          mapfile -t font_entries < <(unzip -Z1 "$archive" | grep -Ei '(^|/)(res/font|fonts?)/[^/]+\.(ttf|otf)
+          unzip -Z1 "$archive" | grep -Ei 'res/font/.*(ttf|otf)$' > /tmp/whoop-font-list.txt || true
+          test -s /tmp/whoop-font-list.txt || { echo "::error::No original font binaries found in Whoop.zip"; exit 1; }
+          while IFS= read -r entry; do
+            name="$(basename "$entry")"
+            unzip -p "$archive" "$entry" > "PulseForge/Resources/Fonts/$name"
+            echo "Extracted $name ($(wc -c < "PulseForge/Resources/Fonts/$name") bytes)"
+          done < /tmp/whoop-font-list.txt
+          actual="$(find PulseForge/Resources/Fonts -maxdepth 1 -type f | wc -l | tr -d ' ')"
+          test "$actual" = 8 || { echo "::error::Expected 8 fonts, found $actual"; exit 1; }
       - name: Check whether this branch contains the iOS project
         id: source
         shell: bash
