@@ -145,17 +145,27 @@ struct WoopReferenceRecoveryScreen: View {
                 .background(WoopReplicaPalette.surfaceInset, in: Capsule())
             }
             VStack(spacing: 12) {
-                Image(systemName: "chart.xyaxis.line")
-                    .font(.system(size: 24, weight: .light))
-                    .foregroundStyle(WoopReplicaPalette.muted)
-                Text("Your trend will appear as daily measurements are collected.")
-                    .font(WoopTypography.body(11))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(WoopReplicaPalette.secondary)
+                WoopHealthTrendChart(
+                    values: Array(insights.trendHistory.suffix(selectedRange == "WEEK" ? 7 : 30).map { $0.hrvMilliseconds }),
+                    tint: WoopReplicaPalette.sleep,
+                    unit: "ms",
+                    height: 92,
+                    rangeLabel: selectedRange == "WEEK" ? "7 DAYS AGO" : "30 DAYS AGO"
+                )
+                WoopHealthTrendChart(
+                    values: Array(insights.trendHistory.suffix(selectedRange == "WEEK" ? 7 : 30).map { $0.restingHeartRate }),
+                    tint: WoopReplicaPalette.recoveryHigh,
+                    unit: "bpm",
+                    height: 82,
+                    rangeLabel: selectedRange == "WEEK" ? "7 DAYS AGO" : "30 DAYS AGO"
+                )
+                if !insights.trendHistory.contains(where: { $0.hrvMilliseconds != nil || $0.restingHeartRate != nil }) {
+                    Text("Trend lines will appear when date-wise Apple Health measurements are available.")
+                        .font(WoopTypography.body(10))
+                        .foregroundStyle(WoopReplicaPalette.secondary)
+                        .multilineTextAlignment(.center)
+                }
             }
-            .frame(maxWidth: .infinity, minHeight: 116)
-            .background(WoopReplicaPalette.surface, in: RoundedRectangle(cornerRadius: 17))
-            .overlay(RoundedRectangle(cornerRadius: 17).stroke(WoopReplicaPalette.hairline, lineWidth: 1))
         }
     }
 
