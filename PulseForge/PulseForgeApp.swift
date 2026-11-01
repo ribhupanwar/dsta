@@ -2295,11 +2295,12 @@ struct ConnectPrompt: View {
 }
 
 enum ForgeColors {
-    // Shared WHOOP-reference visual tokens used by every PulseForge tab.
-    static let background = Color(red: 16/255, green: 20/255, blue: 24/255)
-    static let card = Color(red: 41/255, green: 54/255, blue: 62/255)
-    static let track = Color(red: 43/255, green: 48/255, blue: 52/255)
-    static let stroke = Color(red: 43/255, green: 48/255, blue: 52/255)
-    static let muted = Color(red: 176/255, green: 181/255, blue: 186/255)
-    static let lime = Color(red: 0, green: 232/255, blue: 45/255)
+    // Compatibility aliases for older screens; keep every tab on the decoded
+    // WHOOP-reference palette instead of maintaining a second competing theme.
+    static let background = WoopReplicaPalette.canvas
+    static let card = WoopReplicaPalette.surface
+    static let track = WoopReplicaPalette.homeTrack
+    static let stroke = WoopReplicaPalette.hairline
+    static let muted = WoopReplicaPalette.muted
+    static let lime = WoopReplicaPalette.recoveryHigh
 }
