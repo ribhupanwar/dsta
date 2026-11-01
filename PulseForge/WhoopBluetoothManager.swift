@@ -2364,12 +2364,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             if metadataType == 1 {
                 whoopHistorySyncStatus = "HISTORY_START received · waiting for Type-47 records"
             } else if metadataType == 3 {
-                publishWhoopStepCount()
-                persistWhoopStepCounterSnapshot()
                 if flushHistoricalRRArchive() {
-                    whoopHistorySyncStatus = "HISTORY_COMPLETE received · historical archive flushed · step counter snapshot saved"
+                    whoopHistorySyncStatus = "HISTORY_COMPLETE received · historical archive flushed · steps await verified R24 parser"
                 } else {
-                    whoopHistorySyncStatus = "HISTORY_COMPLETE received · archive flush failed · step counter snapshot saved · inspect diagnostics"
+                    whoopHistorySyncStatus = "HISTORY_COMPLETE received · archive flush failed · steps remain unavailable · inspect diagnostics"
                 }
             }
             if metadataType == 2 { // HISTORY_END
@@ -2378,10 +2376,9 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     recordVendorTimeline("HISTORY_END ACK withheld · historical RR archive flush failed")
                     return "METADATA · HISTORY_END · ACK withheld · archive flush failed"
                 }
-                // Publish and persist the decoded step-counter watermark before
-                // acknowledging the trim cursor; the band may discard history.
-                publishWhoopStepCount()
-                persistWhoopStepCounterSnapshot()
+                // Do not publish or persist a step watermark until the original
+                // WHOOP R24 processed-steps layout is verified. Flush raw history
+                // before acknowledging the trim cursor; the band may discard it.
                 let endData = Array(b[21..<29])
                 let trimCursor = UInt32(endData[0])
                     | (UInt32(endData[1]) << 8)

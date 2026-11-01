@@ -36,6 +36,27 @@ final class Whoop5RRDecoderTests: XCTestCase {
         frame[19] = 0
         XCTAssertEqual(try Whoop5RRDecoder.decodeRealtimeCandidateRRWords(frame), [0, 587])
     }
+    func testRealtimeMotionFieldsRemainCandidateOnlyWithoutTimestamp() throws {
+        var frame = [UInt8](repeating: 0, count: 65)
+        frame[0] = 0xAA
+        frame[1] = 0x01
+        frame[8] = 40
+        frame[57] = 0x34
+        frame[58] = 0x12
+        frame[59] = 88
+        frame[61] = 0xA4
+        frame[62] = 0x01
+        frame[63] = 2
+        frame[64] = 0x10
+
+        let candidate = try Whoop5RRDecoder.decodeRealtimeStepCounterCandidate(frame)
+        XCTAssertEqual(candidate.selectedCounterCandidate, 0x1234)
+        XCTAssertEqual(candidate.hardwareCounterCandidate, 420)
+        XCTAssertEqual(candidate.cadenceRawCandidate, 88)
+        XCTAssertEqual(candidate.activityRawCandidate, 2)
+        XCTAssertTrue(candidate.softwareOverrideCandidate)
+    }
+
     func testRealtimeHRRejectsWrongCandidateByteRange() {
         var frame = bytes("AA011800010022E12802ECFFE36A8F4257016F04000000000000010023BAA03D")
         frame[16] = 0xF3

@@ -142,7 +142,7 @@ This verifies simulator compilation and these pure-calculation unit tests on tha
 
 1. Confirm HealthKit authorization and actual sample retrieval on the user's signed iPhone; simulator tests cannot establish this.
 2. Confirm sleep stage/source de-duplication and night assignment against real Apple Health samples, including naps and timezone/day-boundary cases.
-3. Strengthen Recovery input provenance and baseline quality; current score is an explicitly labelled PulseForge SDNN/RHR estimate, not overnight WHOOP RMSSD or WHOOP Recovery.
+3. Keep Recovery unavailable until WHOOP overnight HRV/RHR provenance, timestamps, and baseline quality are verified; short-window or HealthKit-derived metrics must not be presented as WHOOP Recovery.
 4. Keep Cardio Load separate from WHOOP Strain until a verified physiological model and device/workout validation exist.
 
 
