@@ -128,6 +128,10 @@ struct WoopReferenceHomeScreen: View {
                 monitor("BLOOD OXYGEN", value: health.bloodOxygenPercent.map { String(format: "%.0f", $0) } ?? "—", unit: "%", symbol: "drop.fill")
                 monitor("RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm", symbol: "heart")
             }
+            HStack(spacing: 9) {
+                monitor("STEPS · APPLE HEALTH", value: health.stepsToday.map { $0.formatted() } ?? "—", unit: "steps", symbol: "figure.walk")
+                Spacer(minLength: 0)
+            }
         }
     }
 
