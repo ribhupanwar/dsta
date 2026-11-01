@@ -58,9 +58,11 @@ enum HistoricalRRPacketArchive {
         let key = fileURL.standardizedFileURL.path
         var count = cachedCounts[key]
         var legacyRecords: [HistoricalRRPacketRecord] = []
+        var isLegacyArray = false
 
         if count == nil, let existing = try? Data(contentsOf: fileURL), !existing.isEmpty {
             if existing.first == 0x5B {
+                isLegacyArray = true
                 legacyRecords = load(from: fileURL)
                 count = legacyRecords.count
             } else {
@@ -75,7 +77,7 @@ enum HistoricalRRPacketArchive {
         var line = encoded
         line.append(0x0A)
 
-        if !legacyRecords.isEmpty {
+        if isLegacyArray {
             // One-time migration; subsequent packets are O(1) append operations.
             var migrated = Data()
             for oldRecord in legacyRecords {
