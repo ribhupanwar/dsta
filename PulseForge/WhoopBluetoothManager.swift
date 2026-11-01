@@ -1718,7 +1718,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 22, payload: [0x00])
                     whoop5PendingWrites.append("HISTORY_SEND")
                     peripheral.writeValue(frame, for: commandCharacteristic, type: .withResponse)
-                    recordVendorTimeline("WHOOP history SEND_HISTORICAL_DATA(22) payload=00 queued · seq=\\(sequence)")
+                    recordVendorTimeline("WHOOP history SEND_HISTORICAL_DATA(22) payload=00 queued · seq=\(sequence)")
                 } else {
                     recordVendorTimeline("WHOOP history setup skipped · command characteristic not writable")
                 }
@@ -1768,10 +1768,10 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                                                   payload: [0x01] + endData)
                 whoop5PendingWrites.append("HISTORY_ACK")
                 peripheral.writeValue(ack, for: commandCharacteristic, type: .withResponse)
-                recordVendorTimeline("HISTORY_END ACK queued · cmd=23 · seq=\\(sequence) · cursor=\\(endData.map { String(format: "%02X", $0) }.joined())")
+                recordVendorTimeline("HISTORY_END ACK queued · cmd=23 · seq=\(sequence) · cursor=\(endData.map { String(format: "%02X", $0) }.joined())")
                 return "METADATA HISTORY_END · cursor ACK queued · CRC valid"
             }
-            return "METADATA · subtype=\\(metadataType) · CRC valid"
+            return "METADATA · subtype=\(metadataType) · CRC valid"
 
         case 43: // Gen5 R21 realtime IMU buffer (0x2B); same v21 layout as historical 0x2F.
             whoopIMUFrameCount += 1
@@ -2561,7 +2561,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
             return
         }
         if kind.hasPrefix("HISTORY_") {
-            recordVendorTimeline("\\(kind) write callback · \\(error == nil ? "CoreBluetooth acknowledged" : "failed · \\(error!.localizedDescription)")")
+            recordVendorTimeline("\(kind) write callback · \(error == nil ? "CoreBluetooth acknowledged" : "failed · \(error!.localizedDescription)")")
             return
         }
         if kind == "REALTIME_HR_OFF_PROBE" {
