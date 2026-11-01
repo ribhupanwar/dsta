@@ -1709,35 +1709,20 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                 recordVendorTimeline("GET_HELLO response accepted · success · body length \(b.count) · requesting realtime HR")
                 whoopSessionPhase = "GET_HELLO response parsed · requesting realtime HR"
                 sendRealtimeHrEnable(to: peripheral)
-                // WHOOP 5 history requires a valid strap RTC before the flash store is served.
-                // Mirror NOOP's hardware-tested order: SET_CLOCK(146), GET_CLOCK(147),
-                // GET_DATA_RANGE(34), then SEND_HISTORICAL_DATA(22).
-                let now = UInt32(max(0, Date().timeIntervalSince1970))
-                let clockPayload: [UInt8] = [
-                    UInt8(now & 0xFF), UInt8((now >> 8) & 0xFF),
-                    UInt8((now >> 16) & 0xFF), UInt8((now >> 24) & 0xFF),
-                    0, 0, 0, 0
-                ]
-                let historyCommands: [(UInt8, [UInt8], String)] = [
-                    (146, clockPayload, "SET_CLOCK"),
-                    (147, [], "GET_CLOCK"),
-                    (34, [0x00], "GET_DATA_RANGE"),
-                    (22, [0x00], "SEND_HISTORICAL_DATA")
-                ]
+                // NOOP's hardware-tested WHOOP 5 backfill entry point: opcode 22, payload [00].
+                // Keep this separate from experimental range/clock probes and preserve HR startup.
                 if let commandCharacteristic = whoop5CommandCharacteristic,
                    commandCharacteristic.properties.contains(.write) {
-                    for (opcode, payload, name) in historyCommands {
-                        let sequence = whoop5NextCommandSequence
-                        whoop5NextCommandSequence &+= 1
-                        let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: opcode, payload: payload)
-                        whoop5PendingWrites.append("HISTORY_\\(name)")
-                        peripheral.writeValue(frame, for: commandCharacteristic, type: .withResponse)
-                        recordVendorTimeline("WHOOP history setup write · \\(name)(\\(opcode)) · seq=\\(sequence)")
-                    }
+                    let sequence = whoop5NextCommandSequence
+                    whoop5NextCommandSequence &+= 1
+                    let frame = buildWhoop5CommandFrame(sequence: sequence, opcode: 22, payload: [0x00])
+                    whoop5PendingWrites.append("HISTORY_SEND")
+                    peripheral.writeValue(frame, for: commandCharacteristic, type: .withResponse)
+                    recordVendorTimeline("WHOOP history SEND_HISTORICAL_DATA(22) payload=00 queued · seq=\\(sequence)")
                 } else {
                     recordVendorTimeline("WHOOP history setup skipped · command characteristic not writable")
                 }
-                return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · realtime HR + history setup requested"
+                return "COMMAND_RESPONSE · GET_HELLO(145) SUCCESS · realtime HR + historical sync requested"
             }
             if command == 3 {
                 if let offSequence = whoopEventProbeOffSequence,
