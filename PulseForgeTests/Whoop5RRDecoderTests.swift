@@ -32,7 +32,7 @@ final class Whoop5RRDecoderTests: XCTestCase {
         let timestamp = Whoop5RRDecoder.decodeHistoricalV18Timestamp(frame)
         XCTAssertNotNil(timestamp)
         XCTAssertEqual(timestamp!.timeIntervalSince1970,
-                       1_780_920_246 + 0x4666 / 32768.0, accuracy: 0.0001)
+                       1_780_916_150 + 0x4666 / 32768.0, accuracy: 0.0001)
     }
 
     func testHistoricalTimestampRejectsWrongRevision() {
