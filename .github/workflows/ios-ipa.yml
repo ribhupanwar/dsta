@@ -29,6 +29,27 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Download and verify original WHOOP font assets
+        shell: bash
+        env:
+          PULSEFORGE_FONT_BUNDLE_URL: https://www.dropbox.com/scl/fi/navhymm88wa2pc8j5ch0z/PulseForge-original-fonts.zip?rlkey=urocf01iasetvhlnuf4rca6t1&dl=1
+        run: |
+          set -euo pipefail
+          FONT_ZIP="$RUNNER_TEMP/PulseForge-original-fonts.zip"
+          FONT_ROOT="$RUNNER_TEMP/pulseforge-original-fonts"
+          curl --fail --location --retry 3 --retry-delay 2 "$PULSEFORGE_FONT_BUNDLE_URL" -o "$FONT_ZIP"
+          unzip -tq "$FONT_ZIP"
+          mkdir -p "$FONT_ROOT"
+          unzip -q "$FONT_ZIP" -d "$FONT_ROOT"
+          test -s "$FONT_ROOT/PulseForge/SHA256SUMS.txt"
+          (cd "$FONT_ROOT" && shasum -a 256 -c PulseForge/SHA256SUMS.txt)
+          FONT_COUNT="$(find "$FONT_ROOT/PulseForge" -maxdepth 1 -type f \\( -name '*.otf' -o -name '*.ttf' \\) | wc -l | tr -d ' ')"
+          test "$FONT_COUNT" = "8"
+          cp "$FONT_ROOT"/PulseForge/*.otf PulseForge/
+          cp "$FONT_ROOT"/PulseForge/*.ttf PulseForge/
+          cp "$FONT_ROOT/PulseForge/SHA256SUMS.txt" "$RUNNER_TEMP/PulseForge-fonts.SHA256SUMS.txt"
+          echo "Verified and staged all 8 original font files."
+
       - name: Install XcodeGen
         run: |
           if ! command -v xcodegen >/dev/null 2>&1; then
@@ -106,8 +127,34 @@ jobs:
           EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")"
           test "$BUNDLE_ID" = "com.ribhupanwar.pulseforge"
           test -s "$APP/$EXECUTABLE"
+          FONT_CHECK="$TEMP_DIR/font-check"
+          mkdir -p "$FONT_CHECK/PulseForge"
+          cp "$RUNNER_TEMP/PulseForge-fonts.SHA256SUMS.txt" "$FONT_CHECK/PulseForge/SHA256SUMS.txt"
+          while IFS= read -r line; do
+            FONT_NAME="${line#*  }"
+            test -s "$APP/$FONT_NAME"
+            cp "$APP/$FONT_NAME" "$FONT_CHECK/PulseForge/$FONT_NAME"
+          done < "$FONT_CHECK/PulseForge/SHA256SUMS.txt"
+          (cd "$FONT_CHECK" && shasum -a 256 -c PulseForge/SHA256SUMS.txt)
+          python3 - "$APP/Info.plist" <<'PY'
+          import plistlib, sys
+          with open(sys.argv[1], "rb") as f:
+              plist = plistlib.load(f)
+          expected = {
+              "woop_d_din_bold.otf", "woop_d_din_regular.otf",
+              "woop_dinpro_bold.otf", "woop_dinpro_medium.otf",
+              "woop_inter_variable.ttf", "woop_proxima_bold.otf",
+              "woop_proxima_regular.otf", "woop_proxima_semibold.otf",
+          }
+          registered = set(plist.get("UIAppFonts", []))
+          missing = expected - registered
+          if missing:
+              raise SystemExit(f"UIAppFonts registration missing: {sorted(missing)}")
+          print(f"Verified {len(expected)} registered original fonts in app bundle.")
+          PY
           echo "Validated bundle: $BUNDLE_ID"
           echo "Validated executable: $EXECUTABLE"
+          echo "Validated all 8 original WHOOP-derived font resources and SHA-256 hashes."
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
