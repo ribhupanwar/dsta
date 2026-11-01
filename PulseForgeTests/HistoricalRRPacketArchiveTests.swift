@@ -50,7 +50,9 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
-        let legacy = try JSONEncoder().encode([record(10)])
+        let legacyEncoder = JSONEncoder()
+        legacyEncoder.dateEncodingStrategy = .iso8601
+        let legacy = try legacyEncoder.encode([record(10)])
         try legacy.write(to: url)
 
         XCTAssertEqual(try HistoricalRRPacketArchive.append(record(11), to: url), 2)
