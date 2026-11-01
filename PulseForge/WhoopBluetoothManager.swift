@@ -1958,7 +1958,7 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
                     revision: 18,
                     intervalsMilliseconds: rr,
                     rawFrameHex: rawHex,
-                    physiologicalTimestamp: nil,
+                    physiologicalTimestamp: Whoop5RRDecoder.decodeHistoricalV18Timestamp(b),
                     decodeError: decodeError
                 )
                 if let support = FileManager.default.urls(
