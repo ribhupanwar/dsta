@@ -2198,10 +2198,21 @@ struct DeviceDashboard: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("HISTORICAL SYNC STATUS")
+                            .font(.system(size: 9, weight: .bold)).tracking(1)
+                            .foregroundStyle(ForgeColors.lime)
+                        Text(bluetooth.whoopHistorySyncStatus)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(ForgeColors.muted)
+                            .textSelection(.enabled)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12).background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 12))
                     if bluetooth.historicalRRArchiveRecordCount > 0 {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Text("TYPE-47 V18 RAW RR ARCHIVE")
+                                Text("TYPE-47 HISTORICAL RAW FRAME ARCHIVE")
                                     .font(.system(size: 9, weight: .bold)).tracking(1)
                                     .foregroundStyle(ForgeColors.lime)
                                 Spacer()
@@ -2214,7 +2225,7 @@ struct DeviceDashboard: View {
                             Text("\(bluetooth.historicalRRArchiveRecordCount) CRC-valid raw frame(s) saved")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(.white)
-                            Text("Export includes raw hex and decode errors. Phone receipt time is not physiological time; candidate RR offsets remain unverified.")
+                            Text("Includes v18 candidate words and unmapped Type-47 frames. Phone receipt time is not physiological time; RR units and R24 payload fields remain unverified.")
                                 .font(.system(size: 9))
                                 .foregroundStyle(ForgeColors.muted)
                         }

@@ -946,7 +946,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
     private var scanTimeoutWorkItem: DispatchWorkItem?
     private var connectionTimeoutWorkItem: DispatchWorkItem?
     private var reconnectWorkItem: DispatchWorkItem?
-    private var automaticReconnectAttempt = 0
+    private var reconnectAttemptCoordinator = ReconnectAttemptCoordinator()
     private var pendingCharacteristicServices = Set<ObjectIdentifier>()
     private var pendingDescriptorCharacteristics = Set<ObjectIdentifier>()
     private var gattCharacteristicDiscoveryErrors: [String] = []
@@ -1062,7 +1062,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         connectionTimeoutWorkItem = nil
         reconnectWorkItem?.cancel()
         reconnectWorkItem = nil
-        automaticReconnectAttempt = 0
+        reconnectAttemptCoordinator.stop()
         cancelAutomaticReconnectScan()
         if let peripheral = connectedPeripheral {
             UserDefaults.standard.removeObject(forKey: rememberedPeripheralKey)
@@ -1090,7 +1090,7 @@ final class WhoopBluetoothManager: NSObject, ObservableObject {
         scanTimeoutWorkItem = nil
         reconnectWorkItem?.cancel()
         reconnectWorkItem = nil
-        automaticReconnectAttempt = 0
+        reconnectAttemptCoordinator.stop()
         cancelAutomaticReconnectScan()
         discoveredProfile.removeAll()
         connectedDeviceSnapshot = device
@@ -1342,9 +1342,12 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         if central.state != .poweredOn {
             scanTimeoutWorkItem?.cancel()
             scanTimeoutWorkItem = nil
+            connectionTimeoutWorkItem?.cancel()
+            connectionTimeoutWorkItem = nil
+            reconnectWorkItem?.cancel()
+            reconnectWorkItem = nil
+            reconnectAttemptCoordinator.stop()
             cancelAutomaticReconnectScan()
-            scanTimeoutWorkItem?.cancel()
-            scanTimeoutWorkItem = nil
         }
         switch central.state {
         case .poweredOn:
@@ -1574,10 +1577,19 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
             guard let self, let peripheral,
                   self.connectedPeripheral?.identifier == peripheral.identifier,
                   self.isConnecting else { return }
+            let shouldRetry =
+                UserDefaults.standard.string(forKey: self.rememberedPeripheralKey) == peripheral.identifier.uuidString
+                && self.central.state == .poweredOn
             self.central.cancelPeripheralConnection(peripheral)
             self.clearConnectionState()
-            self.statusText = "Automatic reconnect timed out · tap Scan to retry"
-            self.lastBLEEvent = "Automatic reconnect timed out before CoreBluetooth callback"
+            if shouldRetry {
+                self.lastBLEEvent = "Automatic reconnect timed out · next backoff attempt scheduled"
+                self.scheduleAutomaticReconnect(for: peripheral, reason: "connection timeout")
+            } else {
+                self.reconnectAttemptCoordinator.stop()
+                self.statusText = "Automatic reconnect timed out · tap Scan to retry"
+                self.lastBLEEvent = "Automatic reconnect timed out · retry unavailable"
+            }
         }
         connectionTimeoutWorkItem = timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: timeout)
@@ -1758,7 +1770,7 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         connectionTimeoutWorkItem = nil
         reconnectWorkItem?.cancel()
         reconnectWorkItem = nil
-        automaticReconnectAttempt = 0
+        reconnectAttemptCoordinator.connected()
         isConnecting = false
         peripheral.delegate = self
         connectedName = peripheral.name ?? "WHOOP candidate"
@@ -1774,6 +1786,10 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        guard !reconnectAttemptCoordinator.retryPending else {
+            lastBLEEvent = "Late failed-connect callback ignored · next retry already queued"
+            return
+        }
         let shouldRetry = UserDefaults.standard.string(forKey: rememberedPeripheralKey) == peripheral.identifier.uuidString
         connectionTimeoutWorkItem?.cancel()
         connectionTimeoutWorkItem = nil
@@ -1789,6 +1805,10 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        guard !reconnectAttemptCoordinator.retryPending else {
+            lastBLEEvent = "Late disconnect callback ignored · next retry already queued"
+            return
+        }
         let wasRememberedDevice =
             UserDefaults.standard.string(forKey: rememberedPeripheralKey) == peripheral.identifier.uuidString
         clearConnectionState()
@@ -1809,17 +1829,24 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
     private func scheduleAutomaticReconnect(for peripheral: CBPeripheral, reason: String) {
         guard central.state == .poweredOn,
               UserDefaults.standard.string(forKey: rememberedPeripheralKey) == peripheral.identifier.uuidString else {
+            reconnectAttemptCoordinator.stop()
             statusText = "WHOOP disconnected · automatic reconnect unavailable"
             return
         }
-        guard let delay = ReconnectBackoffPolicy.delay(forAttempt: automaticReconnectAttempt) else {
-            statusText = "WHOOP reconnect paused after \(ReconnectBackoffPolicy.maximumAttempts) attempts · tap Scan to retry"
-            lastBLEEvent = "Automatic reconnect limit reached · \(reason)"
+        guard let scheduled = reconnectAttemptCoordinator.scheduleNext() else {
+            if reconnectAttemptCoordinator.retryPending {
+                lastBLEEvent = "Duplicate reconnect callback ignored · attempt \(reconnectAttemptCoordinator.attemptsScheduled) already queued"
+            } else {
+                statusText = "WHOOP reconnect paused after \(ReconnectBackoffPolicy.maximumAttempts) attempts · tap Scan to retry"
+                lastBLEEvent = "Automatic reconnect limit reached · \(reason)"
+            }
             return
         }
+
         reconnectWorkItem?.cancel()
-        automaticReconnectAttempt += 1
-        let attempt = automaticReconnectAttempt
+        reconnectWorkItem = nil
+        let attempt = scheduled.attempt
+        let delay = scheduled.delay
         connectedPeripheral = peripheral
         connectedDeviceSnapshot = nil
         peripheral.delegate = self
@@ -1829,10 +1856,17 @@ extension WhoopBluetoothManager: CBCentralManagerDelegate {
         statusText = "WHOOP reconnecting · attempt \(attempt)/\(ReconnectBackoffPolicy.maximumAttempts) in \(Int(delay))s"
         lastBLEEvent = "Automatic reconnect scheduled · attempt \(attempt)/\(ReconnectBackoffPolicy.maximumAttempts) · \(reason)"
         let work = DispatchWorkItem { [weak self, weak peripheral] in
-            guard let self, let peripheral,
+            guard let self else { return }
+            guard let peripheral,
                   self.connectedPeripheral?.identifier == peripheral.identifier,
                   self.central.state == .poweredOn,
-                  UserDefaults.standard.string(forKey: self.rememberedPeripheralKey) == peripheral.identifier.uuidString else { return }
+                  UserDefaults.standard.string(forKey: self.rememberedPeripheralKey) == peripheral.identifier.uuidString else {
+                self.reconnectWorkItem = nil
+                self.reconnectAttemptCoordinator.stop()
+                return
+            }
+            self.reconnectWorkItem = nil
+            self.reconnectAttemptCoordinator.beginAttempt()
             self.statusText = "WHOOP reconnecting · attempt \(attempt)/\(ReconnectBackoffPolicy.maximumAttempts)"
             self.central.connect(peripheral, options: nil)
             self.scheduleReconnectTimeout(for: peripheral)
