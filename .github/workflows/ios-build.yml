@@ -10,6 +10,12 @@ on:
       - ui/reference-dashboard-redesign
       - feature/woop-reference-ui-port
       - ui/whoop-native-shell-v1
+    paths:
+      - "PulseForge/**"
+      - "PulseForgeTests/**"
+      - "project.yml"
+      - "Package.swift"
+      - ".github/workflows/ios-build.yml"
   workflow_dispatch:
 
 concurrency:
