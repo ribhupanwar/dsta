@@ -36,7 +36,7 @@ jobs:
           archive="Whoop.zip"
           test -f "$archive" || { echo "::error::Whoop.zip missing"; exit 1; }
           mkdir -p PulseForge/Resources/Fonts
-          unzip -Z1 "$archive" | grep -E '^decompiled/resources/res/font/.*\.(ttf|otf)        run: |
+          unzip -Z1 "$archive" | grep -Ei '(^|/)res/font/.*\.(ttf|otf)        run: |
           if ! command -v xcodegen >/dev/null 2>&1; then
             brew install xcodegen
           fi
@@ -107,7 +107,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
  > "$RUNNER_TEMP/whoop-font-list.txt"
-          test "$(wc -l < "$RUNNER_TEMP/whoop-font-list.txt" | tr -d ' ')" = 8 || { echo "::error::Expected 8 original font files in APK archive"; exit 1; }
+          count="$(wc -l < "$RUNNER_TEMP/whoop-font-list.txt" | tr -d ' ')"
+          test "$count" = 8 || { echo "::error::Expected 8 original font binaries, found $count"; cat "$RUNNER_TEMP/whoop-font-list.txt"; exit 1; }
           while IFS= read -r entry; do
             name="$(basename "$entry")"
             unzip -p "$archive" "$entry" > "PulseForge/Resources/Fonts/$name"
@@ -115,6 +116,7 @@ jobs:
           for font in PulseForge/Resources/Fonts/*; do
             shasum -a 256 "$font"
           done | tee "$RUNNER_TEMP/whoop-font-sha256.txt"
+
       - name: Install XcodeGen
         run: |
           if ! command -v xcodegen >/dev/null 2>&1; then
