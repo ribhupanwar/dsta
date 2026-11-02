@@ -1,7 +1,11 @@
 name: WHOOP archive technical inventory
 
 on:
-  # Run this expensive archive scan manually, not on every source-code push.
+  # Re-run the pinned archive inventory when this workflow is updated.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/whoop-archive-inventory.yml"
   workflow_dispatch:
 
 permissions:
