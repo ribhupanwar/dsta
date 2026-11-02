@@ -87,8 +87,15 @@ struct HistoricalRRPacketRecord: Codable, Equatable {
                 }
             }
             intervalsMilliseconds = []
-            rawRRWords = candidateWordsFromFrame ?? storedRawWords
-            legacyUnverifiedRRValues = storedLegacyValues ?? (storedMilliseconds.isEmpty ? nil : storedMilliseconds)
+            // Empty arrays in older archives are placeholders, not evidence that
+            // a candidate payload or previously stored values were present.
+            // Prefer a fresh CRC-valid extraction; otherwise retain only non-empty
+            // stored raw words. Preserve older converted values as explicitly
+            // unverified when the newer migration field is empty.
+            rawRRWords = candidateWordsFromFrame ?? (storedRawWords?.isEmpty == false ? storedRawWords : nil)
+            legacyUnverifiedRRValues = storedLegacyValues?.isEmpty == false
+                ? storedLegacyValues
+                : (storedMilliseconds.isEmpty ? nil : storedMilliseconds)
             heartRateBPM = nil
             physiologicalTimestamp = nil
             physiologyLayoutVerified = false
