@@ -109,6 +109,20 @@ jobs:
           This is static inspection of a compiled iOS application. It inventories resources and extracts available strings, symbols, asset metadata, and NIB wiring. SwiftUI view source and exact runtime constraints are not guaranteed to be recoverable. Extracted proprietary assets/code are for analysis only and must not be copied into Woop; implement clean-room equivalents and preserve Woop fonts.
           EOF
 
+      - name: Extract selected screen-reference renditions for visual analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(cat /tmp/whoop-app-path.txt)"
+          git clone --depth 1 https://github.com/vaguilar/carutil.git /tmp/carutil
+          cargo build --release --manifest-path /tmp/carutil/Cargo.toml
+          mkdir -p /tmp/whoop-renditions whoop-ui-reference/screen-reference
+          /tmp/carutil/target/release/carutil extract --output-path /tmp/whoop-renditions "$APP/Assets.car"
+          find /tmp/whoop-renditions -type f \\( -iname '*RecoveryScreenshot*' -o -iname '*SleepScreenshot*' -o -iname '*StrainScreenshot*' \\) -print -exec cp {} whoop-ui-reference/screen-reference/ \\;
+          echo "Selected reference renditions:"
+          find whoop-ui-reference/screen-reference -type f -maxdepth 1 -print
+          test "$(find whoop-ui-reference/screen-reference -type f | wc -l | tr -d ' ')" -ge 3
+
       - name: Upload WHOOP 5.75.0 UI reference report
         uses: actions/upload-artifact@v4
         with:
