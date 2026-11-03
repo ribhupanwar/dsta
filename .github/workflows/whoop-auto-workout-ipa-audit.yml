@@ -1,0 +1,98 @@
+name: WHOOP original IPA auto-workout reverse engineering audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/whoop-auto-workout-ipa-audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-whoop-ipa:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Download and verify original WHOOP 5.75.0 IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            "https://github.com/ribhupanwar/dsta/releases/download/whoop-5.75.0/pulseforge.ipa" \
+            --output /tmp/whoop-original.ipa
+          ACTUAL="$(shasum -a 256 /tmp/whoop-original.ipa | awk '{print $1}')"
+          EXPECTED="8a5deedc59567612683feb77dd7348238de89437123946b3344bc6ff1e90af8a"
+          echo "SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+          unzip -tq /tmp/whoop-original.ipa
+
+      - name: Extract workout detection evidence from arm64 executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p whoop-auto-workout-evidence
+          unzip -q /tmp/whoop-original.ipa -d /tmp/whoop-ipa
+          INFO="$(find /tmp/whoop-ipa/Payload -maxdepth 3 -name Info.plist -print -quit)"
+          APP="$(dirname "$INFO")"
+          BIN="$APP/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO")"
+          test -f "$BIN"
+          {
+            echo "WHOOP original IPA SHA-256: $(shasum -a 256 /tmp/whoop-original.ipa | awk '{print $1}')"
+            echo "Executable SHA-256: $(shasum -a 256 "$BIN" | awk '{print $1}')"
+            echo "Bundle: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO")"
+            echo "Version: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO")"
+            echo "Build: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO")"
+            echo "Executable: $BIN"
+            echo "Architectures: $(lipo -archs "$BIN")"
+          } > whoop-auto-workout-evidence/README.txt
+          /usr/libexec/PlistBuddy -c 'Print' "$INFO" > whoop-auto-workout-evidence/Info-plist.txt
+          find "$APP" -maxdepth 3 -type d -name '*.framework' -print | sort > whoop-auto-workout-evidence/frameworks.txt
+          find "$APP" -maxdepth 3 -name '*.appex' -print | sort > whoop-auto-workout-evidence/extensions.txt
+          codesign -d --entitlements :- "$APP" > whoop-auto-workout-evidence/entitlements.plist 2>whoop-auto-workout-evidence/codesign-entitlements-errors.txt || true
+          ARCHS="$(lipo -archs "$BIN")"
+          if [[ "$ARCHS" == "arm64" ]]; then cp "$BIN" /tmp/whoop-arm64; else lipo "$BIN" -thin arm64 -output /tmp/whoop-arm64; fi
+          nm -arch arm64 -nm /tmp/whoop-arm64 > whoop-auto-workout-evidence/nm-arm64.txt 2>&1 || true
+          xcrun swift-demangle < <(awk '{print $NF}' whoop-auto-workout-evidence/nm-arm64.txt | grep '^_' | sort -u) > whoop-auto-workout-evidence/swift-demangled-symbols.txt 2>&1 || true
+          strings -a /tmp/whoop-arm64 > /tmp/whoop-strings.txt
+          grep -Ei 'auto.?detect|activity.?detect|workout.?detect|detect.*activity|detect.*workout|activity.*recogn|workout.*recogn|automatic.*activity|automatic.*workout|ActivityDetection|TrackActivity|HeartRateSampleStream|workout.?state|HKWorkout|CMMotionActivity|CMPedometer|CoreMotion|HealthKit|WHPStartActivity|WHPActivityRecording|ActivitySuggestion|WorkoutStart|WorkoutEnd|autoStart|recording|locomotion|exercise' /tmp/whoop-strings.txt | sort -u > whoop-auto-workout-evidence/workout-strings.txt || true
+          grep -Ei 'auto.?detect|activity.?detect|workout.?detect|ActivityDetection|TrackActivity|HeartRateSampleStream|HKWorkout|CMMotionActivity|CMPedometer|WHPStartActivity|WHPActivityRecording|ActivitySuggestion|WorkoutStart|WorkoutEnd|locomotion|exercise|recording' whoop-auto-workout-evidence/swift-demangled-symbols.txt > whoop-auto-workout-evidence/workout-symbols.txt || true
+          otool -arch arm64 -ov /tmp/whoop-arm64 > whoop-auto-workout-evidence/objc-runtime-metadata.txt 2>&1 || true
+          otool -arch arm64 -l /tmp/whoop-arm64 > whoop-auto-workout-evidence/load-commands.txt
+          otool -arch arm64 -tvV /tmp/whoop-arm64 > /tmp/whoop-disassembly.txt 2>whoop-auto-workout-evidence/otool-disassembly-errors.txt || true
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          files = {
+            "workout-disassembly-context.txt": r"auto.?detect|activity.?detect|workout.?detect|activity.?recogn|workout.?recogn|WHPStartActivity|WHPActivityRecording|ActivityDetection|TrackActivity|HeartRateSampleStream|HKWorkout|CMMotionActivity|CMPedometer|locomotion|WorkoutStart|WorkoutEnd|autoStart",
+            "workout-objc-metadata-context.txt": r"auto.?detect|activity.?detect|workout.?detect|ActivityDetection|TrackActivity|WHPStartActivity|WHPActivityRecording|HKWorkout|CMMotionActivity|CMPedometer|locomotion|WorkoutStart|WorkoutEnd"
+          }
+          sources = {
+            "workout-disassembly-context.txt": Path("/tmp/whoop-disassembly.txt"),
+            "workout-objc-metadata-context.txt": Path("whoop-auto-workout-evidence/objc-runtime-metadata.txt")
+          }
+          for output, pattern in files.items():
+            lines = sources[output].read_text(errors="replace").splitlines()
+            rx = re.compile(pattern, re.I)
+            hits = [i for i, line in enumerate(lines) if rx.search(line)]
+            keep = set()
+            for i in hits:
+              keep.update(range(max(0, i-16), min(len(lines), i+36)))
+            selected = sorted(keep)
+            out, prev = [], -2
+            for i in selected:
+              if i != prev + 1: out.append("\\n--- matching context ---")
+              out.append(lines[i]); prev = i
+            Path("whoop-auto-workout-evidence", output).write_text("\\n".join(out) + "\\n")
+            print(f"{output}: {len(hits)} hits, {len(selected)} context lines")
+          PY
+          echo "Static binary metadata and disassembly are evidence, not proof of runtime detection thresholds or behavior." >> whoop-auto-workout-evidence/README.txt
+
+      - name: Upload original IPA auto-workout evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: whoop-original-ipa-auto-workout-audit
+          path: whoop-auto-workout-evidence/
+          retention-days: 14
+          if-no-files-found: error
