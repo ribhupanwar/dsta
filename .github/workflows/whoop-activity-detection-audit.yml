@@ -50,7 +50,28 @@ jobs:
               echo "--- $f ---"
               unzip -p Whoop.zip "$f" | strings -a | head -180 || true
             done
+
             echo
+            echo "## Dedicated Activity Detection Settings bundle localization"
+            unzip -Z1 Whoop.zip | grep -E 'WhoopActivityDetectionSettings_WhoopActivityDetectionSettings.bundle/LocalizedStrings/en/ActivityDetectionSettings\\.strings
+            unzip -tq Whoop.zip | tail -2
+          } > activity-audit/WHOOP-activity-detection-audit.md
+          test -s activity-audit/WHOOP-activity-detection-audit.md
+          cat activity-audit/WHOOP-activity-detection-audit.md
+      - name: Upload activity audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: WHOOP-activity-detection-audit
+          path: activity-audit/WHOOP-activity-detection-audit.md
+          if-no-files-found: error
+ | while read -r f; do
+              echo "--- $f ---"
+              unzip -p Whoop.zip "$f" | strings -a | head -240 || true
+            done
+            echo
+            echo "## Automatic workout state/event symbol references"
+            unzip -p Whoop.zip Whoop | strings -a | grep -Ei 'activityAutoDetectStartedAt|autoDetectWorkout|activityDetectedEvent|ActivityDetectedModel|PostActivityDetectedRequest|StrengthWorkoutDetectionState|user-state/workout|activity_autodetected|auto_detect_workout|kAutomaticActivityWorkoutSavingAlert' | sort -u | head -240 || true
+
             echo "## Relevant archive integrity"
             unzip -tq Whoop.zip | tail -2
           } > activity-audit/WHOOP-activity-detection-audit.md
