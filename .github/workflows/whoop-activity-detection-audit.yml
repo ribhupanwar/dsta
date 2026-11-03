@@ -3,7 +3,7 @@ name: WHOOP activity detection archive audit
 on:
   workflow_dispatch:
   push:
-    branches: [whoop-background-ble]
+    branches: [analysis/auto-workout-detection]
     paths:
       - ".github/workflows/whoop-activity-detection-audit.yml"
 
