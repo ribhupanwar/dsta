@@ -1,0 +1,36 @@
+import XCTest
+@testable import PulseForge
+
+@MainActor
+final class TrainingInsightsStoreTests: XCTestCase {
+    func testDailyWorkoutSummaryIncludesPreviousDaySessionOverlap() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let dayStart = Date(timeIntervalSince1970: 86_400)
+        let session = WorkoutSessionRecord(
+            startedAt: dayStart.addingTimeInterval(-30),
+            durationSeconds: 150,
+            wasAutomatic: false,
+            wasInterrupted: false,
+            heartRateSamples: [
+                LiveHeartRateSample(timestamp: dayStart.addingTimeInterval(-30), bpm: 150),
+                LiveHeartRateSample(timestamp: dayStart.addingTimeInterval(30), bpm: 180),
+                LiveHeartRateSample(timestamp: dayStart.addingTimeInterval(90), bpm: 160)
+            ],
+            imuSamples: []
+        )
+        let store = TrainingInsightsStore()
+
+        store.refreshWorkoutLoad(
+            sessions: [session],
+            measuredMaxHeartRate: 200,
+            now: dayStart.addingTimeInterval(3_600),
+            calendar: calendar
+        )
+
+        XCTAssertEqual(store.workoutCountToday, 1)
+        XCTAssertEqual(store.workoutMinutesToday ?? -1, 2.0, accuracy: 0.001)
+        XCTAssertEqual(store.cardioLoadPoints ?? -1, 167.5, accuracy: 0.001)
+        XCTAssertTrue(store.strainSourceStatus.contains("PulseForge cardio-load estimate"))
+    }
+}

@@ -70,12 +70,27 @@ final class TrainingInsightsStore: ObservableObject {
                             calendar: Calendar = .current) {
         let start = calendar.startOfDay(for: now)
         guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { return }
-        let todays = sessions.filter { $0.startedAt >= start && $0.startedAt < end }
-        workoutCountToday = todays.count
-        workoutMinutesToday = todays.isEmpty ? nil :
-            todays.reduce(0) { $0 + max(0, $1.durationSeconds) / 60 }
+
+        // Count only the part of each saved session that overlaps this local day.
+        // A workout that crosses midnight contributes to both days, without
+        // assigning its full duration or HR load to either day.
+        let overlapMinutes = sessions.compactMap { session -> TimeInterval? in
+            guard session.durationSeconds.isFinite, session.durationSeconds > 0 else { return nil }
+            let sessionEnd = session.startedAt.addingTimeInterval(session.durationSeconds)
+            guard sessionEnd > session.startedAt,
+                  sessionEnd.timeIntervalSince1970.isFinite else { return nil }
+            let overlapStart = max(session.startedAt, start)
+            let overlapEnd = min(sessionEnd, end)
+            let overlap = overlapEnd.timeIntervalSince(overlapStart)
+            return overlap > 0 ? overlap / 60 : nil
+        }
+        workoutCountToday = overlapMinutes.count
+        workoutMinutesToday = overlapMinutes.isEmpty ? nil : overlapMinutes.reduce(0, +)
+
+        // Pass the complete history so the calculator can include sessions that
+        // began before midnight but still contain HR samples inside today's window.
         cardioLoadPoints = CardioLoadCalculator.dailyWorkoutLoad(
-            sessions: todays,
+            sessions: sessions,
             dayStart: start,
             nextDay: end,
             measuredMaxHeartRate: measuredMaxHeartRate

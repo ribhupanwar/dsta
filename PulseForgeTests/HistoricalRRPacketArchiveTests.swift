@@ -382,7 +382,7 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
     }
 
     
-    func testLegacyEmptyArraysDoNotMaskCRCValidCandidateWordsOrPriorValues() throws {
+    func testLegacyEmptyArraysRecoverCandidateWordsAndPreservePriorMillisecondsAsUnverified() throws {
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let rawFrame = "AA01740001003FB12F128037170700FA9AE36A9939004B015F030000000000000000992C074B0000FF4034793C00005CBF71FD30BEC3B5FF3E6C01F200000000000000000031013B01F90C900A010C060C10000000000000000000000000000000000000000000000100A1B724230000001A30A8C00000002AC67557"
@@ -398,7 +398,7 @@ final class HistoricalRRPacketArchiveTests: XCTestCase {
 
         let migrated = try XCTUnwrap(HistoricalRRPacketArchive.loadThrowing(from: url).first)
         XCTAssertEqual(migrated.intervalsMilliseconds, [])
-        XCTAssertEqual(migrated.rawRRWords, [602, 613])
+        XCTAssertEqual(migrated.rawRRWords, [863])
         XCTAssertEqual(migrated.legacyUnverifiedRRValues, [629, 794])
         XCTAssertNil(migrated.heartRateBPM)
         XCTAssertNil(migrated.physiologicalTimestamp)
