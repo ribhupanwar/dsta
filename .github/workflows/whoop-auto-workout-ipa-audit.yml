@@ -34,7 +34,9 @@ jobs:
           set -euo pipefail
           mkdir -p whoop-auto-workout-evidence
           unzip -q /tmp/whoop-original.ipa -d /tmp/whoop-ipa
-          INFO="$(find /tmp/whoop-ipa/Payload -maxdepth 3 -name Info.plist -print -quit)"
+          # Select the top-level application plist, not a nested extension/watch plist.
+          INFO="$(find /tmp/whoop-ipa/Payload -maxdepth 2 -type f -name Info.plist -print -quit)"
+          test -n "$INFO"
           APP="$(dirname "$INFO")"
           BIN="$APP/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO")"
           test -f "$BIN"
