@@ -72,6 +72,20 @@ public struct VO2EstimateResult: Sendable {
 /// Effective-age conversion from a validated all-cause-mortality hazard ratio.
 /// Age delta = ln(HR) / ln(1.10). The caller must supply a published, applicable
 /// hazard ratio; no coefficients are fabricated by this engine.
+
+/// Cooper 12-minute field-test estimate. Distance must be measured over a
+/// continuous, maximal 12-minute run. This is a field-test estimate, not a
+/// Garmin/Firstbeat or WHOOP reproduction and not a substitute for gas analysis.
+public enum Cooper12MinuteVO2 {
+    /// Classic Cooper equation: VO2max = (distance_m - 504.9) / 44.73.
+    public static func estimate(distanceMeters: Double) -> Double? {
+        guard distanceMeters.isFinite, (1_000...5_000).contains(distanceMeters) else { return nil }
+        let value = (distanceMeters - 504.9) / 44.73
+        guard (15...90).contains(value) else { return nil }
+        return value
+    }
+}
+
 public enum EffectiveAgeMath {
     public static func ageDeltaYears(validatedHazardRatio: Double,
                                      annualAgeRiskMultiplier: Double = 1.10) -> Double? {
