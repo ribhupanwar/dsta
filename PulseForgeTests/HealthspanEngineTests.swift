@@ -2,6 +2,13 @@ import XCTest
 @testable import PulseForge
 
 final class HealthspanEngineTests: XCTestCase {
+    func testCooper12MinuteEquationAndInputValidation() {
+        XCTAssertEqual(Cooper12MinuteVO2.estimate(distanceMeters: 3000) ?? -1,
+                       (3000 - 504.9) / 44.73, accuracy: 0.001)
+        XCTAssertNil(Cooper12MinuteVO2.estimate(distanceMeters: 900))
+        XCTAssertNil(Cooper12MinuteVO2.estimate(distanceMeters: .infinity))
+    }
+
     func testEffectiveAgeUsesLogHazardRatio() {
         let delta = EffectiveAgeMath.ageDeltaYears(validatedHazardRatio: 1.10)
         XCTAssertEqual(delta ?? .nan, 1.0, accuracy: 0.0001)
