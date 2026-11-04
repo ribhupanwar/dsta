@@ -109,9 +109,9 @@ public enum PulseForgeHealthspanEngine {
         }) { parts.append(c) }
         if let c = contributor("Sleep consistency", rows.compactMap { $0.sleepConsistencyPercent }, { min(100, $0) }) { parts.append(c) }
         if let c = contributor("Daily steps", rows.compactMap { $0.steps.map(Double.init) }, { min(100, $0 / 8000 * 100) }) { parts.append(c) }
-        if let c = contributor("Zone 1–3 activity", rows.compactMap { $0.zone1To3Minutes }, { min(100, $0 / 100 * 100) }) { parts.append(c) }
-        if let c = contributor("Zone 4–5 activity", rows.compactMap { $0.zone4To5Minutes }, { min(100, $0 / 10 * 100) }) { parts.append(c) }
-        if let c = contributor("Strength activity", rows.compactMap { $0.strengthMinutes }, { min(100, $0 / 40 * 100) }) { parts.append(c) }
+        if let c = contributor("Zone 1–3 activity", rows.compactMap { $0.zone1To3Minutes }, { min(100, ($0 * 7) / 100 * 100) }) { parts.append(c) }
+        if let c = contributor("Zone 4–5 activity", rows.compactMap { $0.zone4To5Minutes }, { min(100, ($0 * 7) / 10 * 100) }) { parts.append(c) }
+        if let c = contributor("Strength activity", rows.compactMap { $0.strengthMinutes }, { min(100, ($0 * 7) / 40 * 100) }) { parts.append(c) }
         if let c = contributor("VO2 Max", rows.compactMap { $0.vo2Max }, { min(100, $0 / 45 * 100) }) { parts.append(c) }
         if let c = contributor("Resting heart rate", rows.compactMap { $0.restingHeartRate }, { max(0, min(100, (90 - $0) / 30 * 100)) }) { parts.append(c) }
         if let c = contributor("Lean body mass", rows.compactMap { $0.leanBodyMassPercent }, { min(100, $0 / 80 * 100) }) { parts.append(c) }
