@@ -1522,6 +1522,7 @@ final class HealthDataStore: ObservableObject {
     @Published private(set) var heartRate: Int?
     @Published private(set) var hrvMilliseconds: Double?
     @Published private(set) var restingHeartRate: Int?
+    @Published private(set) var healthKitVO2Max: Double?
     @Published private(set) var respiratoryRate: Double?
     @Published private(set) var bloodOxygenPercent: Double?
     @Published private(set) var sleepHours: Double?
@@ -1571,7 +1572,7 @@ final class HealthDataStore: ObservableObject {
         var readTypes = Set<HKObjectType>()
         let quantityIdentifiers: [HKQuantityTypeIdentifier] = [
             .heartRate, .heartRateVariabilitySDNN, .restingHeartRate,
-            .respiratoryRate, .oxygenSaturation, .distanceWalkingRunning
+            .respiratoryRate, .oxygenSaturation, .distanceWalkingRunning, .vo2Max
         ]
         for identifier in quantityIdentifiers {
             if let type = HKObjectType.quantityType(forIdentifier: identifier) {
@@ -1616,6 +1617,8 @@ final class HealthDataStore: ObservableObject {
         loadLatestQuantity(.respiratoryRate, unit: rateUnit) { [weak self] value in self?.respiratoryRate = value; group.leave() }
         group.enter()
         loadLatestQuantity(.oxygenSaturation, unit: HKUnit.percent(), multiplier: 100) { [weak self] value in self?.bloodOxygenPercent = value; group.leave() }
+        group.enter()
+        loadLatestQuantity(.vo2Max, unit: HKUnit(from: "ml/kg*min")) { [weak self] value in self?.healthKitVO2Max = value; group.leave() }
         group.notify(queue: .main, execute: completion)
     }
 
