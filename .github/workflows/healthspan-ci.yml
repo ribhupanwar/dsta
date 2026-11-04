@@ -1,0 +1,33 @@
+name: Healthspan and VO2 iOS validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "PulseForge/**"
+      - "PulseForgeTests/**"
+      - "project.yml"
+      - ".github/workflows/healthspan-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Build iOS Simulator target
+        run: |
+          xcodebuild -list -project PulseForge.xcodeproj
+          xcodebuild -project PulseForge.xcodeproj -scheme PulseForge -destination "generic/platform=iOS Simulator" -configuration Debug CODE_SIGNING_ALLOWED=NO build
+      - name: Run unit tests
+        run: |
+          DEVICE="$(xcrun simctl list devices available | grep -m1 -E 'iPhone' | sed -E 's/.*\(([0-9A-F-]+)\).*/\1/')"
+          test -n "$DEVICE"
+          xcodebuild -project PulseForge.xcodeproj -scheme PulseForge -destination "platform=iOS Simulator,id=$DEVICE" -configuration Debug CODE_SIGNING_ALLOWED=NO test
