@@ -152,6 +152,7 @@ struct TodayDashboard: View {
                     CompactMetric(title: "SDNN HRV", value: health.hrvMilliseconds.map { String(format: "%.0f", $0) } ?? "—", unit: "ms")
                     CompactMetric(title: "RESTING HR", value: health.restingHeartRate.map(String.init) ?? "—", unit: "bpm")
                     CompactMetric(title: "SLEEP", value: health.sleepHours.map { String(format: "%.1f", $0) } ?? "—", unit: "hours")
+                    CompactMetric(title: "VO₂ MAX", value: health.healthKitVO2Max.map { String(format: "%.1f", $0) } ?? "—", unit: "mL/kg/min")
                 }
                 LiveHeartRateCard()
                 LiveHeartRateChartCard(samples: bluetooth.liveHeartRateSamples, title: "LIVE HEART RATE")
