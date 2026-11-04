@@ -97,10 +97,10 @@ final class TrainingInsightsStore: ObservableObject {
         )
         if cardioLoadPoints != nil {
             strainSourceStatus = "PulseForge cardio-load estimate · saved WHOOP workout HR · not WHOOP Strain"
-        } else if todays.isEmpty {
+        } else if overlapMinutes.isEmpty {
             strainSourceStatus = "No saved WHOOP workout HR session today"
-        } else if measuredMaxHeartRate == 0 {
-            strainSourceStatus = "Set measured maximum HR to calculate cardio load"
+        } else if !(100...240).contains(measuredMaxHeartRate) {
+            strainSourceStatus = "Set a valid measured maximum HR (100–240 bpm) to calculate cardio load"
         } else {
             strainSourceStatus = "No valid timestamped WHOOP workout HR samples for today's load"
         }
