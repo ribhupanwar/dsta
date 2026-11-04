@@ -28,3 +28,12 @@ xcodebuild -project PulseForge.xcodeproj -scheme PulseForge -sdk iphoneos -confi
 
 ## Data and permissions
 HealthKit readings require the user to grant access in Apple Health. A successful unsigned IPA build does not by itself guarantee that a sideloading signature preserves every entitlement; HealthKit permission behavior must be verified on the signed device build.
+
+
+## Healthspan and VO2 estimate engine (feature branch)
+- `PulseForge/HealthspanEngine.swift` adds a pure, local calculation layer for a transparent 0–100 Healthspan Index using up to nine WHOOP-inspired inputs across sleep, activity and fitness.
+- Missing inputs are excluded and surfaced through coverage; they are never silently treated as zero.
+- VO2 estimate fusion accepts separately sourced HealthKit, submaximal-run, race-performance and laboratory candidates, applies confidence/freshness weighting, and exposes disagreement.
+- Effective-age math is provided only as a conversion for a caller-supplied, validated hazard ratio. PulseForge does not invent mortality coefficients or claim to reproduce WHOOP Age.
+- The index is a wellness trend, not a biological-age test. A defensible age estimate needs validated, population-appropriate hazard ratios and overlap correction; a clinical biological-age clock generally needs laboratory biomarkers.
+- Tests are in `PulseForgeTests/HealthspanEngineTests.swift`. Device data ingestion, HealthKit query wiring, UI, and an actual Xcode Actions build remain integration/verification steps.
