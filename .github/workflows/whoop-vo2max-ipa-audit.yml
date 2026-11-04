@@ -1,0 +1,96 @@
+name: WHOOP original IPA VO2max reverse engineering audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/whoop-vo2max-ipa-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-whoop-vo2max:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Download and verify pinned WHOOP 5.75.0 IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            "https://github.com/ribhupanwar/dsta/releases/download/whoop-5.75.0/pulseforge.ipa" \
+            --output /tmp/whoop-original.ipa
+          ACTUAL="$(shasum -a 256 /tmp/whoop-original.ipa | awk '{print $1}')"
+          EXPECTED="8a5deedc59567612683feb77dd7348238de89437123946b3344bc6ff1e90af8a"
+          echo "WHOOP IPA SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+          unzip -tq /tmp/whoop-original.ipa
+          mkdir -p vo2max-evidence
+          unzip -q /tmp/whoop-original.ipa -d /tmp/whoop-ipa
+
+      - name: Inventory model assets and app metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, plistlib, zipfile
+          from pathlib import Path
+          ipa = Path("/tmp/whoop-original.ipa")
+          out = Path("vo2max-evidence")
+          with zipfile.ZipFile(ipa) as z:
+              names = z.namelist()
+              model_ext = (".mlmodel", ".mlmodelc", ".mlpackage", ".onnx", ".tflite", ".pt", ".pth", ".coreml")
+              model_items = [n for n in names if n.lower().endswith(model_ext) or any(x in n.lower() for x in ("modelweights", "modeldata", "vo2", "oxygen", "cardiofitness"))]
+              (out / "model-assets.json").write_text(json.dumps(model_items, indent=2))
+              infos = [n for n in names if n.startswith("Payload/") and n.endswith(".app/Info.plist")]
+              app = {}
+              for n in infos:
+                  p = plistlib.loads(z.read(n))
+                  app[n] = {k:p.get(k) for k in ("CFBundleIdentifier","CFBundleShortVersionString","CFBundleVersion","CFBundleExecutable","UIBackgroundModes","NSHealthShareUsageDescription","NSHealthUpdateUsageDescription")}
+              (out / "app-metadata.json").write_text(json.dumps(app, indent=2, default=str))
+              (out / "all-bundle-paths.txt").write_text("\\n".join(sorted(names)))
+          PY
+
+      - name: Extract full executable strings and Swift symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          INFO="$(find /tmp/whoop-ipa/Payload -maxdepth 2 -type f -name Info.plist -print -quit)"
+          APP="$(dirname "$INFO")"
+          BIN="$APP/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO")"
+          ARCHS="$(lipo -archs "$BIN")"
+          if [[ "$ARCHS" == "arm64" ]]; then cp "$BIN" /tmp/whoop-arm64; else lipo "$BIN" -thin arm64 -output /tmp/whoop-arm64; fi
+          strings -a /tmp/whoop-arm64 > vo2max-evidence/all-binary-strings.txt
+          nm -arch arm64 -nm /tmp/whoop-arm64 > vo2max-evidence/all-nm-symbols.txt 2>&1 || true
+          xcrun swift-demangle < <(awk '{print $NF}' vo2max-evidence/all-nm-symbols.txt | grep '^_' | sort -u) > vo2max-evidence/all-swift-demangled-symbols.txt 2>&1 || true
+          grep -Ein 'vo.?2|maximal.?oxygen|oxygen.?consum|cardio.?fitness|aerobic.?fitness|fitness.?estimate|cardiorespiratory|peak.?oxygen|oxygen.?uptake|HealthKit|HKQuantityTypeIdentifier|GPS|pace|recovery|HRV|resting.?heart' vo2max-evidence/all-binary-strings.txt > vo2max-evidence/vo2-related-strings.txt || true
+          grep -Ein 'vo.?2|maximal.?oxygen|oxygen.?consum|cardio.?fitness|aerobic.?fitness|fitness.?estimate|cardiorespiratory|peak.?oxygen|oxygen.?uptake|HealthKit|HKQuantityTypeIdentifier|GPS|pace|recovery|HRV|resting.?heart' vo2max-evidence/all-swift-demangled-symbols.txt > vo2max-evidence/vo2-related-swift-symbols.txt || true
+          grep -Ein 'VO2Max|HealthKit|HKQuantityTypeIdentifierVO2Max|CoreML|MLModel|CreateML|GPS|Location|Recovery|HRV' vo2max-evidence/all-nm-symbols.txt > vo2max-evidence/vo2-related-link-symbols.txt || true
+
+      - name: Extract relevant disassembly references
+        shell: bash
+        run: |
+          set -euo pipefail
+          otool -arch arm64 -tvV /tmp/whoop-arm64 > /tmp/whoop-full-disassembly.txt 2>vo2max-evidence/disassembly-errors.txt || true
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          lines = Path("/tmp/whoop-full-disassembly.txt").read_text(errors="replace").splitlines()
+          pattern = re.compile(r"vo.?2|maximal.?oxygen|oxygen.?consum|cardio.?fitness|aerobic.?fitness|fitness.?estimate|cardiorespiratory|peak.?oxygen|oxygen.?uptake|HKQuantityTypeIdentifierVO2Max|HealthKit|MLModel|CoreML", re.I)
+          hits = [i for i, line in enumerate(lines) if pattern.search(line)]
+          keep = set()
+          for i in hits:
+              keep.update(range(max(0, i-35), min(len(lines), i+65)))
+          Path("vo2max-evidence/vo2-disassembly-context.txt").write_text("\\n".join(lines[i] for i in sorted(keep)))
+          Path("vo2max-evidence/disassembly-match-index.txt").write_text("\\n".join(f"{i+1}: {lines[i]}" for i in hits))
+          PY
+
+      - name: Upload WHOOP VO2max evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: whoop-original-ipa-vo2max-evidence
+          path: vo2max-evidence/
+          if-no-files-found: error
+          retention-days: 14
