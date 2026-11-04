@@ -1075,6 +1075,7 @@ struct RunningDashboard: View {
                     CompactMetric(title: "HR SAMPLES", value: health.latestRunHeartRateSampleCount.formatted(), unit: "points")
                     CompactMetric(title: "SPLITS", value: health.latestRunSplits.count.formatted(), unit: "km")
                 }
+                CooperVO2FieldTestCard()
                 SectionHeader(title: "HEART RATE")
                 WorkoutHeartRateChart(points: health.latestRunHeartRatePoints)
                 SectionHeader(title: "HEART RATE ZONES")
@@ -1863,6 +1864,55 @@ struct WorkoutHeartRateChart: View {
             }
         }
         .padding(18)
+        .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+
+struct CooperVO2FieldTestCard: View {
+    @AppStorage("pulseforge.vo2.cooperDistanceMeters") private var savedDistanceMeters = 0.0
+    @State private var distanceDraft = ""
+
+    private var estimate: Double? { Cooper12MinuteVO2.estimate(distanceMeters: savedDistanceMeters) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "12-MINUTE FIELD TEST", action: "COOPER")
+            HStack(spacing: 10) {
+                TextField("Distance in metres", text: $distanceDraft)
+                    .keyboardType(.decimalPad)
+                    .font(.system(size: 13, design: .rounded))
+                    .padding(11)
+                    .background(ForgeColors.track, in: RoundedRectangle(cornerRadius: 10))
+                Button("SAVE") {
+                    let normalized = distanceDraft.replacingOccurrences(of: ",", with: ".")
+                    if let distance = Double(normalized),
+                       Cooper12MinuteVO2.estimate(distanceMeters: distance) != nil {
+                        savedDistanceMeters = distance
+                        distanceDraft = ""
+                    }
+                }
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.black)
+                .padding(.horizontal, 15).padding(.vertical, 12)
+                .background(ForgeColors.lime, in: Capsule())
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(estimate.map { String(format: "%.1f", $0) } ?? "—")
+                    .font(.system(size: 28, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text("mL/kg/min estimated")
+                    .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+                Spacer()
+                if savedDistanceMeters > 0 {
+                    Text("\(Int(savedDistanceMeters)) m")
+                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(ForgeColors.lime)
+                }
+            }
+            Text("Enter distance from a continuous, hard 12-minute run. Cooper field-test equation; separate from Apple Health VO₂ Max and not a WHOOP/Garmin reading.")
+                .font(.system(size: 10)).foregroundStyle(ForgeColors.muted)
+        }
+        .padding(16)
         .background(ForgeColors.card, in: RoundedRectangle(cornerRadius: 18))
     }
 }
