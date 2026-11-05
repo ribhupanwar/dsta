@@ -17,7 +17,8 @@ enum Whoop5RRDecoder {
         case truncatedIntervals(expectedBytes: Int, availableBytes: Int)
     }
 
-    /// REALTIME_DATA (type 40): HR @16, count @17, u16 little-endian RR ms @18.
+    /// REALTIME_DATA (type 40): HR @16, count @17, u16 little-endian RR ticks @18.
+    /// WHOOP 5.0 uses 1/1024-second ticks; convert to integer milliseconds.
     static func decodeRealtime(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 22, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
@@ -25,12 +26,15 @@ enum Whoop5RRDecoder {
         guard Int(frame[8]) == 40 else {
             throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
         }
-        return try decodeWords(frame, countOffset: 17, wordsOffset: 18)
+        let ticks = try decodeRawWords(frame, countOffset: 17, wordsOffset: 18)
+        return ticks.map { ($0 * 1000 + 512) / 1024 }
     }
 
-    /// Candidate HISTORICAL_DATA v18 layout (type 47), currently NOOP-fixture-derived:
-    /// version @9, HR @22, count @23, u16 little-endian RR ms @24.
-    /// Other historical versions use other layouts.
+    /// HISTORICAL_DATA v18 candidate layout (type 47):
+    /// version @9, HR @22, count @23, little-endian words @24.
+    /// Historical R18 RR units are not yet independently verified against
+    /// WHOOP IPA or a timestamp-aligned official export; return raw words only.
+    /// Do not feed these values into physiological calculations until verified.
     static func decodeHistoricalV18(_ frame: [UInt8]) throws -> [Int] {
         guard frame.count >= 28, frame[0] == 0xAA, frame[1] == 0x01 else {
             throw DecodeError.invalidFrame
@@ -41,11 +45,59 @@ enum Whoop5RRDecoder {
         guard Int(frame[9]) == 18 else {
             throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
         }
-        return try decodeWords(frame, countOffset: 23, wordsOffset: 24)
+        let count = Int(frame[23])
+        guard count <= 4 else { throw DecodeError.invalidIntervalCount(count) }
+        return try decodeRawWords(frame, countOffset: 23, wordsOffset: 24)
+    }
+
+    /// WHOOP 5.0 HISTORICAL_DATA v18 embeds its physiological Unix timestamp
+    /// as u32 little-endian at absolute frame offset 15. This is independent of
+    /// the phone's BLE receipt time.
+    static func decodeHistoricalTimestampV18(_ frame: [UInt8]) throws -> Date {
+        guard frame.count >= 19, frame[0] == 0xAA, frame[1] == 0x01 else {
+            throw DecodeError.invalidFrame
+        }
+        guard Int(frame[8]) == 47 else {
+            throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
+        }
+        guard Int(frame[9]) == 18 else {
+            throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
+        }
+        let seconds = UInt32(frame[15])
+            | (UInt32(frame[16]) << 8)
+            | (UInt32(frame[17]) << 16)
+            | (UInt32(frame[18]) << 24)
+        guard seconds >= 1_577_836_800, seconds <= 4_102_444_800 else {
+            throw DecodeError.invalidFrame
+        }
+        return Date(timeIntervalSince1970: TimeInterval(seconds))
+    }
+
+    /// v18 heart rate is a single BPM byte at absolute offset 22.
+    static func decodeHistoricalHeartRateV18(_ frame: [UInt8]) throws -> Int {
+        guard frame.count >= 23, frame[0] == 0xAA, frame[1] == 0x01 else {
+            throw DecodeError.invalidFrame
+        }
+        guard Int(frame[8]) == 47 else {
+            throw DecodeError.wrongRecordType(frame.count > 8 ? Int(frame[8]) : -1)
+        }
+        guard Int(frame[9]) == 18 else {
+            throw DecodeError.unsupportedHistoricalVersion(frame.count > 9 ? Int(frame[9]) : -1)
+        }
+        let bpm = Int(frame[22])
+        guard (25...240).contains(bpm) else {
+            throw DecodeError.invalidIntervalValue(bpm)
+        }
+        return bpm
     }
 
     private static func decodeWords(_ frame: [UInt8], countOffset: Int,
                                     wordsOffset: Int) throws -> [Int] {
+        try decodeRawWords(frame, countOffset: countOffset, wordsOffset: wordsOffset)
+    }
+
+    private static func decodeRawWords(_ frame: [UInt8], countOffset: Int,
+                                       wordsOffset: Int) throws -> [Int] {
         let count = Int(frame[countOffset])
         guard count <= 32 else { throw DecodeError.invalidIntervalCount(count) }
         let required = count * 2

@@ -50,7 +50,7 @@ struct GPSRunRecord: Codable, Identifiable {
 /// Outdoor GPS running recorder. It is independent of WHOOP connectivity:
 /// location, elapsed time, distance and splits continue even if the band drops.
 @MainActor
-final class GPSRunStore: NSObject, ObservableObject, CLLocationManagerDelegate {
+final class GPSRunStore: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     @Published private(set) var hasActiveRun = false
     @Published private(set) var isPaused = false
     @Published private(set) var distanceMeters: Double = 0
