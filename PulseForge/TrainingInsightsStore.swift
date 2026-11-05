@@ -36,8 +36,14 @@ final class TrainingInsightsStore: ObservableObject {
     }
 
     /// Latest Apple Health sleep duration is a separately labelled fallback.
+    /// Clear stale values when HealthKit has no valid current duration; never
+    /// leave yesterday's sleep displayed as though it were today's result.
     func updateHealthKitSleep(_ hours: Double?) {
-        guard let hours, hours.isFinite, (0.1...24).contains(hours) else { return }
+        guard let hours, hours.isFinite, (0.1...24).contains(hours) else {
+            sleepHours = nil
+            sleepSourceStatus = "Apple Health sleep duration unavailable · WHOOP-native sleep not yet validated"
+            return
+        }
         sleepHours = hours
         sleepSourceStatus = "Apple Health sleep duration · WHOOP-native sleep not yet validated"
     }

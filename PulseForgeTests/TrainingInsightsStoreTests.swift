@@ -109,4 +109,22 @@ final class TrainingInsightsStoreTests: XCTestCase {
         XCTAssertTrue(store.strainSourceStatus.contains("No valid timestamped WHOOP workout HR samples"))
     }
 
+    func testMissingOrInvalidHealthKitSleepClearsPreviousDuration() {
+        let store = TrainingInsightsStore()
+
+        store.updateHealthKitSleep(7.5)
+        XCTAssertEqual(store.sleepHours, 7.5)
+
+        store.updateHealthKitSleep(nil)
+        XCTAssertNil(store.sleepHours)
+        XCTAssertTrue(store.sleepSourceStatus.contains("sleep duration unavailable"))
+
+        store.updateHealthKitSleep(6.25)
+        XCTAssertEqual(store.sleepHours, 6.25)
+
+        store.updateHealthKitSleep(25)
+        XCTAssertNil(store.sleepHours)
+        XCTAssertTrue(store.sleepSourceStatus.contains("sleep duration unavailable"))
+    }
+
 }
