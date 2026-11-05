@@ -1,6 +1,10 @@
 name: WHOOP biological age and healthspan reverse-engineering audit
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/whoop-biological-age-audit.yml"
   workflow_dispatch:
 
 permissions:
