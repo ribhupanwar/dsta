@@ -54,22 +54,26 @@ enum OvernightRRMetricsCalculator {
         var differenceCount = 0
         var acceptedPackets = 0
         var heartRates: [Int] = []
-        var previousPacketAt: Date?
+        var previousAcceptedPacketAt: Date?
+        var acceptedPacketTimestamps: [Date] = []
 
         for record in deduplicated {
             guard let timestamp = record.physiologicalTimestamp else { continue }
-            if let previousPacketAt,
-               timestamp.timeIntervalSince(previousPacketAt) > maximumPacketGap {
-                // Do not aggregate across an unknown section of the night.
-                return nil
-            }
-            previousPacketAt = timestamp
-
             let intervals = record.intervalsMilliseconds
             guard !intervals.isEmpty,
                   intervals.allSatisfy({ (300...2000).contains($0) }) else {
+                // Empty or invalid packets contain no usable RR timeline. They
+                // must not reset the gap clock or extend reported HRV coverage.
                 continue
             }
+
+            if let previousAcceptedPacketAt,
+               timestamp.timeIntervalSince(previousAcceptedPacketAt) > maximumPacketGap {
+                // Do not aggregate across an unknown section of the night.
+                return nil
+            }
+            previousAcceptedPacketAt = timestamp
+            acceptedPacketTimestamps.append(timestamp)
 
             intervalCount += intervals.count
             acceptedPackets += 1
@@ -109,7 +113,7 @@ enum OvernightRRMetricsCalculator {
                        differenceCount: differenceCount,
                        packetCount: acceptedPackets,
                        medianHeartRateBPM: medianHR,
-                       firstSampleAt: deduplicated.first?.physiologicalTimestamp ?? sleepStart,
-                       lastSampleAt: deduplicated.last?.physiologicalTimestamp ?? sleepEnd)
+                       firstSampleAt: acceptedPacketTimestamps.first ?? sleepStart,
+                       lastSampleAt: acceptedPacketTimestamps.last ?? sleepEnd)
     }
 }

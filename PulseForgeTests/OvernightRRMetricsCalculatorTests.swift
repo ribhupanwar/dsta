@@ -112,6 +112,42 @@ final class OvernightRRMetricsCalculatorTests: XCTestCase {
         XCTAssertEqual(result?.packetCount, 1)
     }
 
+    func testEmptyRRPacketCannotBridgeGapBetweenValidPackets() {
+        let start = Date(timeIntervalSince1970: 40_000)
+        let records = [
+            record(at: start, intervals: Array(repeating: 800, count: 16)),
+            record(at: start.addingTimeInterval(100), intervals: []),
+            record(at: start.addingTimeInterval(200), intervals: Array(repeating: 801, count: 16))
+        ]
+
+        XCTAssertNil(OvernightRRMetricsCalculator.calculate(
+            records: records,
+            sleepStart: start.addingTimeInterval(-1),
+            sleepEnd: start.addingTimeInterval(600),
+            maximumPacketGap: 120
+        ))
+    }
+
+    func testCoverageTimestampsUseOnlyPacketsWithValidRRIntervals() {
+        let start = Date(timeIntervalSince1970: 50_000)
+        let records = [
+            record(at: start, intervals: []),
+            record(at: start.addingTimeInterval(10)),
+            record(at: start.addingTimeInterval(20), intervals: Array(repeating: 2_500, count: 32))
+        ]
+
+        let result = OvernightRRMetricsCalculator.calculate(
+            records: records,
+            sleepStart: start.addingTimeInterval(-1),
+            sleepEnd: start.addingTimeInterval(60)
+        )
+
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.packetCount, 1)
+        XCTAssertEqual(result?.firstSampleAt, start.addingTimeInterval(10))
+        XCTAssertEqual(result?.lastSampleAt, start.addingTimeInterval(10))
+    }
+
     func testRequiresValidSleepWindow() {
         let start = Date(timeIntervalSince1970: 10_000)
         XCTAssertNil(OvernightRRMetricsCalculator.calculate(
