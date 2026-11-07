@@ -2117,73 +2117,48 @@ extension WhoopBluetoothManager: CBPeripheralDelegate {
     /// Stitch WHOOP protocol frames split across BLE notification values.
     /// Buffers are isolated by characteristic; unframed payloads remain diagnostic-only.
     private func ingestWhoop5Notification(_ chunk: Data, channel: String, peripheral: CBPeripheral) -> String {
-        // Treat notification values as a byte stream: a frame may span several
-        // notifications, and one notification may contain more than one frame.
-        var buffer = whoop5FragmentBuffers[channel] ?? Data()
-        if buffer.isEmpty {
-            let incoming = [UInt8](chunk)
-            // A BLE notification boundary may split the two-byte 0xAA 0x01
-            // frame marker. Preserve a lone 0xAA (or scan forward to a marker)
-            // instead of discarding the first byte before the next callback.
-            let containsFrameMarker = incoming.count >= 2 &&
-                (0..<(incoming.count - 1)).contains {
-                    incoming[$0] == 0xAA && incoming[$0 + 1] == 0x01
-                }
-            guard incoming.first == 0xAA || containsFrameMarker else {
-                return diagnoseWhoop5Frame(chunk, channel: channel, peripheral: peripheral)
+        let output = Whoop5FrameStreamAssembler.append(
+            chunk,
+            to: whoop5FragmentBuffers[channel] ?? Data()
+        )
+
+        if output.shouldDiagnoseUnframedChunk {
+            if output.remainder.isEmpty {
+                whoop5FragmentBuffers.removeValue(forKey: channel)
+            } else {
+                // Preserve a trailing 0xAA even when the notification begins
+                // with unrelated bytes; the next callback may begin with 0x01.
+                whoop5FragmentBuffers[channel] = output.remainder
             }
-        }
-        buffer.append(chunk)
-
-        var diagnostics: [String] = []
-        while !buffer.isEmpty {
-            let bytes = [UInt8](buffer)
-
-            // Resynchronise on the next frame marker without discarding a
-            // possible 0xAA split across notification boundaries.
-            if bytes.count < 2 { break }
-            if bytes[0] != 0xAA || bytes[1] != 0x01 {
-                if bytes.count >= 2,
-                   let sync = (0..<(bytes.count - 1)).first(where: {
-                       bytes[$0] == 0xAA && bytes[$0 + 1] == 0x01
-                   }) {
-                    buffer = Data(bytes[sync...])
-                    continue
-                }
-                buffer = bytes.last == 0xAA ? Data([0xAA]) : Data()
-                break
-            }
-
-            guard bytes.count >= 8 else { break }
-            let declared = Int(bytes[2]) | (Int(bytes[3]) << 8)
-            let frameLength = 8 + declared
-            guard frameLength >= 12, frameLength <= 8192 else {
-                diagnostics.append("WHOOP5 invalid declared frame length · \(frameLength)")
-                buffer.removeFirst()
-                continue
-            }
-
-            guard bytes.count >= frameLength else { break }
-            let completeFrame = Data(bytes.prefix(frameLength))
-            buffer.removeFirst(frameLength)
-            diagnostics.append(diagnoseWhoop5Frame(completeFrame, channel: channel, peripheral: peripheral))
+            whoop5ExpectedFrameLengths.removeValue(forKey: channel)
+            return diagnoseWhoop5Frame(chunk, channel: channel, peripheral: peripheral)
         }
 
-        if buffer.count > 8192 {
-            buffer.removeAll()
-            diagnostics.append("WHOOP5 reassembly buffer exceeded safety limit · reset")
-        }
-        if buffer.isEmpty {
+        if output.remainder.isEmpty {
             whoop5FragmentBuffers.removeValue(forKey: channel)
             whoop5ExpectedFrameLengths.removeValue(forKey: channel)
         } else {
-            whoop5FragmentBuffers[channel] = buffer
-            let bytes = [UInt8](buffer)
-            if bytes.count >= 4, bytes[0] == 0xAA, bytes[1] == 0x01 {
-                whoop5ExpectedFrameLengths[channel] = 8 + Int(bytes[2]) + (Int(bytes[3]) << 8)
+            whoop5FragmentBuffers[channel] = output.remainder
+            if let expected = output.expectedFrameLength {
+                whoop5ExpectedFrameLengths[channel] = expected
+            } else {
+                whoop5ExpectedFrameLengths.removeValue(forKey: channel)
             }
-            let expected = whoop5ExpectedFrameLengths[channel].map(String.init) ?? "header"
-            diagnostics.append("WHOOP5 frame fragment · \(buffer.count)/\(expected) bytes")
+        }
+
+        var diagnostics: [String] = []
+        for event in output.events {
+            switch event {
+            case .frame(let frame):
+                diagnostics.append(diagnoseWhoop5Frame(frame, channel: channel, peripheral: peripheral))
+            case .diagnostic(let message):
+                diagnostics.append(message)
+            }
+        }
+
+        if !output.remainder.isEmpty {
+            let expected = output.expectedFrameLength.map(String.init) ?? "header"
+            diagnostics.append("WHOOP5 frame fragment · \(output.remainder.count)/\(expected) bytes")
         }
 
         return diagnostics.isEmpty
