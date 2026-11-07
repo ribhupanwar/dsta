@@ -38,6 +38,39 @@ final class CardioLoadCalculatorTests: XCTestCase {
         ], measuredMaxHeartRate: 200))
     }
 
+    func testDailyWorkoutLoadUsesOnlySessionsWithinDayAndNeedsMeasuredMaxHR() throws {
+        let dayStart = Date(timeIntervalSince1970: 1_000)
+        let nextDay = dayStart.addingTimeInterval(86_400)
+        let session = WorkoutSessionRecord(
+            startedAt: dayStart.addingTimeInterval(60),
+            durationSeconds: 120,
+            wasAutomatic: false,
+            wasInterrupted: false,
+            heartRateSamples: [
+                LiveHeartRateSample(timestamp: dayStart.addingTimeInterval(60), bpm: 150),
+                LiveHeartRateSample(timestamp: dayStart.addingTimeInterval(120), bpm: 150)
+            ],
+            imuSamples: []
+        )
+        let outside = WorkoutSessionRecord(
+            startedAt: nextDay,
+            durationSeconds: 120,
+            wasAutomatic: false,
+            wasInterrupted: false,
+            heartRateSamples: [LiveHeartRateSample(timestamp: nextDay, bpm: 150)],
+            imuSamples: []
+        )
+        let load = try XCTUnwrap(CardioLoadCalculator.dailyWorkoutLoad(
+            sessions: [session, outside], dayStart: dayStart, nextDay: nextDay,
+            measuredMaxHeartRate: 200
+        ))
+        XCTAssertEqual(load, 150, accuracy: 0.001)
+        XCTAssertNil(CardioLoadCalculator.dailyWorkoutLoad(
+            sessions: [session], dayStart: dayStart, nextDay: nextDay,
+            measuredMaxHeartRate: 0
+        ))
+    }
+
     func testUsesFinalSampleDurationWhenAvailable() throws {
         let start = Date(timeIntervalSince1970: 1_000)
         let sample = CardioLoadCalculator.Sample(timestamp: start,
@@ -45,4 +78,51 @@ final class CardioLoadCalculatorTests: XCTestCase {
         let result = try XCTUnwrap(CardioLoadCalculator.calculate(samples: [sample], measuredMaxHeartRate: 200))
         XCTAssertEqual(result, 25, accuracy: 0.001)
     }
+
+    func testDailyWorkoutLoadIncludesPreviousDaySessionOverlap() throws {
+        let dayStart = Date(timeIntervalSince1970: 86_400)
+        let nextDay = dayStart.addingTimeInterval(86_400)
+        let session = WorkoutSessionRecord(
+            startedAt: dayStart.addingTimeInterval(-30),
+            durationSeconds: 150,
+            wasAutomatic: false,
+            wasInterrupted: false,
+            heartRateSamples: [
+                LiveHeartRateSample(timestamp: dayStart.addingTimeInterval(-30), bpm: 150),
+                LiveHeartRateSample(timestamp: dayStart.addingTimeInterval(30), bpm: 180),
+                LiveHeartRateSample(timestamp: dayStart.addingTimeInterval(90), bpm: 160)
+            ],
+            imuSamples: []
+        )
+
+        let load = try XCTUnwrap(CardioLoadCalculator.dailyWorkoutLoad(
+            sessions: [session], dayStart: dayStart, nextDay: nextDay,
+            measuredMaxHeartRate: 200
+        ))
+        XCTAssertEqual(load, 167.5, accuracy: 0.001)
+    }
+
+    func testDailyWorkoutLoadClipsSessionAtNextDayBoundary() throws {
+        let dayStart = Date(timeIntervalSince1970: 86_400)
+        let nextDay = dayStart.addingTimeInterval(86_400)
+        let session = WorkoutSessionRecord(
+            startedAt: nextDay.addingTimeInterval(-30),
+            durationSeconds: 150,
+            wasAutomatic: false,
+            wasInterrupted: false,
+            heartRateSamples: [
+                LiveHeartRateSample(timestamp: nextDay.addingTimeInterval(-30), bpm: 150),
+                LiveHeartRateSample(timestamp: nextDay.addingTimeInterval(30), bpm: 180),
+                LiveHeartRateSample(timestamp: nextDay.addingTimeInterval(90), bpm: 160)
+            ],
+            imuSamples: []
+        )
+
+        let load = try XCTUnwrap(CardioLoadCalculator.dailyWorkoutLoad(
+            sessions: [session], dayStart: dayStart, nextDay: nextDay,
+            measuredMaxHeartRate: 200
+        ))
+        XCTAssertEqual(load, 37.5, accuracy: 0.001)
+    }
+
 }
