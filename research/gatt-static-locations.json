@@ -1,0 +1,206 @@
+{
+  "text_base": 4294967296,
+  "text_section": {
+    "segment": "__TEXT",
+    "name": "__text",
+    "address": 4295000064,
+    "size": 144388580,
+    "offset": 32768
+  },
+  "function_starts": [
+    196040488,
+    813624
+  ],
+  "uuid_candidates": [
+    {
+      "uuid": "8A580001-2FE8-4796-9267-B87A2B0C8234",
+      "address": 4446609056,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "59830001-5955-419B-BB8D-C8262926AF23",
+      "address": 4446609104,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "61080001-8D6D-82B8-614A-1C8CB0F8DCC6",
+      "address": 4446722384,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "11500007-6215-11EE-8C99-0242AC120002",
+      "address": 4446777552,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "11500005-6215-11EE-8C99-0242AC120002",
+      "address": 4446777600,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "11500004-6215-11EE-8C99-0242AC120002",
+      "address": 4446777648,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "11500003-6215-11EE-8C99-0242AC120002",
+      "address": 4446777696,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "11500002-6215-11EE-8C99-0242AC120002",
+      "address": 4446777744,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "59830007-5955-419B-BB8D-C8262926AF23",
+      "address": 4446777792,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "59830005-5955-419B-BB8D-C8262926AF23",
+      "address": 4446777840,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "59830004-5955-419B-BB8D-C8262926AF23",
+      "address": 4446777888,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "59830003-5955-419B-BB8D-C8262926AF23",
+      "address": 4446777936,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "59830002-5955-419B-BB8D-C8262926AF23",
+      "address": 4446777984,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "8A580007-2FE8-4796-9267-B87A2B0C8234",
+      "address": 4446778032,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "8A580005-2FE8-4796-9267-B87A2B0C8234",
+      "address": 4446778080,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "8A580004-2FE8-4796-9267-B87A2B0C8234",
+      "address": 4446778128,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "8A580003-2FE8-4796-9267-B87A2B0C8234",
+      "address": 4446778176,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "8A580002-2FE8-4796-9267-B87A2B0C8234",
+      "address": 4446778224,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "FD4B0007-CCE1-4033-93CE-002D5875F58A",
+      "address": 4446778272,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "FD4B0005-CCE1-4033-93CE-002D5875F58A",
+      "address": 4446778320,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "FD4B0004-CCE1-4033-93CE-002D5875F58A",
+      "address": 4446778368,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "FD4B0003-CCE1-4033-93CE-002D5875F58A",
+      "address": 4446778416,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "FD4B0002-CCE1-4033-93CE-002D5875F58A",
+      "address": 4446778464,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "61080007-8D6D-82B8-614A-1C8CB0F8DCC6",
+      "address": 4446778512,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "61080005-8D6D-82B8-614A-1C8CB0F8DCC6",
+      "address": 4446778560,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "61080004-8D6D-82B8-614A-1C8CB0F8DCC6",
+      "address": 4446778608,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "61080003-8D6D-82B8-614A-1C8CB0F8DCC6",
+      "address": 4446778656,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "61080002-8D6D-82B8-614A-1C8CB0F8DCC6",
+      "address": 4446778704,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "11500001-6215-11EE-8C99-0242AC120002",
+      "address": 4446778800,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "FD4B0001-CCE1-4033-93CE-002D5875F58A",
+      "address": 4446778848,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "61080008-8D6D-82B8-614A-1C8CB0F8DCC6",
+      "address": 4446825968,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "61080009-8D6D-82B8-614A-1C8CB0F8DCC6",
+      "address": 4446826016,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "FD4B0008-CCE1-4033-93CE-002D5875F58A",
+      "address": 4446826064,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "FD4B0009-CCE1-4033-93CE-002D5875F58A",
+      "address": 4446826112,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "8EC90001-F315-4F60-9FB8-838830DAEA50",
+      "address": 4446914208,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "8EC90002-F315-4F60-9FB8-838830DAEA50",
+      "address": 4446914256,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "8EC90003-F315-4F60-9FB8-838830DAEA50",
+      "address": 4446914352,
+      "section": "__cstring"
+    },
+    {
+      "uuid": "8EC90004-F315-4F60-9FB8-838830DAEA50",
+      "address": 4446914400,
+      "section": "__cstring"
+    }
+  ]
+}

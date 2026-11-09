@@ -1,0 +1,58 @@
+{
+  "file": "pulseforge.ipa",
+  "bytes": 310125125,
+  "sha256": "8a5deedc59567612683feb77dd7348238de89437123946b3344bc6ff1e90af8a",
+  "apps": [
+    {
+      "CFBundleIdentifier": "com.whoop.iphone",
+      "CFBundleDisplayName": "WHOOP",
+      "CFBundleName": "Whoop",
+      "CFBundleShortVersionString": "5.75.0",
+      "CFBundleVersion": "738478",
+      "MinimumOSVersion": "18.0",
+      "encryption_commands": [
+        {
+          "cryptoff": 32768,
+          "cryptsize": 173473792,
+          "cryptid": 0
+        }
+      ],
+      "symbol_count": 10437,
+      "feature_string_counts": {
+        "healthspan": 195,
+        "vo2max": 19,
+        "repcount": 7,
+        "strengthtrainer": 43,
+        "autodetect": 27
+      },
+      "whoop_url_host_literals": {
+        "api-7.qa.whoop.com": 1,
+        "api.dev.whoop.com": 1,
+        "api.prod.whoop.com": 6,
+        "app-cdn.dev.whoop.com": 33,
+        "app-cdn.prod.whoop.com": 3,
+        "app.dev.whoop.com": 3,
+        "app.whoop.com": 4,
+        "assets.whoop.com": 2,
+        "cdn-v2.whoop.com": 1,
+        "cdn.whoop.com": 1,
+        "coach.dev.whoop.com": 1,
+        "coach.whoop.com": 1,
+        "consents.dev.whoop.com": 3,
+        "growth-cdn.dev.whoop.com": 1,
+        "join.qa.whoop.com": 4,
+        "join.whoop.com": 15,
+        "maverick.dev.whoop.com": 2,
+        "mock.whoop.com": 1,
+        "orderstatus.qa.whoop.com": 4,
+        "privacy.whoop.com": 1,
+        "shop.dev.whoop.com": 29,
+        "support.whoop.com": 31,
+        "try.whoop.com": 4,
+        "whoop.com": 9,
+        "www.whoop.com": 59
+      }
+    }
+  ],
+  "limits": "Metadata is not authenticity verification. String/symbol presence does not prove an algorithm, device protocol mapping or feature works. No assets or code executed."
+}
