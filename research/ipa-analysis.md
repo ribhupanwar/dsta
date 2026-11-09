@@ -47,7 +47,7 @@ responses from a server or turn response models into an offline scoring algorith
 
 ```
 python3 -m unittest discover -s Tools/lab -p 'test_*.py'
-python3 Tools/lab/inspect_ipa.py /path/to/pulseforge.ipa \
+python3 Tools/inspect_ipa.py /path/to/pulseforge.ipa \
   --expected-sha256 8a5deedc59567612683feb77dd7348238de89437123946b3344bc6ff1e90af8a \
   --output audit.json
 ```
@@ -61,4 +61,4 @@ Tests use synthetic archives, not the original executable. The original IPA rema
 Actual protocol integration needs field/call-site tracing, correlation with the owned WHOOP MG's
 recorded events, independent implementation and tests against varying known inputs. UI/DTO/field-name
 presence alone is insufficient. A complete original WHOOP clone and exact proprietary scoring have
-not been delivered. This repository remains an independently implemented Woop-based lab.
+not been delivered. The earlier WHOOP-Lab baseline was Woop-based. This fresh branch contains research tools and findings only; it does not import the Woop/NOOP application implementation.
