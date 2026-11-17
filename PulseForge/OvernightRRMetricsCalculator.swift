@@ -31,10 +31,19 @@ enum OvernightRRMetricsCalculator {
             $0.physiologicalTimestamp.map { $0 >= sleepStart && $0 < sleepEnd } == true
         }
 
+        // Validate before deduplication so a longer corrupt replay cannot
+        // displace a shorter valid packet at the same physiological timestamp.
+        let usable = eligible.filter { record in
+            let intervals = record.intervalsMilliseconds
+            return !intervals.isEmpty &&
+                intervals.allSatisfy { (300...2000).contains($0) } &&
+                zip(intervals, intervals.dropFirst()).allSatisfy { abs($0.1 - $0.0) <= 300 }
+        }
+
         // Multiple archive writes/reconnects can contain the same physiological
         // second. Keep one deterministic record per timestamp, preferring the
         // record with the most validated RR intervals.
-        let deduplicated = Dictionary(grouping: eligible) {
+        let deduplicated = Dictionary(grouping: usable) {
             $0.physiologicalTimestamp!.timeIntervalSince1970
         }.compactMap { _, candidates in
             candidates.sorted {
