@@ -142,5 +142,22 @@ This verifies simulator compilation and these pure-calculation unit tests on tha
 
 1. Confirm HealthKit authorization and actual sample retrieval on the user's signed iPhone; simulator tests cannot establish this.
 2. Confirm sleep stage/source de-duplication and night assignment against real Apple Health samples, including naps and timezone/day-boundary cases.
-3. Strengthen Recovery input provenance and baseline quality; current score is an explicitly labelled PulseForge SDNN/RHR estimate, not overnight WHOOP RMSSD or WHOOP Recovery.
+3. Keep Recovery unavailable until WHOOP overnight HRV/RHR provenance, timestamps, and baseline quality are verified; short-window or HealthKit-derived metrics must not be presented as WHOOP Recovery.
 4. Keep Cardio Load separate from WHOOP Strain until a verified physiological model and device/workout validation exist.
+
+
+## Original WHOOP R24 dispatch and implementation guardrails (2026-11-01)
+
+The pinned WHOOP 5.75.0 IPA was inspected in [Mach-O audit run #15](https://github.com/ribhupanwar/dsta/actions/runs/41105931290), artifact [whoop-ipa-mach-o-protocol-audit](https://github.com/ribhupanwar/dsta/actions/runs/41105931290/artifacts/13001906089). The extracted arm64 executable SHA-256 was `04013f93864e8a083b683d8d4d3e88728dec01d6b8d6c61c34df0d41f5df47b7` (IPA SHA-256 `8a5deedc59567612683feb77dd7348238de89437123946b3344bc6ff1e90af8a`).
+
+Static disassembly of the historical packet enum dispatcher at `0x105ce7fb8` shows a branch named **Historical Processed Steps Packet (R24)**. The recovered switch table at `0x108ebdb70` routes discriminator values 9 and 68 to that enum case. A second enum dispatcher at `0x100802704` selects **Processed Steps Data (R24)**; its table at `0x108acfdee` has input-byte indexes 11, 28, 92, 94, 148, 200, and 202 for that case. These are enum discriminants, not payload offsets. The executable also contains `currentStepCount`, `previousStepCount`, `lastStepCount`, and HealthKit step-submission strings. This confirms nested R24 packet/data enum cases, but does **not** reveal payload offsets, counter units, timestamp epoch, or accumulation semantics. Do not treat any of these selector values as field offsets or assume byte 9 is the R24 discriminator without a matching frame trace.
+
+### Required implementation boundary
+
+- Type-40 RR words remain raw candidates. The `1/1024 s` conversion seen in secondary NOOP/OpenStrap references is not promoted to milliseconds without original-WHOOP parser or independent device-source confirmation.
+- Type-47 v18 candidate words remain raw. Candidate byte offsets do not establish RR units, HR location, or physiological timestamp; previously persisted v18 values marked verified by PulseForge are downgraded on archive read.
+- Type-47 v18 motion-field candidates are diagnostic only and no longer update daily steps. The app waits for the original R24 processed-steps layout.
+- Unmapped CRC-valid Type-47 frames are retained verbatim so the next WHOOP 5.0 history offload can reveal the R24 packet bytes without guessing their schema.
+- Recovery remains unavailable without verified overnight inputs; Apple Health sleep remains separately labelled; cardio load remains a PulseForge estimate, not WHOOP Strain.
+
+This audit is static evidence only. A timestamped WHOOP 5.0 history-offload capture is still required to correlate the R24 enum with actual received frames and to establish the packet parser safely.

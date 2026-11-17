@@ -8,11 +8,12 @@ on:
       - integrate-pulseforge-into-main
       - ci/unsigned-ipa-export
       - ui/reference-dashboard-redesign
+      - feature/export-whoop-rr-raw-archive
   workflow_dispatch:
 
 concurrency:
   group: pulseforge-ios-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -43,6 +44,39 @@ jobs:
               echo "The app source is currently on whoop-background-ble."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Fetch licensed Google Fonts
+        if: steps.source.outputs.has_project == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p PulseForge/Fonts
+          curl -fL --retry 3 "https://raw.githubusercontent.com/google/fonts/main/ofl/readexpro/ReadexPro%5BHEXP%2Cwght%5D.ttf" -o PulseForge/Fonts/ReadexPro.ttf
+          curl -fL --retry 3 "https://raw.githubusercontent.com/google/fonts/main/ofl/barlowcondensed/BarlowCondensed-Bold.ttf" -o PulseForge/Fonts/BarlowCondensed-Bold.ttf
+          curl -fL --retry 3 "https://raw.githubusercontent.com/google/fonts/main/ofl/readexpro/OFL.txt" -o PulseForge/Fonts/ReadexPro-OFL.txt
+          curl -fL --retry 3 "https://raw.githubusercontent.com/google/fonts/main/ofl/barlowcondensed/OFL.txt" -o PulseForge/Fonts/BarlowCondensed-OFL.txt
+          test -s PulseForge/Fonts/ReadexPro.ttf
+          test -s PulseForge/Fonts/BarlowCondensed-Bold.ttf
+          ls -lh PulseForge/Fonts
+
+      - name: Generate PulseForge app icon asset
+        if: steps.source.outputs.has_project == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ICON_DIR="PulseForge/Assets.xcassets/AppIcon.appiconset"
+          mkdir -p "$ICON_DIR"
+          sips -s format png -z 1024 1024 "$ICON_DIR/PulseForgeIcon.svg" --out "$ICON_DIR/PulseForgeIcon.png" >/dev/null
+          test -s "$ICON_DIR/PulseForgeIcon.png"
+          cat > "$ICON_DIR/Contents.json" <<'JSON'
+          {
+            "images" : [
+              { "filename" : "PulseForgeIcon.png", "idiom" : "universal", "platform" : "ios", "size" : "1024x1024" }
+            ],
+            "info" : { "author" : "xcode", "version" : 1 }
+          }
+          JSON
+          echo "Generated 1024x1024 PulseForge app icon."
 
       - name: Install XcodeGen when needed
         if: steps.source.outputs.has_project == 'true'

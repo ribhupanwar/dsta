@@ -1,0 +1,91 @@
+name: Analyze Woop Android APK
+on:
+  push:
+    branches:
+      - feature/export-whoop-rr-raw-archive
+    paths:
+      - .github/workflows/analyze-woop-apk.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
+jobs:
+  decompile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download shared APK archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p input
+          curl --fail --location --retry 3 --retry-delay 2 \
+            'https://www.dropbox.com/scl/fi/8on9qudjgtcbko6oug5j5/Woop-Latest-Test.apk.zip?rlkey=riwzsot4v0jhuf115vns4wksh&dl=1' \
+            --output input/Woop-Latest-Test.apk.zip
+          unzip -l input/Woop-Latest-Test.apk.zip
+          unzip -o input/Woop-Latest-Test.apk.zip -d input/extracted
+          find input/extracted -type f -iname '*.apk' ! -path '*/__MACOSX/*' ! -name '._*' -print
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install JADX
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            'https://github.com/skylot/jadx/releases/download/v1.5.1/jadx-1.5.1.zip' \
+            --output /tmp/jadx.zip
+          mkdir -p /tmp/jadx
+          unzip -q /tmp/jadx.zip -d /tmp/jadx
+          echo "/tmp/jadx/bin" >> "$GITHUB_PATH"
+      - name: Decompile and inventory step logic
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find input/extracted -type f -iname '*.apk' ! -path '*/__MACOSX/*' ! -name '._*' -print -quit)"
+          test -n "$APK"
+          mkdir -p output
+          set +e
+          jadx --deobf --show-bad-code --comments-level debug -d output/decompiled "$APK" 2>&1 | tee output/jadx.log
+          JADX_EXIT=${PIPESTATUS[0]}
+          set -e
+          echo "JADX exit code: $JADX_EXIT (partial output retained; JADX may report unrecoverable methods)"
+          sudo apt-get update -qq
+          sudo apt-get install -y apktool
+          apktool d -f "$APK" -o output/smali
+          {
+            echo '# Woop APK static-analysis inventory'
+            echo
+            echo "APK: $(basename "$APK")"
+            echo "SHA-256: $(sha256sum "$APK" | awk '{print $1}')"
+            echo
+            echo '## Manifest / package inventory'
+            find output/decompiled -maxdepth 4 -type f -print > output/decompiled-files.txt
+            sed -n '1,200p' output/decompiled-files.txt
+            echo
+            echo '## APK manifest and DEX inventory'
+            find output/smali -maxdepth 3 -type f -print > output/smali-files.txt
+            sed -n '1,200p' output/smali-files.txt
+            echo
+            echo '## Step / motion / sensor / cadence references'
+            grep -RniE 'step.?count|step.?detector|pedometer|cadence|stride|accelerometer|gyroscope|sensor.TYPE|TYPE_STEP|stepCount|walking|running|motion' output/decompiled output/smali --include='*.java' --include='*.smali' --include='*.xml' > output/step-motion-matches.txt || true
+            sed -n '1,3000p' output/step-motion-matches.txt
+            echo
+            echo '## BLE / GATT references'
+            grep -RniE 'BluetoothGatt|BluetoothLeScanner|BluetoothGattCharacteristic|notify|indicate|UUID|onCharacteristicChanged' output/decompiled output/smali --include='*.java' --include='*.smali' --include='*.xml' > output/ble-matches.txt || true
+            sed -n '1,2000p' output/ble-matches.txt
+          } > output/ANALYSIS-INDEX.md
+          cat output/ANALYSIS-INDEX.md
+      - name: Upload decompiled source and index
+        uses: actions/upload-artifact@v4
+        with:
+          name: woop-apk-decompiled-analysis
+          path: |
+            output/ANALYSIS-INDEX.md
+            output/decompiled/
+            output/smali/
+            output/jadx.log
+          if-no-files-found: error
+          retention-days: 7
