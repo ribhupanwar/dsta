@@ -148,6 +148,35 @@ final class OvernightRRMetricsCalculatorTests: XCTestCase {
         XCTAssertEqual(result?.lastSampleAt, start.addingTimeInterval(10))
     }
 
+    func testInvalidLongerDuplicateDoesNotDisplaceValidRRPacket() {
+        let start = Date(timeIntervalSince1970: 60_000)
+        let valid = record(at: start)
+        let invalid = record(at: start, intervals: Array(repeating: 2_500, count: 40))
+        for records in [[invalid, valid], [valid, invalid]] {
+            let result = OvernightRRMetricsCalculator.calculate(
+                records: records,
+                sleepStart: start.addingTimeInterval(-1),
+                sleepEnd: start.addingTimeInterval(60)
+            )
+            XCTAssertEqual(result?.intervalCount, 32)
+            XCTAssertEqual(result?.packetCount, 1)
+            XCTAssertEqual(result?.rmssdMilliseconds ?? -1, 10, accuracy: 0.001)
+        }
+    }
+
+    func testInvalidAdjacentDifferenceCannotDisplaceValidDuplicate() {
+        let start = Date(timeIntervalSince1970: 70_000)
+        let valid = record(at: start)
+        let invalid = record(at: start, intervals: (0..<40).map { $0.isMultiple(of: 2) ? 800 : 1_200 })
+        let result = OvernightRRMetricsCalculator.calculate(
+            records: [invalid, valid],
+            sleepStart: start.addingTimeInterval(-1),
+            sleepEnd: start.addingTimeInterval(60)
+        )
+        XCTAssertEqual(result?.intervalCount, 32)
+        XCTAssertEqual(result?.packetCount, 1)
+    }
+
     func testRequiresValidSleepWindow() {
         let start = Date(timeIntervalSince1970: 10_000)
         XCTAssertNil(OvernightRRMetricsCalculator.calculate(
